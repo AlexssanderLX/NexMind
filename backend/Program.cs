@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using LocalAi.Api;
 using LocalAi.Api.Llm;
+using LocalAi.Api.Mcp;
 using LocalAi.Api.Metrics;
 using LocalAi.Api.Storage;
 using LocalAi.Api.Voice;
@@ -18,6 +19,14 @@ builder.Services.AddHttpClient<OllamaClient>((sp, http) =>
 builder.Services.AddSingleton(new ConversationStore(Path.Combine(builder.Environment.ContentRootPath, "data", "conversations")));
 builder.Services.AddSingleton<SystemMetrics>();
 builder.Services.AddSingleton<VoiceEngine>();
+builder.Services.AddSingleton(sp =>
+{
+    // MCP pronto de leitura de arquivos (markitdown); o caminho do executável vem do appsettings
+    var cfg = builder.Configuration.GetSection("Mcp:Markitdown").Get<McpServerConfig>() ?? new McpServerConfig();
+    var root = builder.Environment.ContentRootPath;
+    if (!Path.IsPathRooted(cfg.Command)) cfg.Command = Path.GetFullPath(Path.Combine(root, cfg.Command));
+    return new FileReader(cfg, Path.Combine(root, "data"));
+});
 
 var app = builder.Build();
 var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -62,7 +71,13 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
 
     var userText = req.Content.Trim();
     conv.Messages.Add(new Message("user", userText, null, DateTime.UtcNow, null));
-    if (conv.Messages.Count == 1) conv.Title = userText.Length > 48 ? userText[..48] + "…" : userText;
+    if (conv.Messages.Count == 1)
+    {
+        // o título não deve mostrar o texto do arquivo anexado
+        var plain = System.Text.RegularExpressions.Regex.Replace(userText, @"\[\[ARQUIVO [^\]]*\]\][\s\S]*?\[\[/ARQUIVO\]\]\s*", "").Trim();
+        if (plain.Length == 0) plain = "Arquivo anexado";
+        conv.Title = plain.Length > 48 ? plain[..48] + "…" : plain;
+    }
     conv.Model = req.Model;
     store.Save(conv); // a pergunta fica salva mesmo se o Ollama falhar
 
@@ -110,6 +125,22 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
 
     if (ct.IsCancellationRequested) return;
     await Send(error is null ? new { type = "done", stats } : new { type = "error", message = error });
+});
+
+// --- Anexos: lê o arquivo (PDF, DOCX, md, texto, código...) e devolve o texto para ir junto da mensagem
+api.MapPost("/files/read", async (HttpRequest request, FileReader files, CancellationToken ct) =>
+{
+    if (!request.HasFormContentType) return Results.BadRequest("Envie o arquivo como multipart.");
+    var form = await request.ReadFormAsync(ct);
+    var file = form.Files.GetFile("file");
+    if (file is null || file.Length == 0) return Results.BadRequest("Arquivo vazio.");
+    if (file.Length > FileReader.MaxBytes) return Results.BadRequest("Arquivo maior que 25 MB.");
+    var maxChars = int.TryParse(request.Query["maxChars"], out var mc) ? Math.Clamp(mc, 500, 200_000) : 8000;
+    try { return Results.Ok(await files.ReadAsync(file, maxChars, ct)); }
+    catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or IOException)
+    {
+        return Results.Problem("Não consegui ler o arquivo: " + ex.Message, statusCode: 422);
+    }
 });
 
 api.MapGet("/voice/status", (VoiceEngine voice) => new

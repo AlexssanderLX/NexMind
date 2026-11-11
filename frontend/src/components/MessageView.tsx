@@ -15,11 +15,26 @@ function normalizeMath(text: string): string {
 /** memo: só a mensagem que está chegando re-renderiza; as anteriores (e o markdown delas) ficam como estão. */
 function MessageView({ m, streaming }: { m: Message; streaming?: boolean }) {
   if (m.role === "user") {
+    // arquivos anexados vêm entre [[ARQUIVO nome]] … [[/ARQUIVO]]: mostra só um chip, não o texto inteiro
+    const files: { name: string; chars: number }[] = [];
+    const body = m.content
+      .replace(/\[\[ARQUIVO ([^\]]*)\]\]\n([\s\S]*?)\n\[\[\/ARQUIVO\]\]\n*/g, (_, name: string, t: string) => {
+        files.push({ name, chars: t.length });
+        return "";
+      })
+      .trim();
     return (
-      <div className="flex justify-end" data-no-core data-color-card>
-        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl bg-panel px-4 py-2.5 text-[15px] leading-relaxed">
-          {m.content}
-        </div>
+      <div className="flex flex-col items-end gap-1.5" data-no-core data-color-card>
+        {files.map((f, i) => (
+          <div key={i} className="rounded-xl border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs">
+            📎 {f.name} <span className="text-mute">· {f.chars} caracteres</span>
+          </div>
+        ))}
+        {body && (
+          <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl bg-panel px-4 py-2.5 text-[15px] leading-relaxed">
+            {body}
+          </div>
+        )}
       </div>
     );
   }

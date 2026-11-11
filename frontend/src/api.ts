@@ -14,6 +14,17 @@ export const api = {
   get: (id: string) => req<Conversation>(`/api/conversations/${id}`),
   remove: (id: string) => req<void>(`/api/conversations/${id}`, { method: "DELETE" }),
   voiceStatus: () => req<VoiceStatus>("/api/voice/status"),
+  /** Lê um arquivo (PDF, DOCX, md, texto, código...) no backend e devolve o texto, cortado em maxChars. */
+  readFile: async (file: File, maxChars: number) => {
+    const body = new FormData();
+    body.append("file", file);
+    const r = await fetch(`/api/files/read?maxChars=${maxChars}`, { method: "POST", body });
+    if (!r.ok) {
+      const t = await r.json().catch(() => null);
+      throw new Error(t?.detail ?? t?.title ?? `${r.status} ${r.statusText}`);
+    }
+    return (await r.json()) as { name: string; text: string; chars: number; truncated: boolean };
+  },
 };
 
 /** Envia a mensagem e entrega os eventos NDJSON conforme chegam. */

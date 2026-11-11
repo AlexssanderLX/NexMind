@@ -88,6 +88,9 @@ export default function App() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<{ name: string; text: string; chars: number; truncated: boolean }[]>([]);
+  const [attaching, setAttaching] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [reasoning, setReasoning] = useState(false);
@@ -195,8 +198,14 @@ export default function App() {
   }
 
   async function send(textOverride?: string, fromVoice = false, heardAt = performance.now()) {
-    const text = (textOverride ?? input).trim();
-    if (!text || streaming) return;
+    const typed = (textOverride ?? input).trim();
+    const files = textOverride ? [] : attachments; // anexos só vão em mensagens digitadas
+    if ((!typed && files.length === 0) || streaming) return;
+    // o arquivo vai junto da pergunta, entre marcadores que a tela usa para mostrar só o "chip" do anexo
+    const text =
+      files.map((f) => `[[ARQUIVO ${f.name}]]\n${f.text}${f.truncated ? "\n[…arquivo cortado]" : ""}\n[[/ARQUIVO]]\n\n`).join("") +
+      (typed || "Leia o arquivo anexado e faça um resumo.");
+    if (files.length) setAttachments([]);
     setChatError(null);
     setVoiceNote(null);
     voice.interrupt();
@@ -417,6 +426,18 @@ export default function App() {
               send();
             }}
           >
+            {(attachments.length > 0 || attaching) && (
+              <div className="mb-1 flex flex-wrap gap-1.5 px-1">
+                {attachments.map((a, i) => (
+                  <span key={i} className="flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-2 py-1 text-xs">
+                    📎 {a.name} <span className="text-mute">{a.truncated ? "cortado · " : ""}{a.chars} caract.</span>
+                    <button type="button" className="text-mute hover:text-fg" title="Remover"
+                      onClick={() => setAttachments((l) => l.filter((_, j) => j !== i))}>✕</button>
+                  </span>
+                ))}
+                {attaching && <span className="px-2 py-1 text-xs text-mute">Lendo arquivo…</span>}
+              </div>
+            )}
             <textarea
               className="block max-h-48 min-h-[48px] w-full resize-none bg-transparent px-2 py-1 text-[15px] outline-none placeholder:text-mute"
               placeholder="Converse com o Nex…"
@@ -455,6 +476,41 @@ export default function App() {
                 </button>
               </div>
               <div className="flex items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={async (e) => {
+                  const picked = Array.from(e.target.files ?? []);
+                  e.target.value = "";
+                  if (!picked.length) return;
+                  setAttaching(true);
+                  setChatError(null);
+                  // metade do contexto, em caracteres (~3 por token), fica para o arquivo; o resto é pergunta e resposta
+                  const budget = Math.round((settings.numCtx * 1.5) / picked.length);
+                  for (const f of picked) {
+                    try {
+                      const r = await api.readFile(f, budget);
+                      setAttachments((l) => [...l, r]);
+                    } catch (err) {
+                      setChatError(`Não li "${f.name}": ${(err as Error).message}`);
+                    }
+                  }
+                  setAttaching(false);
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={attaching}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-mute transition-colors hover:bg-white/5 hover:text-fg disabled:opacity-40"
+                title="Anexar arquivo (PDF, DOCX, md, texto, código…)"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9" />
+                </svg>
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -505,7 +561,7 @@ export default function App() {
               ) : (
                 <button
                   type="submit"
-                  disabled={!input.trim()}
+                  disabled={!input.trim() && attachments.length === 0}
                   className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-lg font-semibold text-bg hover:opacity-90 disabled:opacity-30"
                   title="Enviar"
                 >

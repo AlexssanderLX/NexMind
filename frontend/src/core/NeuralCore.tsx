@@ -28,10 +28,12 @@ interface Props {
   onUnavailable: () => void;
 }
 
+// Com uma conversa na tela o texto precisa ser legível: a esfera encolhe e escurece bastante, ficando só como um
+// brilho suave de fundo. Na tela inicial (hero) ela tem o brilho total.
 const PRESENCE: Record<Props["presence"], [scale: number, intensity: number]> = {
   hero: [1, 1],
-  active: [0.8, 0.75],
-  dim: [0.72, 0.4],
+  active: [0.72, 0.3],
+  dim: [0.66, 0.2],
 };
 
 /** Elementos que mantêm o comportamento normal (texto, botões, mensagens): o núcleo nunca reage a cliques neles. */
@@ -162,11 +164,22 @@ export default forwardRef<NeuralCoreHandle, Props>(function NeuralCore(props, re
   if (!props.enabled) return null;
   // preto + mix-blend-mode: screen = o fundo preto do WebGL some e só o brilho se soma ao fundo da página
   return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden
-      className="pointer-events-none absolute inset-0 z-0 h-full w-full"
-      style={{ mixBlendMode: "screen" }}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-0 h-full w-full"
+        style={{ mixBlendMode: "screen" }}
+      />
+      {/* véu escuro entre o núcleo e a conversa: aparece quando há mensagens, para o texto ficar bem legível */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-[5] transition-opacity duration-500"
+        style={{
+          opacity: props.presence === "hero" ? 0 : 1,
+          background: "radial-gradient(ellipse at 50% 45%, rgba(3,7,15,0.55) 0%, rgba(3,7,15,0.78) 75%)",
+        }}
+      />
+    </>
   );
 });

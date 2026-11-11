@@ -42,6 +42,14 @@
         "AppData\\Roaming\\Mozilla",
         "NTUSER.DAT",
         "Windows\\System32\\config"
+      ],
+      "allowedTools": [
+        "read_text_file",
+        "list_directory",
+        "search_files",
+        "get_file_info",
+        "write_file",
+        "edit_file"
       ]
     }
   }

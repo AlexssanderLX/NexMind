@@ -13,6 +13,8 @@ public sealed class McpServerEntry
     public string[]? RequiresApproval { get; set; }
     /// <summary>Pastas onde ferramentas que escrevem podem agir (relativas à pasta do backend ou absolutas). Leitura não é limitada por aqui.</summary>
     public string[]? WritableRoots { get; set; }
+    /// <summary>Se definida, só estas ferramentas do servidor são enviadas ao modelo (menos tokens no prompt e menos confusão do modelo de 4B).</summary>
+    public string[]? AllowedTools { get; set; }
     /// <summary>Trechos de caminho que nunca podem ser lidos nem escritos (chaves, credenciais, perfis de navegador...).</summary>
     public string[]? BlockedPaths { get; set; }
 }
@@ -97,6 +99,7 @@ public sealed class McpRegistry : IAsyncDisposable
                     var client = await ClientAsync(name, cfg, cts.Token);
                     foreach (var t in await client.ListToolsAsync(cancellationToken: cts.Token))
                     {
+                        if (cfg.AllowedTools is { Length: > 0 } allow && !allow.Contains(t.Name, StringComparer.OrdinalIgnoreCase)) continue;
                         var p = t.ProtocolTool;
                         // aprova se está na lista do arquivo, se o servidor marca como destrutiva, ou se o arquivo não definiu lista
                         var needs = cfg.RequiresApproval is null || Matches(cfg.RequiresApproval, t.Name)

@@ -6,12 +6,19 @@ export type ChatStats = {
   loadSeconds: number;
 };
 
+export type ToolRun = {
+  name: string;
+  state: string;
+  detail?: string;
+};
+
 export type Message = {
   role: "user" | "assistant";
   content: string;
   thinking?: string | null;
   stats?: ChatStats | null;
   model?: string | null;
+  tools?: ToolRun[];
 };
 
 export type Conversation = { id: string; title: string; model?: string | null; messages: Message[] };
@@ -73,7 +80,7 @@ export type StreamEvent =
   | { type: "token"; text: string }
   | { type: "thinking"; text: string }
   | { type: "tool"; name: string; state: string; query?: string }
-  | { type: "mcp"; name: string; state: string }
+  | { type: "mcp"; name: string; state: string; detail?: string }
   | { type: "approval"; id: string; tool: string; server: string; name: string; args: unknown; write?: boolean; warning?: string | null }
   | { type: "done"; stats: ChatStats | null }
   | { type: "error"; message: string };

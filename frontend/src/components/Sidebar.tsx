@@ -41,7 +41,7 @@ export default function Sidebar({
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
-  const dot = <span className={`h-2 w-2 shrink-0 rounded-full ${connected ? "bg-emerald-400" : "bg-red-500"}`} />;
+  const dot = <span title={connectionLabel} className={`h-2 w-2 shrink-0 rounded-full ${connected ? "bg-emerald-400" : "bg-amber-400"}`} />;
 
   // Renomear: lápis ou duplo clique no nome. Enter ou sair do campo salva; Esc cancela.
   const [editingId, setEditingId] = useState<string | null>(null);

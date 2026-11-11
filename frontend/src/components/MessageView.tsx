@@ -4,6 +4,8 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import type { Message } from "../types";
+import ThinkingCard from "./ThinkingCard";
+import ToolAccordion from "./ToolAccordion";
 
 /** O Qwen às vezes usa \( \) e \[ \] em vez de $ $ e $$ $$; o remark-math só entende os cifrões. */
 function normalizeMath(text: string): string {
@@ -39,17 +41,10 @@ function MessageView({ m, streaming }: { m: Message; streaming?: boolean }) {
     );
   }
 
-  const thinkingNow = streaming && !m.content;
   return (
     <div className="text-[15px] leading-7" data-no-core data-color-card>
-      {m.thinking && (
-        <details className="mb-3 text-sm text-mute" open={thinkingNow}>
-          <summary className="cursor-pointer select-none hover:text-fg">
-            {thinkingNow ? "Pensando…" : "Raciocínio"}
-          </summary>
-          <div className="mt-2 whitespace-pre-wrap border-l-2 border-line pl-3 leading-6">{m.thinking}</div>
-        </details>
-      )}
+      {m.tools && m.tools.length > 0 && <ToolAccordion tools={m.tools} />}
+      {m.thinking && <ThinkingCard text={m.thinking} streaming={!!streaming && !m.stats} />}
 
       {m.content ? (
         <div className="md break-words">

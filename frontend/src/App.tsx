@@ -324,6 +324,16 @@ export default function App() {
             const busy = ev.state === "carregando" || ev.state === "executando";
             if (String(ev.name).startsWith("browser__") || (browserOn && !mcpOn)) setBrowserState(busy ? "executando" : "pronta");
             else setMcpState(busy ? "executando" : "pronta");
+            if (ev.name !== "mcp") {
+              patchLast((m) => {
+                const tools = [...(m.tools ?? [])];
+                const last = tools[tools.length - 1];
+                if (last && last.name === ev.name && (last.state === "executando" || last.state === "carregando"))
+                  tools[tools.length - 1] = { name: ev.name, state: ev.state, detail: [last.detail, ev.detail].filter(Boolean).join("\n\n") };
+                else tools.push({ name: ev.name, state: ev.state, detail: ev.detail });
+                return { ...m, tools };
+              });
+            }
           }
           else if (ev.type === "approval") setApproval({ id: ev.id, tool: ev.tool, args: ev.args, write: ev.write, warning: ev.warning });
           else if (ev.type === "done") {
@@ -363,7 +373,7 @@ export default function App() {
         });
       } else if (speakBack) voice.interrupt();
       // Sincroniza com o que foi salvo no servidor (inclui parciais e a pergunta mesmo em caso de erro)
-      api.get(id).then((c) => setMessages(c.messages)).catch(() => {});
+      api.get(id).then((c) => setMessages((prev) => c.messages.map((m, i) => ({ ...m, tools: prev[i]?.tools })))).catch(() => {});
       refreshList();
     }
   }
@@ -399,7 +409,11 @@ export default function App() {
         activeId={activeId}
         connected={connected}
         connectionLabel={
-          backendDown ? "Backend desconectado" : connected ? `Ollama ${status?.version} conectado` : "Ollama desconectado"
+          banner
+            ? banner
+            : connected
+              ? `Ollama ${status?.version} conectado`
+              : "Ollama desconectado"
         }
         collapsed={sidebarCollapsed}
         onToggle={toggleSidebar}
@@ -437,7 +451,6 @@ export default function App() {
           </div>
         </header>
 
-        {banner && <div className="border-y border-red-900/60 bg-red-950/70 px-6 py-2 text-sm text-red-300">{banner}</div>}
         <NexStage
           core={nex}
           empty={messages.length === 0}

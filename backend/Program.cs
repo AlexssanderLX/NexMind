@@ -122,8 +122,10 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
     {
         var history = conv.Messages.Select(m => (m.Role, m.Content)).ToList();
         // Regra base: respostas diretas. O modelo de 4B tende a escrever muito; texto longo custa tempo (tokens na GPU/CPU).
+        var textLower = userText.ToLowerInvariant();
+        var autoSearch = req.Search || textLower.Contains("pesquisa na web") || textLower.Contains("pesquise na internet");
         var searchAddon = "";
-        if (req.Search)
+        if (autoSearch)
         {
             await Send(new { type = "tool", name = "pesquisa", state = "filtrando" });
             var (action, query, question) = await research.DecideAsync(req.Model, history, ct);
@@ -150,13 +152,19 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         // Qwen3 4B tem 36 camadas. Acima de 16 mil tokens, 24 ficam na GPU e 12 na RAM desde o carregamento.
         int? numGpu = req.NumCtx > 16384 ? 24 : null;
 
-        // Ferramentas MCP (só quando o usuário ligou): o modelo pode pedir uma ferramenta; o backend executa e devolve o resultado.
+        // Ferramentas MCP: o interruptor liga, ou a frase deixa a intenção óbvia (site, aba, arquivo).
+        var autoBrowser = req.Browser || textLower.Contains("http://") || textLower.Contains("https://")
+            || textLower.Contains("navegador") || textLower.Contains("aba") || textLower.Contains("site")
+            || textLower.Contains("github") || textLower.Contains("gmail") || textLower.Contains("pagina") || textLower.Contains("página");
+        var autoFiles = req.Tools || textLower.Contains("arquivo") || textLower.Contains("pasta")
+            || textLower.Contains("diretorio") || textLower.Contains("diretório") || textLower.Contains(".cs") || textLower.Contains(".ts")
+            || textLower.Contains("codigo") || textLower.Contains("código");
         IReadOnlyList<NexTool> mcpTools = [];
-        if (req.Tools || req.Browser)
+        if (autoFiles || autoBrowser)
         {
             await Send(new { type = "mcp", name = "mcp", state = "carregando" });
             var all = await mcp.GetToolsAsync(false, ct);
-            mcpTools = all.Where(t => (req.Tools && t.Server == "arquivos") || (req.Browser && t.Server == "browser")).ToList();
+            mcpTools = all.Where(t => (autoFiles && t.Server == "arquivos") || (autoBrowser && t.Server == "browser")).ToList();
         }
         var fileTools = mcpTools.Where(t => t.Server == "arquivos").ToList();
         var browserTools = mcpTools.Where(t => t.Server == "browser").ToList();
@@ -289,13 +297,15 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                     }
                     else
                     {
-                        await Send(new { type = "mcp", name = tool.QualifiedName, state = "executando" });
+                        var argsText = JsonSerializer.Serialize(call.Arguments);
+                        await Send(new { type = "mcp", name = tool.QualifiedName, state = "executando", detail = argsText.Length > 500 ? argsText[..500] : argsText });
                         var r = await mcp.CallAsync(tool, call.Arguments, Math.Min(resultCap, turnBudget), ct);
                         turnBudget -= r.Text.Length;
                         result = r.Ok ? r.Text : "ERRO: " + r.Text;
                         // motor de fatos: o que a ferramenta comprovou vai para facts.md (sem custo de GPU)
                         if (r.Ok && FactExtractor.Extract(tool.Name, call.Arguments, r.Text) is { } fact) memory.AddFact(conv.Id, fact);
-                        await Send(new { type = "mcp", name = tool.QualifiedName, state = r.Ok ? "concluida" : "falhou" });
+                        var shown = result.Length > 800 ? result[..800] : result;
+                        await Send(new { type = "mcp", name = tool.QualifiedName, state = r.Ok ? "concluida" : "falhou", detail = shown });
                     }
                 }
                 extra.Add(new { role = "tool", tool_name = call.Name, content = result });

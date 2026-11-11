@@ -5,3 +5,5 @@ backend/wwwroot/
 backend/voice/bin/
 backend/voice/models/
 frontend/node_modules/
+**/__pycache__/
+*.pyc

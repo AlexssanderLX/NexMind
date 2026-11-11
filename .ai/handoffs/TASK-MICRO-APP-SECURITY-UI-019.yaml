@@ -29,3 +29,4 @@ acceptance_criteria:
   - test: Clicar no seletor de Micro Apps alterna perfeitamente entre Geral e Security na UI.
   - test: No modo Security, o atalho para o OWASP Workbench abre `http://localhost:5080/workbench.html`.
   - test: Build limpo do frontend sem quebrar o layout existente.
+

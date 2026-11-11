@@ -162,6 +162,10 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         system += browserTools.Count > 0
             ? $"- MCP Navegador: LIGADO ({string.Join(", ", browserTools.Select(t => t.QualifiedName))}). Você controla a janela do Chrome real do Alexssander conectada via automação CDP. Suas sessões, logins e abas abertas estão preservados. Você pode navegar (browser_navigate), ler o conteúdo sem peso (browser_get_dom) e interagir visualmente com cursor animado. O clique (browser_click) sempre pedirá autorização prévia na tela.\n"
             : "- MCP Navegador: DESLIGADO. Se o Alexssander pedir para você acessar links, ler páginas web ou automatizar sites, avise-o: 'Para eu acessar seu navegador e abas, por favor ligue o interruptor \"Navegador\" no painel lateral de Ferramentas.'\n";
+        system += "\nRegra de Seleção de Ferramentas:\n" +
+                  "- PÁGINAS DA WEB, SITES E ABAS (GitHub, redes sociais, formulários web): use EXCLUSIVAMENTE o MCP Navegador (browser_get_dom, browser_navigate, browser_click, browser_type).\n" +
+                  "- APLICATIVOS E JANELAS DO WINDOWS (Bloco de Notas, Calculadora, alternar janelas, atalhos do sistema): use o MCP Computador (desktop_list_windows, desktop_inspect_window, desktop_click_element).\n" +
+                  "NUNCA use o MCP Computador para tentar ler o conteúdo interno de uma página web dentro do Chrome.\n";
         system += req.Search
             ? "- Pesquisa na web: LIGADA. Cite a fonte e não invente o que a busca não trouxe.\n"
             : "- Pesquisa na web: DESLIGADA. Se ele pedir um fato da internet sem abrir o navegador, avise: 'Para eu pesquisar na web, ligue \"Pesquisa na web\" em Ferramentas.'\n";

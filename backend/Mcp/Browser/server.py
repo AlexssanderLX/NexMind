@@ -104,26 +104,36 @@ async def _move(page: Page, x: float, y: float) -> None:
     await page.evaluate(_MOVE_JS, {"x": x, "y": y})
 
 
+async def _attach() -> Page:
+    """Conecta no Chrome da porta 9222 e usa a aba visível."""
+    global _browser, _page, _cdp
+    assert _playwright is not None
+    _browser = await _playwright.chromium.connect_over_cdp("http://127.0.0.1:9222")
+    context = _browser.contexts[0] if _browser.contexts else await _browser.new_context()
+    _cdp = True
+    existing = [p for p in context.pages if not p.url.startswith("devtools")]
+    _page = existing[-1] if existing else await context.new_page()
+    await context.add_init_script("(" + _CURSOR_JS + ")();")
+    await _inject(_page)
+    return _page
+
+
 async def _ensure() -> Page:
-    """Conecta no Chrome real (porta 9222). Se a porta estiver fechada, abre um Chromium isolado."""
+    """Usa o Chrome da porta 9222. Se a porta falhar, abre um Chromium visível."""
     global _playwright, _browser, _page, _cdp
     if _page is not None:
         return _page
     _playwright = await async_playwright().start()
     try:
-        _browser = await _playwright.chromium.connect_over_cdp("http://127.0.0.1:9222")
-        context = _browser.contexts[0] if _browser.contexts else await _browser.new_context()
-        _cdp = True
-        existing = [p for p in context.pages if not p.url.startswith("chrome")]
-        _page = existing[-1] if existing else (context.pages[-1] if context.pages else await context.new_page())
+        return await _attach()
     except Exception:
         _browser = await _playwright.chromium.launch(headless=False)
         context = await _browser.new_context()
         _page = await context.new_page()
         _cdp = False
-    await context.add_init_script("(" + _CURSOR_JS + ")();")
-    await _inject(_page)
-    return _page
+        await context.add_init_script("(" + _CURSOR_JS + ")();")
+        await _inject(_page)
+        return _page
 
 
 def _clip(text: str) -> str:
@@ -147,7 +157,7 @@ async def browser_navigate(url: str) -> str:
 @mcp.tool()
 async def browser_get_dom() -> str:
     """Lista links, botões e campos visíveis com ids [1], [2], ... em no máximo 1500 tokens."""
-    page = _current()
+    page = await _ensure()
     await _inject(page)
     items = await page.evaluate(_DOM_JS)
     lines = [f"[{item['id']}] {item['tag']} {item['label']}".strip() for item in items if item["x"] > 0 or item["y"] > 0]

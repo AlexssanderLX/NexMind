@@ -95,6 +95,29 @@ const DOM_JS = `(() => {
   return { text, items: nodes };
 })()`;
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// tabs.update/create devolvem antes da página carregar: sem esperar, o get_dom lê uma página em branco.
+async function waitLoaded(tabId, maxMs) {
+  const end = Date.now() + maxMs;
+  while (Date.now() < end) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.status === "complete") return true;
+    } catch { return false; }
+    await sleep(250);
+  }
+  return false;
+}
+
+function sameDocument(a, b) {
+  try {
+    const x = new URL(a), y = new URL(b);
+    x.hash = ""; y.hash = "";
+    return x.href === y.href;
+  } catch { return false; }
+}
+
 async function lastOwnedTabId(noTabMessage) {
   const tabs = await ownedTabs();
   if (!tabs.length) throw new Error(noTabMessage);
@@ -104,16 +127,29 @@ async function lastOwnedTabId(noTabMessage) {
 async function handle(msg) {
   if (msg.op === "get_dom") {
     const tabId = await lastOwnedTabId("O grupo Nex ainda não tem aba. Peça para abrir uma URL.");
-    const value = await withDebugger(tabId, (id) => chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", {
+    await waitLoaded(tabId, 10000);
+    const read = () => withDebugger(tabId, (id) => chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", {
       expression: DOM_JS,
       returnByValue: true
     }));
+    let value = await read();
+    if (!value.result.value.text && !value.result.value.items.length) {
+      await sleep(1500); // página ainda montando: uma segunda leitura antes de dizer que está vazia
+      value = await read();
+    }
     return value.result.value;
   }
   if (msg.op === "navigate") {
     if (typeof msg.url !== "string" || !/^https?:\/\//i.test(msg.url)) throw new Error("Só são abertos endereços http e https.");
+    const before = (await ownedTabs()).slice(-1)[0];
     const tabId = await ensureTab(msg.url);
-    return { url: msg.url, tabId };
+    let loaded = true;
+    if (!before || !sameDocument(before.url, msg.url)) {
+      await sleep(300); // deixa a aba entrar em "loading" antes de olhar o status
+      loaded = await waitLoaded(tabId, 15000);
+      if (loaded) await sleep(500); // folga para o que a página monta por JavaScript
+    }
+    return { url: msg.url, tabId, loaded };
   }
   if (msg.op === "click" || msg.op === "type") {
     const elementId = Number(msg.elementId);

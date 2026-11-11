@@ -198,7 +198,8 @@ async def browser_navigate(url: str) -> str:
         raise RuntimeError(str(exc)) from exc
     result = await _call("navigate", url=url)
     note = f" (aguardei {waited:.1f} s para não acelerar o site)" if waited >= 0.5 else ""
-    return f"Aberto no grupo Nex, sem fechar o Chrome: {result.get('url')}{note}"
+    pending = "" if result.get("loaded", True) else " A página ainda estava carregando: chame browser_get_dom de novo em instantes."
+    return f"Aberto no grupo Nex, sem fechar o Chrome: {result.get('url')}{note}{pending}"
 
 
 @mcp.tool()

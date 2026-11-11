@@ -10,7 +10,7 @@ const SRC = fs.readFileSync(process.env.NEX_BG || path.join(path.dirname(fileURL
 
 // Chrome falso: guarda abas, grupos e debugger para conferir exatamente o que a extensao tocou.
 function boot(seed = {}) {
-  const world = { tabs: new Map(), groups: new Map(), nextTab: 100, nextGroup: 500, attached: [], detached: [], navigations: [], session: {}, replies: [], listener: null, failCommand: false };
+  const world = { tabs: new Map(), groups: new Map(), nextTab: 100, nextGroup: 500, attached: [], detached: [], navigations: [], session: {}, replies: [], listener: null, failCommand: false, loadMs: 20 };
   for (const t of seed.tabs || []) world.tabs.set(t.id, { groupId: -1, url: "about:blank", ...t });
   for (const g of seed.groups || []) world.groups.set(g.id, g);
   const chrome = {
@@ -24,9 +24,9 @@ function boot(seed = {}) {
       set: async (o) => { Object.assign(world.session, structuredClone(o)); }
     } },
     tabs: {
-      create: async ({ url }) => { const id = world.nextTab++; const t = { id, url, groupId: -1 }; world.tabs.set(id, t); world.navigations.push({ id, url }); return { ...t }; },
+      create: async ({ url }) => { const id = world.nextTab++; const t = { id, url, groupId: -1, status: "loading" }; world.tabs.set(id, t); world.navigations.push({ id, url }); setTimeout(() => { t.status = "complete"; }, world.loadMs); return { ...t }; },
       get: async (id) => { const t = world.tabs.get(id); if (!t) throw new Error("No tab"); return { ...t }; },
-      update: async (id, { url }) => { const t = world.tabs.get(id); if (!t) throw new Error("No tab"); if (url) { t.url = url; world.navigations.push({ id, url }); } return { ...t }; },
+      update: async (id, { url }) => { const t = world.tabs.get(id); if (!t) throw new Error("No tab"); if (url) { const hash = new URL(url).hash && new URL(url).href.split("#")[0] === t.url.split("#")[0]; t.url = url; world.navigations.push({ id, url }); if (!hash) { t.status = "loading"; setTimeout(() => { t.status = "complete"; }, world.loadMs); } } return { ...t }; },
       group: async ({ tabIds }) => { const gid = world.nextGroup++; world.groups.set(gid, { id: gid }); for (const id of tabIds) world.tabs.get(id).groupId = gid; return gid; }
     },
     tabGroups: { update: async (gid, props) => { Object.assign(world.groups.get(gid), props); } },
@@ -39,7 +39,7 @@ function boot(seed = {}) {
       }
     }
   };
-  vm.runInNewContext(SRC, { chrome, setTimeout: () => 0, console, structuredClone, JSON, Number, String, Error, Promise, RegExp });
+  vm.runInNewContext(SRC, { chrome, setTimeout, console, structuredClone, JSON, Number, String, Error, Promise, RegExp, Date, URL });
   let id = 0;
   world.send = (msg) => new Promise((resolve) => {
     const mid = ++id;
@@ -47,7 +47,7 @@ function boot(seed = {}) {
     world.listener({ id: mid, ...msg });
     const wait = () => {
       const r = world.replies.slice(before).find((x) => x.id === mid);
-      if (r) resolve(r); else setImmediate(wait);
+      if (r) resolve(r); else setTimeout(wait, 5);
     };
     wait();
   });
@@ -166,4 +166,23 @@ test("operacao desconhecida e recusada", async () => {
   const w = boot();
   const r = await w.send({ op: "tabs.remove" });
   assert.equal(r.ok, false);
+});
+
+test("navigate so responde depois da pagina carregar (get_dom nao le pagina em branco)", async () => {
+  const w = boot();
+  w.loadMs = 700;
+  const r = await w.send({ op: "navigate", url: "https://example.com/" });
+  assert.equal(r.ok, true);
+  assert.equal(r.result.loaded, true);
+  assert.equal(w.tabs.get(100).status, "complete", "ja carregou quando a resposta chegou");
+});
+
+test("mudanca so de #hash nao espera carregamento", async () => {
+  const w = boot();
+  await w.send({ op: "navigate", url: "https://example.com/" });
+  w.loadMs = 5000;
+  const t0 = Date.now();
+  const r = await w.send({ op: "navigate", url: "https://example.com/#a" });
+  assert.equal(r.ok, true);
+  assert.ok(Date.now() - t0 < 1500, "nao ficou esperando");
 });

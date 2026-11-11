@@ -13,17 +13,35 @@ export default function SettingsPanel({
   status: OllamaStatus | null;
 }) {
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => onChange({ ...settings, [k]: v });
+  const installed = (name: string) => !status?.connected || status.models.some((m) => m.name === name);
+
   return (
     <div className="grid gap-3 border-b border-line bg-side/60 px-6 py-4 sm:grid-cols-3">
       <label className="text-xs text-mute">
-        Modelo
+        Modelo de conversa (rápido)
         <input
           className={field}
           list="installed-models"
-          value={settings.model}
-          onChange={(e) => set("model", e.target.value)}
+          value={settings.chatModel}
+          onChange={(e) => set("chatModel", e.target.value)}
+          placeholder="qwen3:4b-instruct"
+        />
+        {!installed(settings.chatModel) && (
+          <span className="text-red-400">Não instalado: ollama pull {settings.chatModel}</span>
+        )}
+      </label>
+      <label className="text-xs text-mute">
+        Modelo de raciocínio
+        <input
+          className={field}
+          list="installed-models"
+          value={settings.reasoningModel}
+          onChange={(e) => set("reasoningModel", e.target.value)}
           placeholder="qwen3:4b"
         />
+        {!installed(settings.reasoningModel) && (
+          <span className="text-red-400">Não instalado: ollama pull {settings.reasoningModel}</span>
+        )}
         <datalist id="installed-models">
           {status?.models.map((m) => (
             <option key={m.name} value={m.name} />
@@ -41,14 +59,6 @@ export default function SettingsPanel({
           onChange={(e) => set("numCtx", Math.max(256, Number(e.target.value) || 4096))}
         />
       </label>
-      <label className="text-xs text-mute">
-        Raciocínio (thinking)
-        <select className={field} value={settings.think} onChange={(e) => set("think", e.target.value as Settings["think"])}>
-          <option value="auto">Padrão do modelo</option>
-          <option value="on">Ligado</option>
-          <option value="off">Desligado</option>
-        </select>
-      </label>
       <label className="text-xs text-mute sm:col-span-3">
         Prompt de sistema (opcional)
         <textarea
@@ -59,9 +69,8 @@ export default function SettingsPanel({
         />
       </label>
       <p className="text-[11px] text-mute sm:col-span-3">
-        Valem para as próximas mensagens. Contexto maior consome mais VRAM/RAM. Modelos sem suporte a "thinking" podem
-        dar erro se você forçar Ligado/Desligado — use Padrão. Atenção: o qwen3:4b atual só raciocina (variante
-        "thinking"); "Desligado" não o impede de pensar e mistura o raciocínio na resposta. Mantenha em Padrão.
+        O botão "Raciocínio" no campo de texto escolhe qual modelo responde a próxima mensagem. A conversa é a mesma nos
+        dois modos. Valem para as próximas mensagens; contexto maior consome mais VRAM/RAM.
       </p>
     </div>
   );

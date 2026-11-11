@@ -11,6 +11,7 @@ export type Message = {
   content: string;
   thinking?: string | null;
   stats?: ChatStats | null;
+  model?: string | null;
 };
 
 export type Conversation = { id: string; title: string; model?: string | null; messages: Message[] };
@@ -35,10 +36,11 @@ export type Metrics = {
   loadedModel: { name: string; sizeMb: number; vramMb: number; contextLength: number | null } | null;
 };
 
+/** Dois modelos: um rápido para conversar e um que raciocina, usado quando o botão Raciocínio está ligado. */
 export type Settings = {
-  model: string;
+  chatModel: string;
+  reasoningModel: string;
   numCtx: number;
-  think: "auto" | "on" | "off";
   system: string;
 };
 

@@ -36,6 +36,7 @@ export default function MessageView({ m, streaming }: { m: Message; streaming?: 
 
       {m.stats && (
         <div className="mt-3 text-xs text-mute">
+          {m.model ? `${m.model} · ` : ""}
           {m.stats.outputTokens} tokens · {m.stats.tokensPerSec} tok/s · {m.stats.totalSeconds}s
           {m.stats.loadSeconds > 1 ? ` (carregar modelo: ${m.stats.loadSeconds}s)` : ""} · prompt{" "}
           {m.stats.promptTokens} tokens

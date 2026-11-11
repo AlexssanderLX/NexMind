@@ -9,6 +9,12 @@ qualidade, velocidade e consumo de recursos. O visual segue o app de chat do Cla
 - Node 22+ e .NET SDK 10
 
 ## Executar
+**Atalho na Área de Trabalho (recomendado):** rode uma vez `.\criar-atalho.ps1` para criar o atalho **Nex**. Um clique
+inicia o Ollama (se estiver parado), o backend e abre http://localhost:5080. Feche a janela do Nex (abre minimizada) para
+parar; o Ollama continua em segundo plano. Se mover a pasta do projeto, rode `criar-atalho.ps1` de novo.
+Partida típica: ~4 s com o Ollama já aberto, ~9 s com o Ollama parado. O backend só é recompilado quando o código muda.
+
+Alternativa manual:
 ```powershell
 .\start.ps1      # compila o frontend e inicia o backend em http://localhost:5080
 ```

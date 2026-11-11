@@ -1,3 +1,4 @@
-markitdown-mcp==0.0.1a4
-mcp==1.30.0
-markitdown[pdf,docx,pptx,xlsx]==0.1.9
+# Instalar em DUAS etapas (o markitdown-mcp declara mcp~=1.8, mas funciona com a 1.30 que o SDK em C# aceita):
+#   pip install "mcp==1.30.0" "markitdown[pdf,docx,pptx,xlsx]==0.1.9"
+#   pip install --no-deps "markitdown-mcp==0.0.1a4"
+# Ambiente fica em backend/data/mcp/markitdown/venv (fora do git).

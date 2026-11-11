@@ -91,6 +91,8 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [reasoning, setReasoning] = useState(false);
+  const [searchOn, setSearchOn] = useState(() => localStorage.getItem("nexSearch") === "1");
+  const [searchState, setSearchState] = useState<"desligada" | "pronta" | "executando">("desligada");
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadVoice);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
@@ -269,6 +271,8 @@ export default function App() {
             buffer.push("content", ev.text);
           }
           else if (ev.type === "thinking") buffer.push("thinking", ev.text);
+          else if (ev.type === "tool")
+            setSearchState(ev.state === "executando" || ev.state === "filtrando" ? "executando" : "pronta");
           else if (ev.type === "done") {
             buffer.flush();
             patchLast((m) => ({ ...m, stats: ev.stats }));
@@ -279,6 +283,7 @@ export default function App() {
           }
         },
         abort.signal,
+        searchOn,
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
@@ -394,7 +399,22 @@ export default function App() {
           }
           info={{ mode: reasoning ? "Raciocínio" : "Conversa", model: activeModel, connected }}
           runs={runs}
-          tools={[]}
+          tools={[
+            {
+              name: "pesquisa",
+              status: !searchOn ? "desligada" : searchState === "executando" ? "executando" : "pronta",
+              note: !searchOn ? "desligada" : searchState === "executando" ? "pesquisando" : "ligada",
+            },
+          ]}
+          onToggleTool={(name) => {
+            if (name !== "pesquisa") return;
+            setSearchOn((on) => {
+              const next = !on;
+              localStorage.setItem("nexSearch", next ? "1" : "0");
+              setSearchState(next ? "pronta" : "desligada");
+              return next;
+            });
+          }}
         >
           <div className="mx-auto max-w-3xl space-y-6">
             {messages.map((m, i) => (

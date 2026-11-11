@@ -358,7 +358,17 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
   }
 
   function cleanSpeech(text: string) {
-    return text.replace(/[#*_`>|]/g, " ").replace(/\s+/g, " ").trim();
+    return text
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/`[^`]+`/g, " ")
+      .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
+      .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+      .replace(/https?:\/\/\S+/g, " ")
+      .replace(/[#*_~>|]/g, " ")
+      .replace(/\p{Extended_Pictographic}/gu, " ")
+      .replace(/[\u200d\ufe0f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function armSpeech() {

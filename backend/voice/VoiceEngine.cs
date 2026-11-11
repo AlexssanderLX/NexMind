@@ -162,6 +162,7 @@ public sealed class VoiceEngine : IDisposable
 
     public async Task<(byte[] Wav, int Ms, string Engine)> SpeakAsync(string text, string engine, string? voice, double rate, CancellationToken ct)
     {
+        text = StripForSpeech(text);
         var sw = Stopwatch.StartNew();
         if (engine == "piper")
         {
@@ -175,6 +176,18 @@ public sealed class VoiceEngine : IDisposable
             throw new InvalidOperationException("Síntese sapi só existe no Windows. Configure o Piper para outro sistema.");
         var bytes = SpeakSapi(text, voice, rate);
         return (bytes, (int)sw.ElapsedMilliseconds, "sapi");
+    }
+
+    private static string StripForSpeech(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        foreach (var rune in text.EnumerateRunes())
+        {
+            var v = rune.Value;
+            if (v is >= 0x1F300 and <= 0x1FAFF or >= 0x2600 and <= 0x27BF or 0xFE0F or 0x200D) continue;
+            sb.Append(rune.ToString());
+        }
+        return sb.ToString();
     }
 
     private static byte[] SpeakSapi(string text, string? voice, double rate)
@@ -247,9 +260,12 @@ public sealed class VoiceEngine : IDisposable
             psi.ArgumentList.Add(model);
             psi.ArgumentList.Add("--output_file");
             psi.ArgumentList.Add(outFile);
-            var lengthScale = rate <= 0.1 ? 1.0 : 1.0 / rate;
+            // 0.8 deixa a voz do Piper mais perto de uma fala natural. 1.0 soava arrastada.
+            var lengthScale = rate <= 0.1 ? 0.8 : 0.8 / rate;
             psi.ArgumentList.Add("--length_scale");
             psi.ArgumentList.Add(lengthScale.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            psi.ArgumentList.Add("--sentence_silence");
+            psi.ArgumentList.Add("0.05");
 
             using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Não foi possível iniciar o Piper.");
             await proc.StandardInput.WriteAsync(text.AsMemory(), ct);

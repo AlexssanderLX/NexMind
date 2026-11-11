@@ -17,7 +17,7 @@ const VOICE_DEFAULTS: VoiceSettings = {
   mode: "auto",
   vadSilenceMs: 900,
   vadSensitivity: 0.06,
-  speechRate: 1,
+  speechRate: 1.15,
   sttEngine: "faster-whisper",
   ttsEngine: "piper",
   ttsVoice: "",

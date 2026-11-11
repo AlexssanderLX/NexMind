@@ -153,8 +153,25 @@ export default function App() {
     refreshList();
   }, [refreshList]);
 
+  // Rolagem: a conversa só acompanha a resposta enquanto você está no fim. Se você sobe para ler, ela para de te puxar;
+  // ao voltar ao fim (ou ao enviar uma mensagem / trocar de conversa) ela volta a acompanhar.
+  const stickRef = useRef(true);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
+    const box = bottomRef.current?.closest<HTMLElement>(".overflow-y-auto");
+    if (!box) return;
+    const onScroll = () => {
+      stickRef.current = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+    };
+    box.addEventListener("scroll", onScroll, { passive: true });
+    return () => box.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    stickRef.current = true;
+  }, [activeId]);
+
+  useEffect(() => {
+    if (stickRef.current) bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
   function toggleSidebar() {
@@ -230,6 +247,7 @@ export default function App() {
 
     if (!textOverride) setInput("");
     else setInput("");
+    stickRef.current = true; // você mandou uma mensagem: volta a acompanhar a resposta
     setMessages((m) => [...m, { role: "user", content: text }, { role: "assistant", content: "" }]);
     setStreaming(true);
     const abort = new AbortController();

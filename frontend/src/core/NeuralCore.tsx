@@ -147,12 +147,24 @@ export default forwardRef<NeuralCoreHandle, Props>(function NeuralCore(props, re
 
     const onLeave = () => coreRef.current?.setPointer(null, null);
 
+    // Clicar no cartão de uma mensagem (data-color-card), da IA ou sua, também troca a cor. Não atrapalha copiar:
+    // com texto selecionado, ou em link, botão, raciocínio (summary), código e tabela, não faz nada.
+    const onCardClick = (e: MouseEvent) => {
+      const t = e.target;
+      if (!(t instanceof Element) || !t.closest("[data-color-card]")) return;
+      if (t.closest("a, button, summary, input, textarea, select, label, pre, code, table")) return;
+      if (window.getSelection()?.toString()) return;
+      propsRef.current.onSphereClick();
+    };
+
+    window.addEventListener("click", onCardClick);
     window.addEventListener("pointermove", onMove, { passive: true });
     window.addEventListener("pointerdown", onDown, { passive: true });
     window.addEventListener("pointerup", onUp, { passive: true });
     window.addEventListener("pointercancel", onUp, { passive: true });
     document.documentElement.addEventListener("pointerleave", onLeave);
     return () => {
+      window.removeEventListener("click", onCardClick);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerdown", onDown);
       window.removeEventListener("pointerup", onUp);

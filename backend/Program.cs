@@ -180,14 +180,20 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             function = new { name = t.QualifiedName, description = t.Description, parameters = t.Schema },
         }).ToList();
         var extra = new List<object>();
-        const int MaxToolRounds = 4;
+        // Tarefas de navegador (abrir, ler, clicar, ler de novo) precisam de mais passos que ler um arquivo.
+        var MaxToolRounds = browserTools.Count > 0 ? 8 : 4;
         // Custo de contexto: cada leitura é cortada em ~metade do contexto (em caracteres, 1500..8000) e a rodada inteira
         // não passa de ~1 caractere por token de contexto; acabou o orçamento, o modelo responde com o que já leu.
         var resultCap = Math.Clamp(req.NumCtx / 2, 1500, 8000);
-        var turnBudget = req.NumCtx;
+        var turnBudget = browserTools.Count > 0 ? req.NumCtx * 3 / 2 : req.NumCtx;
 
         for (var round = 0; round <= MaxToolRounds; round++)
         {
+            if (round == MaxToolRounds)
+            {
+                // Última rodada: sem ferramentas. Sem este aviso o modelo tenta chamar uma ferramenta e escreve a chamada como texto.
+                extra.Add(new { role = "user", content = "[sistema] Você atingiu o limite de ferramentas desta resposta. Responda agora com o que já leu, sem chamar mais ferramentas, e diga o que ficou por fazer." });
+            }
             List<ToolCall>? calls = null;
             var roundText = new StringBuilder();
             await foreach (var chunk in ollama.ChatAsync(req.Model, system, history, req.NumCtx, req.Think, numGpu,

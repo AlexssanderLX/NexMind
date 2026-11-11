@@ -1,26 +1,25 @@
-const PORT = 9334;
 const GROUP = "Nex";
-let socket = null;
+let port = null;
 let groupId = null;
 
 function connect() {
-  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
-  socket = new WebSocket("ws://127.0.0.1:" + PORT);
-  socket.onopen = () => socket.send(JSON.stringify({ type: "hello" }));
-  socket.onmessage = (event) => {
-    let msg;
-    try { msg = JSON.parse(event.data); } catch { return; }
+  if (port) return;
+  port = chrome.runtime.connectNative("com.nex.chrome");
+  port.onMessage.addListener((msg) => {
     handle(msg).then(
       (result) => reply(msg.id, true, result, null),
       (error) => reply(msg.id, false, null, String(error && error.message ? error.message : error))
     );
-  };
-  socket.onclose = () => setTimeout(connect, 1500);
+  });
+  port.onDisconnect.addListener(() => {
+    port = null;
+    setTimeout(connect, 1500);
+  });
 }
 
 function reply(id, ok, result, error) {
-  if (!socket || socket.readyState !== WebSocket.OPEN) return;
-  socket.send(JSON.stringify({ id, ok, result, error }));
+  if (!port) return;
+  port.postMessage({ id, ok, result, error });
 }
 
 async function nexTabs() {
@@ -113,4 +112,3 @@ async function handle(msg) {
 }
 
 connect();
-setInterval(connect, 5000);

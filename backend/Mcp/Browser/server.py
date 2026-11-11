@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
 import itertools
 import json
 
@@ -23,9 +21,9 @@ _MAX_TOKENS = 1500
 _CHARS_PER_TOKEN = 4
 
 _MISSING = (
-    "A extensão Nex não está conectada neste Chrome. "
-    "Carregue uma vez a pasta extension/chrome em chrome://extensions, modo do desenvolvedor, sem fechar o Chrome. "
-    "O Nex só mexe nas abas do grupo Nex. Não rode iniciar-chrome-sessao.ps1 e não reinicie o navegador."
+    "A extensão Nex não está ligada ao Chrome aberto. "
+    "Carregue uma vez a pasta extension/chrome em chrome://extensions, modo do desenvolvedor. "
+    "O Chrome chama o host com.nex.chrome. Não abra outro navegador e não reinicie este."
 )
 
 
@@ -43,58 +41,28 @@ async def _read_exact(reader: asyncio.StreamReader, n: int) -> bytes:
 
 async def _read_frame(reader: asyncio.StreamReader) -> str | None:
     try:
-        header = await _read_exact(reader, 2)
+        header = await _read_exact(reader, 4)
     except asyncio.IncompleteReadError:
         return None
-    length = header[1] & 0x7F
-    if length == 126:
-        length = int.from_bytes(await _read_exact(reader, 2), "big")
-    elif length == 127:
-        length = int.from_bytes(await _read_exact(reader, 8), "big")
-    mask = await _read_exact(reader, 4) if header[1] & 0x80 else b""
-    payload = await _read_exact(reader, length)
-    if mask:
-        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
-    opcode = header[0] & 0x0F
-    if opcode == 0x8:
+    length = int.from_bytes(header, "little")
+    if length <= 0 or length > 1024 * 1024:
         return None
-    if opcode == 0x9:
-        await _send_frame(_writer, payload, 0xA)
-        return await _read_frame(reader)
+    try:
+        payload = await _read_exact(reader, length)
+    except asyncio.IncompleteReadError:
+        return None
     return payload.decode("utf-8", "replace")
 
 
-async def _send_frame(writer: asyncio.StreamWriter, payload: bytes, opcode: int = 0x1) -> None:
+async def _send_frame(writer: asyncio.StreamWriter, payload: bytes) -> None:
     if writer is None:
         return
-    head = bytes([0x80 | opcode])
-    n = len(payload)
-    if n < 126:
-        head += bytes([n])
-    elif n < 65536:
-        head += bytes([126]) + n.to_bytes(2, "big")
-    else:
-        head += bytes([127]) + n.to_bytes(8, "big")
-    writer.write(head + payload)
+    writer.write(len(payload).to_bytes(4, "little") + payload)
     await writer.drain()
 
 
 async def _client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     global _reader, _writer
-    request = await reader.readuntil(b"\r\n\r\n")
-    text = request.decode("utf-8", "replace")
-    key = ""
-    for line in text.split("\r\n"):
-        if line.lower().startswith("sec-websocket-key:"):
-            key = line.split(":", 1)[1].strip()
-    accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
-    writer.write(
-        "HTTP/1.1 101 Switching Protocols\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        f"Sec-WebSocket-Accept: {accept}\r\n\r\n".encode()
-    )
-    await writer.drain()
     _reader, _writer = reader, writer
     try:
         while True:

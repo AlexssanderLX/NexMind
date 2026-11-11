@@ -16,7 +16,7 @@ function normalizeMath(text: string): string {
 function MessageView({ m, streaming }: { m: Message; streaming?: boolean }) {
   if (m.role === "user") {
     return (
-      <div className="flex justify-end">
+      <div className="flex justify-end" data-no-core>
         <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl bg-panel px-4 py-2.5 text-[15px] leading-relaxed">
           {m.content}
         </div>
@@ -26,7 +26,7 @@ function MessageView({ m, streaming }: { m: Message; streaming?: boolean }) {
 
   const thinkingNow = streaming && !m.content;
   return (
-    <div className="text-[15px] leading-7">
+    <div className="text-[15px] leading-7" data-no-core>
       {m.thinking && (
         <details className="mb-3 text-sm text-mute" open={thinkingNow}>
           <summary className="cursor-pointer select-none hover:text-fg">

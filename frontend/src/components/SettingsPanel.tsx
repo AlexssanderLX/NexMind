@@ -1,4 +1,5 @@
 import type { OllamaStatus, Settings } from "../types";
+import CoreSettings, { type CoreSettingsProps } from "./CoreSettings";
 
 const field =
   "mt-1 w-full rounded-lg border border-line bg-bg px-3 py-1.5 text-sm text-fg outline-none focus:border-accent/60";
@@ -9,12 +10,14 @@ export default function SettingsPanel({
   status,
   bgAnim,
   onBgAnim,
+  core,
 }: {
   settings: Settings;
   onChange: (s: Settings) => void;
   status: OllamaStatus | null;
   bgAnim: boolean;
   onBgAnim: (v: boolean) => void;
+  core: CoreSettingsProps;
 }) {
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => onChange({ ...settings, [k]: v });
   const installed = (name: string) => !status?.connected || status.models.some((m) => m.name === name);
@@ -74,8 +77,9 @@ export default function SettingsPanel({
       </label>
       <label className="flex items-center gap-2 text-xs text-mute sm:col-span-3">
         <input type="checkbox" checked={bgAnim} onChange={(e) => onBgAnim(e.target.checked)} className="accent-cyan-400" />
-        Animação 3D de fundo (usa um pouco de CPU; desligue se quiser o mínimo de consumo)
+        Núcleo neural 3D (desligue para o mínimo de consumo)
       </label>
+      <CoreSettings {...core} />
       <p className="text-[11px] text-mute sm:col-span-3">
         O botão "Raciocínio" no campo de texto escolhe qual modelo responde a próxima mensagem. A conversa é a mesma nos
         dois modos. Valem para as próximas mensagens; contexto maior consome mais VRAM/RAM.

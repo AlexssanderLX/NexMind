@@ -64,6 +64,12 @@ api.MapGet("/conversations/{id}", (string id, ConversationStore s) =>
     s.Get(id) is { } c ? Results.Ok(c) : Results.NotFound());
 api.MapDelete("/conversations/{id}", (string id, ConversationStore s) =>
     s.Delete(id) ? Results.NoContent() : Results.NotFound());
+// Renomear: só o título muda; histórico, fatos e caderno ficam como estão
+api.MapPatch("/conversations/{id}", (string id, RenameRequest body, ConversationStore s) =>
+{
+    if (string.IsNullOrWhiteSpace(body.Title)) return Results.BadRequest("O nome não pode ficar vazio.");
+    return s.Rename(id, body.Title) is { } title ? Results.Ok(new { id, title }) : Results.NotFound();
+});
 // Caderno da conversa (índices e tópicos): leitura, para inspeção e testes
 api.MapGet("/conversations/{id}/memory", (string id, ConversationMemory m) =>
 {
@@ -94,7 +100,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         // o título não deve mostrar o texto do arquivo anexado
         var plain = System.Text.RegularExpressions.Regex.Replace(userText, @"\[\[ARQUIVO [^\]]*\]\][\s\S]*?\[\[/ARQUIVO\]\]\s*", "").Trim();
         if (plain.Length == 0) plain = "Arquivo anexado";
-        conv.Title = plain.Length > 48 ? plain[..48] + "…" : plain;
+        if (!conv.TitleEdited) conv.Title = plain.Length > 48 ? plain[..48] + "…" : plain;
         memory.SetIntent(conv.Id, userText); // 1ª mensagem = objetivo da conversa (intent.md), sem o texto dos anexos
     }
     conv.Model = req.Model;
@@ -307,6 +313,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
     if (content.Length > 0 || thinking.Length > 0)
         conv.Messages.Add(new Message("assistant", content.ToString(),
             thinking.Length > 0 ? thinking.ToString() : null, DateTime.UtcNow, stats, req.Model));
+    // se você renomeou a conversa enquanto o Nex respondia, o nome novo vale (esta cópia em memória é anterior)
+    if (store.Get(id) is { TitleEdited: true } renamed) { conv.Title = renamed.Title; conv.TitleEdited = true; }
     store.Save(conv);
 
     if (ct.IsCancellationRequested) return;

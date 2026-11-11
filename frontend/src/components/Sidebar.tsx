@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ConversationSummary } from "../types";
 
 const PanelIcon = () => (
@@ -24,9 +26,11 @@ export default function Sidebar({
   onNew,
   onSelect,
   onDelete,
+  onRename,
   onSettings,
 }: {
   onSettings: () => void;
+  onRename: (id: string, title: string) => void;
   items: ConversationSummary[];
   activeId: string | null;
   connected: boolean;
@@ -38,6 +42,34 @@ export default function Sidebar({
   onDelete: (id: string) => void;
 }) {
   const dot = <span className={`h-2 w-2 shrink-0 rounded-full ${connected ? "bg-emerald-400" : "bg-red-500"}`} />;
+
+  // Renomear: lápis ou duplo clique no nome. Enter ou sair do campo salva; Esc cancela.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingRef = useRef<string | null>(null);
+  const [draft, setDraft] = useState("");
+  // Apagar: confirmação que diz o que some junto com a conversa
+  const [pendingDelete, setPendingDelete] = useState<ConversationSummary | null>(null);
+
+  function startRename(c: ConversationSummary) {
+    editingRef.current = c.id;
+    setEditingId(c.id);
+    setDraft(c.title);
+  }
+
+  function finishRename(c: ConversationSummary, save: boolean) {
+    if (editingRef.current !== c.id) return; // já foi salvo ou cancelado (Enter/Esc seguidos do blur)
+    editingRef.current = null;
+    setEditingId(null);
+    const title = draft.trim();
+    if (save && title && title !== c.title) onRename(c.id, title);
+  }
+
+  useEffect(() => {
+    if (!pendingDelete) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setPendingDelete(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pendingDelete]);
 
   return (
     <aside
@@ -91,16 +123,41 @@ export default function Sidebar({
                   c.id === activeId ? "bg-accent/10 text-accent" : "hover:bg-white/5"
                 }`}
               >
-                <button className="flex-1 truncate text-left" onClick={() => onSelect(c.id)} title={c.title}>
-                  {c.title}
-                </button>
-                <button
-                  className="ml-2 hidden text-mute hover:text-red-400 group-hover:block"
-                  onClick={() => confirm("Apagar esta conversa?") && onDelete(c.id)}
-                  title="Apagar"
-                >
-                  ✕
-                </button>
+                {editingId === c.id ? (
+                  <input
+                    autoFocus
+                    value={draft}
+                    maxLength={80}
+                    aria-label="Novo nome da conversa"
+                    onChange={(e) => setDraft(e.target.value)}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") finishRename(c, true);
+                      if (e.key === "Escape") finishRename(c, false);
+                    }}
+                    onBlur={() => finishRename(c, true)}
+                    className="min-w-0 flex-1 rounded border border-accent/40 bg-black/30 px-2 py-0.5 text-sm text-fg outline-none focus:border-accent"
+                  />
+                ) : (
+                  <button
+                    className="flex-1 truncate text-left"
+                    onClick={() => onSelect(c.id)}
+                    onDoubleClick={() => startRename(c)}
+                    title={`${c.title} (duplo clique para renomear)`}
+                  >
+                    {c.title}
+                  </button>
+                )}
+                {editingId !== c.id && (
+                  <>
+                    <button className="ml-2 hidden text-mute hover:text-accent group-hover:block" onClick={() => startRename(c)} title="Renomear">
+                      ✎
+                    </button>
+                    <button className="ml-2 hidden text-mute hover:text-red-400 group-hover:block" onClick={() => setPendingDelete(c)} title="Apagar">
+                      ✕
+                    </button>
+                  </>
+                )}
               </div>
             ))}
           </nav>
@@ -119,6 +176,56 @@ export default function Sidebar({
           </div>
         </div>
       )}
+
+      {pendingDelete &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+            onMouseDown={(e) => e.target === e.currentTarget && setPendingDelete(null)}
+          >
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="apagar-titulo"
+              className="w-full max-w-md rounded-xl border border-red-400/30 bg-[#0f1c33] p-5 shadow-2xl"
+            >
+              <h2 id="apagar-titulo" className="text-base font-semibold">
+                Apagar esta conversa?
+              </h2>
+              <p className="mt-1 truncate text-sm text-accent" title={pendingDelete.title}>
+                {pendingDelete.title}
+              </p>
+              <p className="mt-3 text-sm">
+                Isso apaga <strong>todos os dados registrados nela</strong>, e não só as mensagens:
+              </p>
+              <ul className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-mute">
+                <li>o histórico das mensagens;</li>
+                <li>o objetivo da conversa e os fatos comprovados;</li>
+                <li>o caderno do Nex (hipóteses, planos e anotações).</li>
+              </ul>
+              <p className="mt-3 text-sm font-medium text-red-300">Não tem como desfazer.</p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  autoFocus
+                  onClick={() => setPendingDelete(null)}
+                  className="rounded-lg border border-line px-4 py-2 text-sm hover:bg-white/5"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    onDelete(pendingDelete.id);
+                    setPendingDelete(null);
+                  }}
+                  className="rounded-lg bg-red-500/90 px-4 py-2 text-sm font-medium text-white hover:bg-red-500"
+                >
+                  Apagar tudo
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </aside>
   );
 }

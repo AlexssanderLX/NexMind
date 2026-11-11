@@ -221,6 +221,17 @@ export default function App() {
     refreshList();
   }
 
+  async function rename(id: string, title: string) {
+    try {
+      const done = await api.rename(id, title);
+      // atualiza na hora (o título do topo também), e confirma com a lista do servidor
+      setConversations((list) => list.map((c) => (c.id === id ? { ...c, title: done.title } : c)));
+    } catch (e) {
+      setChatError(`Não foi possível renomear: ${(e as Error).message}`);
+    }
+    refreshList();
+  }
+
   async function send(textOverride?: string, fromVoice = false, heardAt = performance.now()) {
     const typed = (textOverride ?? input).trim();
     const files = textOverride ? [] : attachments; // anexos só vão em mensagens digitadas
@@ -395,6 +406,7 @@ export default function App() {
         onNew={newConversation}
         onSelect={select}
         onDelete={remove}
+        onRename={rename}
         onSettings={() => setShowSettings(true)}
       />
 

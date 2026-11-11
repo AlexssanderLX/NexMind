@@ -13,6 +13,12 @@ export const api = {
   create: () => req<Conversation>("/api/conversations", { method: "POST" }),
   get: (id: string) => req<Conversation>(`/api/conversations/${id}`),
   remove: (id: string) => req<void>(`/api/conversations/${id}`, { method: "DELETE" }),
+  rename: (id: string, title: string) =>
+    req<{ id: string; title: string }>(`/api/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }),
   voiceStatus: () => req<VoiceStatus>("/api/voice/status"),
   /** Resposta do usuário a uma ferramenta que pede aprovação (Autorizar/Rejeitar). */
   approve: (id: string, approve: boolean) =>

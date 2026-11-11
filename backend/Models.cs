@@ -9,6 +9,8 @@ public class Conversation
 {
     public string Id { get; set; } = "";
     public string Title { get; set; } = "Nova conversa";
+    /// <summary>true depois que o usuário renomeou: o título automático (1ª mensagem) não sobrescreve mais.</summary>
+    public bool TitleEdited { get; set; }
     public string? Model { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -16,6 +18,8 @@ public class Conversation
 }
 
 public record ConversationSummary(string Id, string Title, DateTime UpdatedAt);
+
+public record RenameRequest(string? Title);
 
 /// <param name="Think">null = padrão do modelo; true/false força o modo de raciocínio.</param>
 /// <param name="System">Prompt de sistema opcional (não é salvo na conversa; vem das configurações).</param>

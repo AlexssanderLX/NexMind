@@ -118,6 +118,22 @@ try
     Check("gravações paralelas não corrompem (30 fatos, 30 notas)",
         Read(c2.Id, "facts").Split('\n').Count(l => l.StartsWith("- ")) == 30 && Read(c2.Id, "scratchpad").Split('\n').Count(l => l.StartsWith("- [")) == 30);
 
+    // ---------- renomear
+    var rn = store.Create();
+    var before = store.List().First(s => s.Id == rn.Id).UpdatedAt;
+    Thread.Sleep(30);
+    Check("Rename devolve o título limpo (espaços colapsados)", store.Rename(rn.Id, "  Auditoria   do  endpoint X \n") == "Auditoria do endpoint X");
+    var renamed = store.Get(rn.Id)!;
+    Check("Rename grava o título e marca TitleEdited", renamed.Title == "Auditoria do endpoint X" && renamed.TitleEdited);
+    Check("Rename não mexe na data (não sobe na lista)", renamed.UpdatedAt == before && store.List().First(s => s.Id == rn.Id).UpdatedAt == before);
+    Check("Rename aparece na lista", store.List().Any(s => s.Id == rn.Id && s.Title == "Auditoria do endpoint X"));
+    Check("Rename corta em 80 caracteres", store.Rename(rn.Id, new string('a', 200))!.Length == ConversationStore.MaxTitleChars);
+    Check("Rename vazio ou só espaços = recusado", store.Rename(rn.Id, "   ") is null && store.Rename(rn.Id, null) is null && store.Get(rn.Id)!.Title.StartsWith("aaa"));
+    Check("Rename de id inexistente ou malicioso = null", store.Rename("0000000000000000000000000000dead", "x") is null && store.Rename("../x", "x") is null && store.Rename("..", "x") is null);
+    Check("Rename mantém histórico, fatos e caderno", File.Exists(Path.Combine(convDir, rn.Id, "scratchpad.md")) && File.Exists(Path.Combine(convDir, rn.Id, "facts.md")) && store.Get(rn.Id)!.Messages.Count == 0);
+    var store3 = new ConversationStore(convDir);
+    Check("Rename sobrevive a reiniciar o Nex", store3.List().Any(s => s.Id == rn.Id && s.Title.StartsWith("aaa")));
+
     // ---------- Delete leva a micropasta inteira
     Check("Delete remove a micropasta inteira", store.Delete(c2.Id) && !Directory.Exists(Path.Combine(convDir, c2.Id)) && store.Get(c2.Id) is null);
     Check("Delete de conversa inexistente = false", !store.Delete(c2.Id));

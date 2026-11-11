@@ -90,9 +90,10 @@ public partial class ConversationStore
         }
     }
 
-    public void Save(Conversation c)
+    /// <param name="touch">false = não mexe na data de atualização (renomear não deve subir a conversa na lista).</param>
+    public void Save(Conversation c, bool touch = true)
     {
-        c.UpdatedAt = DateTime.UtcNow;
+        if (touch) c.UpdatedAt = DateTime.UtcNow;
         var json = JsonSerializer.Serialize(c, Json); // compacto: arquivos menores e escrita mais rápida
         lock (_lock)
         {
@@ -103,6 +104,25 @@ public partial class ConversationStore
             File.WriteAllText(tmp, json);
             File.Move(tmp, path, overwrite: true);
             _index[c.Id] = new ConversationSummary(c.Id, c.Title, c.UpdatedAt);
+        }
+    }
+
+    public const int MaxTitleChars = 80;
+
+    /// <summary>Renomeia. Devolve null se a conversa não existe, ou o título já limpo (espaços colapsados, até 80 caracteres).</summary>
+    public string? Rename(string id, string? title)
+    {
+        var clean = Regex.Replace(title ?? "", @"\s+", " ").Trim();
+        if (clean.Length == 0) return null;
+        if (clean.Length > MaxTitleChars) clean = clean[..MaxTitleChars].TrimEnd();
+        lock (_lock)
+        {
+            var c = Get(id);
+            if (c is null) return null;
+            c.Title = clean;
+            c.TitleEdited = true;
+            Save(c, touch: false);
+            return clean;
         }
     }
 

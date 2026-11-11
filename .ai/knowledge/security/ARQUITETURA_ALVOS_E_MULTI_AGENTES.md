@@ -112,3 +112,4 @@ Para que os subagentes operem sem colisão de tarefas:
 - **Auth Agent:** Especialista em quebra de controle de acesso (BOLA, BFLA). Testa se a Conta A acessa dados da Conta B.
 - **Input Agent:** Especialista em validação de entrada (XSS, SSRF, SQLi). Usa marcadores alfanuméricos inofensivos (`WSTG_TEST_<hash>`).
 - **Verify Agent:** Atua como filtro crítico: se o servidor retornou 200, ele verifica se houve vazamento real ou se foi um erro silencioso com status 200.
+

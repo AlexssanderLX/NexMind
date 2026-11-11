@@ -5,6 +5,8 @@ import MessageView from "./components/MessageView";
 import MetricsModal, { loadColor, loadPercent } from "./components/MetricsModal";
 import SettingsPanel from "./components/SettingsPanel";
 import Sidebar from "./components/Sidebar";
+import { usePolling } from "./hooks/usePolling";
+import { createTokenBuffer } from "./lib/tokenBuffer";
 import type { ConversationSummary, Message, Metrics, OllamaStatus, Settings } from "./types";
 
 const DEFAULTS: Settings = {
@@ -75,28 +77,18 @@ export default function App() {
     localStorage.setItem("settings", JSON.stringify(settings));
   }, [settings]);
 
-  // Conexão com o Ollama (a cada 5s)
-  useEffect(() => {
-    const poll = async () => {
-      try {
-        setStatus(await api.status());
-        setBackendDown(false);
-      } catch {
-        setBackendDown(true);
-      }
-    };
-    poll();
-    const t = setInterval(poll, 5000);
-    return () => clearInterval(t);
-  }, []);
+  // Conexão com o Ollama (a cada 10 s) e consumo (10 s só para a cor da bolinha; 1,5 s com o modal aberto).
+  // As consultas pausam com a aba escondida.
+  usePolling(async () => {
+    try {
+      setStatus(await api.status());
+      setBackendDown(false);
+    } catch {
+      setBackendDown(true);
+    }
+  }, 10_000);
 
-  // Consumo: devagar (5s) só para a cor da bolinha; rápido (1,5s) enquanto o modal está aberto
-  useEffect(() => {
-    const poll = () => api.metrics().then(setMetrics).catch(() => setMetrics(null));
-    poll();
-    const t = setInterval(poll, showMetrics ? 1500 : 5000);
-    return () => clearInterval(t);
-  }, [showMetrics]);
+  usePolling(() => api.metrics().then(setMetrics).catch(() => setMetrics(null)), showMetrics ? 1_500 : 10_000);
 
   useEffect(() => {
     refreshList();
@@ -178,6 +170,11 @@ export default function App() {
     const patchLast = (fn: (m: Message) => Message) =>
       setMessages((all) => all.map((m, i) => (i === all.length - 1 ? fn(m) : m)));
 
+    // tokens em lotes (ver lib/tokenBuffer): re-renderizar a cada token é o maior custo do streaming
+    const buffer = createTokenBuffer((c, t) =>
+      patchLast((m) => ({ ...m, content: m.content + c, thinking: t ? (m.thinking ?? "") + t : m.thinking })),
+    );
+
     let firstEvent = true;
     try {
       await streamChat(
@@ -190,16 +187,22 @@ export default function App() {
             firstEvent = false;
             refreshList(); // a conversa já está salva com título: mostra na sidebar logo
           }
-          if (ev.type === "token") patchLast((m) => ({ ...m, content: m.content + ev.text }));
-          else if (ev.type === "thinking") patchLast((m) => ({ ...m, thinking: (m.thinking ?? "") + ev.text }));
-          else if (ev.type === "done") patchLast((m) => ({ ...m, stats: ev.stats }));
-          else if (ev.type === "error") setChatError(ev.message);
+          if (ev.type === "token") buffer.push("content", ev.text);
+          else if (ev.type === "thinking") buffer.push("thinking", ev.text);
+          else if (ev.type === "done") {
+            buffer.flush();
+            patchLast((m) => ({ ...m, stats: ev.stats }));
+          } else if (ev.type === "error") {
+            buffer.flush();
+            setChatError(ev.message);
+          }
         },
         abort.signal,
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") setChatError(`Falha na conexão com o backend: ${(e as Error).message}`);
     } finally {
+      buffer.flush(); // parada/queda: entrega o que já chegou
       setStreaming(false);
       abortRef.current = null;
       // Sincroniza com o que foi salvo no servidor (inclui parciais e a pergunta mesmo em caso de erro)

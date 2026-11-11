@@ -27,6 +27,29 @@ Desenvolvimento com hot reload: `dotnet run` em `backend/` e `npm run dev` em `f
 - `frontend/` — React + TypeScript + Tailwind. Respostas renderizam markdown e fórmulas matemáticas (KaTeX; aceita `$..$`, `$$..$$`, `\(..\)` e `\[..\]`).
 - **MCPs** e **Regras/políticas**: ainda não implementados (reservados para etapas futuras).
 
+## Desempenho
+Medido nesta máquina (RTX 3050 6 GB, 16 GB RAM), antes → depois:
+- **Streaming na tela**: tokens em lotes de 150–700 ms. Uma resposta de 3000 caracteres custava ~72% de um núcleo só
+  para reprocessar markdown e fórmulas a cada token; agora ~7–15%. Teste real: 520 tokens, 55 atualizações de tela
+  (antes ~520) e nenhuma tarefa longa (>50 ms).
+- **Consumo da GPU**: lido pela NVML (`nvml.dll`, do driver) em vez de abrir o `nvidia-smi` (~102 ms) a cada consulta.
+  CPU do backend por rodada de consultas: 88,7 → 36,3 ms (mesma máquina, mesmo roteiro). O `nvidia-smi` só entra como
+  plano B, no máximo a cada 5 s.
+- **Lista de conversas**: índice em memória. Com 150 conversas (14 MB) caiu de ~1 s para ~30 ms por chamada.
+  Salvamento via arquivo temporário (fechar o app no meio não corrompe a conversa).
+- **Consultas da tela**: status e consumo a cada 10 s (1,5 s só com o modal aberto) e pausam com a aba escondida.
+- **Perfil econômico do Ollama** (aplicado pelo `iniciar-nex.ps1` quando ele inicia o Ollama): `OLLAMA_FLASH_ATTENTION=1`,
+  `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`.
+
+  | Contexto | Antes | Depois |
+  |---|---|---|
+  | 4.096 | 3.033 MB na VRAM, 42,7 tok/s | 2.766 MB, ~42 tok/s |
+  | 16.384 | 4.072 de 5.142 MB (79% na GPU), 25,3 tok/s | 3.719 MB (100% na GPU), 41,4 tok/s |
+
+  Com `NUM_PARALLEL=1` pedidos simultâneos entram em fila (a VRAM não comporta o cache de contexto multiplicado). Se o
+  Ollama já estiver aberto (ex.: iniciado com o Windows), o perfil não é aplicado: feche-o e abra pelo atalho, ou
+  defina essas variáveis de ambiente do usuário. O cache `q8_0` quase não afeta a qualidade, mas não foi avaliado aqui.
+
 ## Interface
 - **Consumo do sistema**: a bolinha no canto superior direito (cor = maior uso entre CPU, RAM, GPU e VRAM) abre um
   modal com os detalhes. Fica fora da tela o resto do tempo.

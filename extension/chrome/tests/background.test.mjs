@@ -10,11 +10,12 @@ const SRC = fs.readFileSync(process.env.NEX_BG || path.join(path.dirname(fileURL
 
 // Chrome falso: guarda abas, grupos e debugger para conferir exatamente o que a extensao tocou.
 function boot(seed = {}) {
-  const world = { tabs: new Map(), groups: new Map(), nextTab: 100, nextGroup: 500, attached: [], detached: [], navigations: [], session: {}, replies: [], listener: null, failCommand: false, loadMs: 20 };
+  const world = { tabs: new Map(), groups: new Map(), nextTab: 100, nextGroup: 500, attached: [], detached: [], navigations: [], session: {}, replies: [], listener: null, failCommand: false, loadMs: 20, reloaded: 0, files: { "background.js": "v1", "manifest.json": "m1" }, tick: null };
+  world.fetch = async (url) => ({ text: async () => world.files[url.split("/").pop()] });
   for (const t of seed.tabs || []) world.tabs.set(t.id, { groupId: -1, url: "about:blank", ...t });
   for (const g of seed.groups || []) world.groups.set(g.id, g);
   const chrome = {
-    runtime: { connectNative: () => ({
+    runtime: { getURL: (f) => "chrome-extension://nex/" + f, reload: () => { world.reloaded += 1; }, connectNative: () => ({
       onMessage: { addListener: (f) => { world.listener = f; } },
       onDisconnect: { addListener() {} },
       postMessage: (m) => world.replies.push(m)
@@ -39,7 +40,7 @@ function boot(seed = {}) {
       }
     }
   };
-  vm.runInNewContext(SRC, { chrome, setTimeout, console, structuredClone, JSON, Number, String, Error, Promise, RegExp, Date, URL });
+  vm.runInNewContext(SRC, { chrome, fetch: (...a) => world.fetch(...a), setInterval: (f) => { world.tick = f; return 0; }, setTimeout, console, structuredClone, JSON, Number, String, Error, Promise, RegExp, Date, URL });
   let id = 0;
   world.send = (msg) => new Promise((resolve) => {
     const mid = ++id;
@@ -185,4 +186,22 @@ test("mudanca so de #hash nao espera carregamento", async () => {
   const r = await w.send({ op: "navigate", url: "https://example.com/#a" });
   assert.equal(r.ok, true);
   assert.ok(Date.now() - t0 < 1500, "nao ficou esperando");
+});
+
+test("a extensao se recarrega sozinha so quando os proprios arquivos mudam", async () => {
+  const w = boot();
+  await new Promise((r) => setTimeout(r, 20));
+  await w.tick();
+  assert.equal(w.reloaded, 0, "sem mudanca nao recarrega");
+  w.files["background.js"] = "v2";
+  await w.tick();
+  assert.equal(w.reloaded, 1, "arquivo mudou: recarrega");
+});
+
+test("falha ao ler o proprio arquivo nao recarrega nem derruba a extensao", async () => {
+  const w = boot();
+  await new Promise((r) => setTimeout(r, 20));
+  w.fetch = async () => { throw new Error("arquivo em escrita"); };
+  await w.tick();
+  assert.equal(w.reloaded, 0);
 });

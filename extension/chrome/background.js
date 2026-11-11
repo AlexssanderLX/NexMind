@@ -175,4 +175,36 @@ async function handle(msg) {
   throw new Error("Operação desconhecida.");
 }
 
+
+// Recarrega a extensão sozinha quando os arquivos dela mudam (extensão sem pacote): você não precisa mais clicar em
+// "recarregar" em chrome://extensions depois de cada atualização do Nex.
+const WATCHED = ["background.js", "manifest.json"];
+let fingerprint = null;
+
+function hashText(text) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return String(h);
+}
+
+async function readFingerprint() {
+  let out = "";
+  for (const file of WATCHED) {
+    const res = await fetch(chrome.runtime.getURL(file), { cache: "no-store" });
+    out += hashText(await res.text()) + ";";
+  }
+  return out;
+}
+
+async function watchSelf() {
+  try {
+    const now = await readFingerprint();
+    if (fingerprint === null) fingerprint = now;
+    else if (now !== fingerprint) chrome.runtime.reload();
+  } catch { /* arquivo em escrita: tenta no próximo ciclo */ }
+}
+
+setInterval(watchSelf, 4000);
+watchSelf();
+
 connect();

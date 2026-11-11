@@ -59,11 +59,6 @@ if (-not (Test-Url "http://localhost:11434/api/version")) { Stop-WithError "O Ol
 Log "Ollama pronto." Green
 
 # ---------------------------------------------------------------------------------------------------------------
-# 2b. Chrome pessoal na porta 9222, com o perfil logado. Reinicia o Chrome se a porta não estiver ativa.
-# ---------------------------------------------------------------------------------------------------------------
-& "$PSScriptRoot\iniciar-chrome-sessao.ps1"
-
-# ---------------------------------------------------------------------------------------------------------------
 # 3. Tela (frontend): recompila quando mudou
 # ---------------------------------------------------------------------------------------------------------------
 $index = "$root\backend\wwwroot\index.html"

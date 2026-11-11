@@ -21,6 +21,14 @@ Desenvolvimento com hot reload: `dotnet run` em `backend/` e `npm run dev` em `f
 - `frontend/` — React + TypeScript + Tailwind. Respostas renderizam markdown e fórmulas matemáticas (KaTeX; aceita `$..$`, `$$..$$`, `\(..\)` e `\[..\]`).
 - **MCPs** e **Regras/políticas**: ainda não implementados (reservados para etapas futuras).
 
+## Interface
+- **Consumo do sistema**: a bolinha no canto superior direito (cor = maior uso entre CPU, RAM, GPU e VRAM) abre um
+  modal com os detalhes. Fica fora da tela o resto do tempo.
+- **Sidebar minimizável** (a escolha fica salva no navegador).
+- **Fundo animado**: esfera 3D de nós em Canvas 2D, de propósito sem WebGL para não disputar a GPU com o modelo
+  (~0,7 ms por quadro, 30 fps, pausa com a aba escondida, acelera quando o Nex responde). Dá para desligar em
+  Configurações.
+
 ## Modos: Conversa e Raciocínio
 O botão **✦ Raciocínio** no campo de texto escolhe qual modelo responde a próxima mensagem:
 - **Conversa** (padrão): `qwen3:4b-instruct`, rápido e direto (`ollama pull qwen3:4b-instruct`).

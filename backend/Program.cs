@@ -34,6 +34,8 @@ builder.Services.AddHttpClient("search", http =>
     http.DefaultRequestHeaders.UserAgent.ParseAdd("NexMind/1.0 (pesquisa local)");
 });
 builder.Services.AddSingleton<Research>();
+builder.Services.AddSingleton(new McpRegistry(Path.Combine(builder.Environment.ContentRootPath, "mcp_servers.json")));
+builder.Services.AddSingleton<ApprovalBroker>();
 
 var app = builder.Build();
 var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -68,7 +70,7 @@ api.MapDelete("/conversations/{id}", (string id, ConversationStore s) =>
 
 // --- Chat com streaming (NDJSON: {type: thinking|token|done|error, ...})
 api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpContext ctx,
-    ConversationStore store, OllamaClient ollama, Research research) =>
+    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals) =>
 {
     var ct = ctx.RequestAborted;
     var conv = store.Get(id);
@@ -135,19 +137,83 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         {
         // Qwen3 4B tem 36 camadas. Acima de 16 mil tokens, 24 ficam na GPU e 12 na RAM desde o carregamento.
         int? numGpu = req.NumCtx > 16384 ? 24 : null;
-        await foreach (var chunk in ollama.ChatAsync(req.Model, system, history, req.NumCtx, req.Think, numGpu, ct))
+
+        // Ferramentas MCP (só quando o usuário ligou): o modelo pode pedir uma ferramenta; o backend executa e devolve o resultado.
+        IReadOnlyList<NexTool> mcpTools = [];
+        if (req.Tools)
         {
-            if (!string.IsNullOrEmpty(chunk.Thinking))
+            await Send(new { type = "mcp", name = "mcp", state = "carregando" });
+            mcpTools = await mcp.GetToolsAsync(false, ct);
+        }
+        var ollamaTools = mcpTools.Select(t => (object)new
+        {
+            type = "function",
+            function = new { name = t.QualifiedName, description = t.Description, parameters = t.Schema },
+        }).ToList();
+        var extra = new List<object>();
+        const int MaxToolRounds = 4;
+
+        for (var round = 0; round <= MaxToolRounds; round++)
+        {
+            List<ToolCall>? calls = null;
+            var roundText = new StringBuilder();
+            await foreach (var chunk in ollama.ChatAsync(req.Model, system, history, req.NumCtx, req.Think, numGpu,
+                               extra, round < MaxToolRounds ? ollamaTools : null, ct))
             {
-                thinking.Append(chunk.Thinking);
-                await Send(new { type = "thinking", text = chunk.Thinking });
+                if (!string.IsNullOrEmpty(chunk.Thinking))
+                {
+                    thinking.Append(chunk.Thinking);
+                    await Send(new { type = "thinking", text = chunk.Thinking });
+                }
+                if (!string.IsNullOrEmpty(chunk.Content))
+                {
+                    content.Append(chunk.Content);
+                    roundText.Append(chunk.Content);
+                    await Send(new { type = "token", text = chunk.Content });
+                }
+                if (chunk.ToolCalls is { Count: > 0 }) calls = chunk.ToolCalls;
+                if (chunk.Stats is not null) stats = chunk.Stats;
             }
-            if (!string.IsNullOrEmpty(chunk.Content))
+            if (calls is null) break;
+
+            extra.Add(new
             {
-                content.Append(chunk.Content);
-                await Send(new { type = "token", text = chunk.Content });
+                role = "assistant",
+                content = roundText.ToString(),
+                tool_calls = calls.Select(c => new { function = new { name = c.Name, arguments = c.Arguments } }).ToList(),
+            });
+            foreach (var call in calls)
+            {
+                var tool = mcpTools.FirstOrDefault(t => t.QualifiedName == call.Name);
+                string result;
+                if (tool is null) result = $"A ferramenta '{call.Name}' não existe.";
+                else
+                {
+                    var allowed = true;
+                    if (tool.RequiresApproval)
+                    {
+                        // Human-in-the-loop: pausa e espera o clique de Autorizar/Rejeitar na interface
+                        var approvalId = approvals.Open(out var decision);
+                        await Send(new { type = "approval", id = approvalId, tool = tool.QualifiedName, server = tool.Server, name = tool.Name, args = call.Arguments });
+                        try { allowed = await decision.WaitAsync(ApprovalBroker.Timeout, ct); }
+                        catch (TimeoutException) { allowed = false; }
+                        finally { approvals.Close(approvalId); }
+                    }
+                    if (!allowed)
+                    {
+                        result = "O usuário recusou esta ação (ou não respondeu a tempo). Não tente executá-la de novo; diga o que você faria.";
+                        await Send(new { type = "mcp", name = tool.QualifiedName, state = "recusada" });
+                    }
+                    else
+                    {
+                        await Send(new { type = "mcp", name = tool.QualifiedName, state = "executando" });
+                        var r = await mcp.CallAsync(tool, call.Arguments, ct);
+                        result = r.Ok ? r.Text : "ERRO: " + r.Text;
+                        await Send(new { type = "mcp", name = tool.QualifiedName, state = r.Ok ? "concluida" : "falhou" });
+                    }
+                }
+                extra.Add(new { role = "tool", tool_name = call.Name, content = result });
             }
-            if (chunk.Stats is not null) stats = chunk.Stats;
         }
         }
     }
@@ -182,6 +248,12 @@ api.MapPost("/files/read", async (HttpRequest request, FileReader files, Cancell
         return Results.Problem("Não consegui ler o arquivo: " + ex.Message, statusCode: 422);
     }
 });
+
+// --- MCP: ferramentas disponíveis e aprovação humana das que mudam estado
+api.MapGet("/mcp/tools", async (McpRegistry mcp, bool? refresh, CancellationToken ct) =>
+    (await mcp.GetToolsAsync(refresh == true, ct)).Select(t => new { t.Server, t.Name, t.Description, t.RequiresApproval }));
+api.MapPost("/approvals/{id}", (string id, ApprovalDecision d, ApprovalBroker approvals) =>
+    approvals.Resolve(id, d.Approve) ? Results.NoContent() : Results.NotFound());
 
 api.MapGet("/voice/status", (VoiceEngine voice) => new
 {

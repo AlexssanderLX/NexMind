@@ -73,5 +73,7 @@ export type StreamEvent =
   | { type: "token"; text: string }
   | { type: "thinking"; text: string }
   | { type: "tool"; name: string; state: string; query?: string }
+  | { type: "mcp"; name: string; state: string }
+  | { type: "approval"; id: string; tool: string; server: string; name: string; args: unknown }
   | { type: "done"; stats: ChatStats | null }
   | { type: "error"; message: string };

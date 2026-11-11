@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "arquivos": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "data/workspace"],
+      "enabled": true,
+      "requiresApproval": ["write_file", "edit_file", "create_directory", "move_file"]
+    }
+  }
+}

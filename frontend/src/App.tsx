@@ -95,6 +95,9 @@ export default function App() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [reasoning, setReasoning] = useState(false);
   const [searchOn, setSearchOn] = useState(() => localStorage.getItem("nexSearch") === "1");
+  const [mcpOn, setMcpOn] = useState(() => localStorage.getItem("nexMcp") === "1");
+  const [mcpState, setMcpState] = useState<"pronta" | "executando">("pronta");
+  const [approval, setApproval] = useState<{ id: string; tool: string; args: unknown } | null>(null);
   const [searchState, setSearchState] = useState<"desligada" | "pronta" | "executando">("desligada");
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadVoice);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
@@ -286,8 +289,11 @@ export default function App() {
           else if (ev.type === "thinking") buffer.push("thinking", ev.text);
           else if (ev.type === "tool")
             setSearchState(ev.state === "executando" || ev.state === "filtrando" ? "executando" : "pronta");
+          else if (ev.type === "mcp") setMcpState(ev.state === "carregando" || ev.state === "executando" ? "executando" : "pronta");
+          else if (ev.type === "approval") setApproval({ id: ev.id, tool: ev.tool, args: ev.args });
           else if (ev.type === "done") {
             buffer.flush();
+            setApproval(null);
             patchLast((m) => ({ ...m, stats: ev.stats }));
           } else if (ev.type === "error") {
             failed = true;
@@ -297,6 +303,7 @@ export default function App() {
         },
         abort.signal,
         searchOn,
+        mcpOn,
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
@@ -418,8 +425,20 @@ export default function App() {
               status: !searchOn ? "desligada" : searchState === "executando" ? "executando" : "pronta",
               note: !searchOn ? "desligada" : searchState === "executando" ? "pesquisando" : "ligada",
             },
+            {
+              name: "mcp",
+              status: !mcpOn ? "desligada" : mcpState === "executando" ? "executando" : "pronta",
+              note: !mcpOn ? "desligada" : mcpState === "executando" ? "executando" : "ligada",
+            },
           ]}
           onToggleTool={(name) => {
+            if (name === "mcp") {
+              setMcpOn((on) => {
+                localStorage.setItem("nexMcp", on ? "0" : "1");
+                return !on;
+              });
+              return;
+            }
             if (name !== "pesquisa") return;
             setSearchOn((on) => {
               const next = !on;
@@ -433,6 +452,30 @@ export default function App() {
             {messages.map((m, i) => (
               <MessageView key={i} m={m} streaming={streaming && i === messages.length - 1 && m.role === "assistant"} />
             ))}
+            {approval && (
+              <div className="rounded-xl border border-accent/50 bg-panel px-4 py-3 text-sm" data-no-core>
+                <div className="font-medium">O Nex quer executar <code>{approval.tool}</code></div>
+                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-black/30 p-2 text-xs text-mute">
+                  {JSON.stringify(approval.args, null, 2)}
+                </pre>
+                <div className="mt-3 flex gap-2">
+                  {([true, false] as const).map((ok) => (
+                    <button
+                      key={String(ok)}
+                      type="button"
+                      onClick={() => {
+                        const id = approval.id;
+                        setApproval(null);
+                        void api.approve(id, ok).catch(() => setChatError("Não consegui enviar a resposta de aprovação."));
+                      }}
+                      className={ok ? "rounded-lg bg-accent px-3 py-1.5 font-medium text-bg hover:opacity-90" : "rounded-lg border border-line px-3 py-1.5 text-mute hover:bg-white/5 hover:text-fg"}
+                    >
+                      {ok ? "Autorizar" : "Rejeitar"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {chatError && (
               <div className="rounded-xl border border-red-900/60 bg-red-950/70 px-4 py-3 text-sm text-red-300">
                 {chatError}

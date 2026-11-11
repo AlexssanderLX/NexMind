@@ -14,6 +14,9 @@ export const api = {
   get: (id: string) => req<Conversation>(`/api/conversations/${id}`),
   remove: (id: string) => req<void>(`/api/conversations/${id}`, { method: "DELETE" }),
   voiceStatus: () => req<VoiceStatus>("/api/voice/status"),
+  /** Resposta do usuário a uma ferramenta que pede aprovação (Autorizar/Rejeitar). */
+  approve: (id: string, approve: boolean) =>
+    req<void>(`/api/approvals/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve }) }),
   /** Lê um arquivo (PDF, DOCX, md, texto, código...) no backend e devolve o texto, cortado em maxChars. */
   readFile: async (file: File, maxChars: number) => {
     const body = new FormData();
@@ -36,6 +39,7 @@ export async function streamChat(
   onEvent: (e: StreamEvent) => void,
   signal: AbortSignal,
   search = false,
+  tools = false,
 ) {
   const res = await fetch(`/api/conversations/${id}/chat`, {
     method: "POST",
@@ -47,6 +51,7 @@ export async function streamChat(
       think: null, // quem decide é o modelo escolhido (instruct não pensa; o de raciocínio sempre pensa)
       system: s.system.trim() || null,
       search,
+      tools,
     }),
     signal,
   });

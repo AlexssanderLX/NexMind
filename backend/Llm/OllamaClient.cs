@@ -17,7 +17,10 @@ public record OllamaStatus(bool Connected, string BaseUrl, string? Version, stri
 public record LoadedModel(string Name, long SizeMb, long VramMb, int? ContextLength);
 
 /// <summary>Um pedaço da resposta em streaming. Stats só vem no último.</summary>
-public record ChatChunk(string? Content, string? Thinking, ChatStats? Stats);
+public record ChatChunk(string? Content, string? Thinking, ChatStats? Stats, List<ToolCall>? ToolCalls = null);
+
+/// <summary>Pedido de ferramenta emitido pelo modelo (function calling do Ollama).</summary>
+public record ToolCall(string Name, JsonElement Arguments);
 
 /// <summary>Toda a comunicação com o Ollama fica aqui. Nada específico de Qwen.</summary>
 public class OllamaClient(HttpClient http, IOptions<OllamaOptions> options)
@@ -74,12 +77,13 @@ public class OllamaClient(HttpClient http, IOptions<OllamaOptions> options)
 
     public async IAsyncEnumerable<ChatChunk> ChatAsync(
         string model, string? system, IEnumerable<(string Role, string Content)> messages, int numCtx, bool? think,
-        int? numGpu,
+        int? numGpu, IReadOnlyList<object>? extraMessages, IReadOnlyList<object>? tools,
         [EnumeratorCancellation] CancellationToken ct)
     {
         var msgs = new List<object>();
         if (!string.IsNullOrWhiteSpace(system)) msgs.Add(new { role = "system", content = system });
         msgs.AddRange(messages.Select(m => (object)new { role = m.Role, content = m.Content }));
+        if (extraMessages is not null) msgs.AddRange(extraMessages); // troca de ferramentas desta rodada (assistant tool_calls + tool)
 
         var body = new Dictionary<string, object?>
         {
@@ -89,6 +93,7 @@ public class OllamaClient(HttpClient http, IOptions<OllamaOptions> options)
             ["options"] = numGpu is null ? new { num_ctx = numCtx } : (object)new { num_ctx = numCtx, num_gpu = numGpu },
         };
         if (think is not null) body["think"] = think;
+        if (tools is { Count: > 0 }) body["tools"] = tools;
 
         using var req = new HttpRequestMessage(HttpMethod.Post, "/api/chat") { Content = JsonContent.Create(body) };
         using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
@@ -106,10 +111,19 @@ public class OllamaClient(HttpClient http, IOptions<OllamaOptions> options)
                 throw new OllamaException(err.GetString() ?? "Erro desconhecido do Ollama.");
 
             string? content = null, thinking = null;
+            List<ToolCall>? toolCalls = null;
             if (root.TryGetProperty("message", out var msg))
             {
                 if (msg.TryGetProperty("content", out var c)) content = c.GetString();
                 if (msg.TryGetProperty("thinking", out var t)) thinking = t.GetString();
+                if (msg.TryGetProperty("tool_calls", out var tc) && tc.ValueKind == JsonValueKind.Array)
+                {
+                    toolCalls = [];
+                    foreach (var call in tc.EnumerateArray())
+                        if (call.TryGetProperty("function", out var fn) && fn.TryGetProperty("name", out var fname))
+                            toolCalls.Add(new ToolCall(fname.GetString() ?? "",
+                                fn.TryGetProperty("arguments", out var a) ? a.Clone() : default));
+                }
             }
 
             ChatStats? stats = null;
@@ -124,7 +138,7 @@ public class OllamaClient(HttpClient http, IOptions<OllamaOptions> options)
                     Math.Round(Long(root, "load_duration") / 1e9, 1));
             }
 
-            yield return new ChatChunk(content, thinking, stats);
+            yield return new ChatChunk(content, thinking, stats, toolCalls);
         }
     }
 

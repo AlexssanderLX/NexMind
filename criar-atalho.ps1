@@ -12,4 +12,20 @@ $lnk.WindowStyle = 1 # janela normal: mostra cada passo (limpeza, Ollama, Nex); 
 $lnk.Description = "Inicia o Nex (Ollama + app) e o Chrome na porta 9222, com a sessão do usuário"
 $lnk.Save()
 
+$chromeExe = @(
+    "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+    "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+    "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+$chrome = $ws.CreateShortcut("$desktop\Google Chrome (Nex Automação).lnk")
+$chrome.TargetPath = "powershell.exe"
+$chrome.Arguments = "-ExecutionPolicy Bypass -File `"$root\iniciar-chrome-sessao.ps1`""
+$chrome.WorkingDirectory = $root
+if ($chromeExe) { $chrome.IconLocation = "$chromeExe,0" }
+$chrome.WindowStyle = 1
+$chrome.Description = "Abre o Chrome com a sessão logada e a porta 9222 para o Nex"
+$chrome.Save()
+
 Write-Host "Atalho criado: $desktop\Nex.lnk"
+Write-Host "Atalho criado: $desktop\Google Chrome (Nex Automação).lnk"

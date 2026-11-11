@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 
 from mcp.server.fastmcp import FastMCP
 from playwright.async_api import Browser, Page, Playwright, async_playwright
@@ -120,8 +121,27 @@ async def _attach() -> Page:
     return _page
 
 
+def _browser_running() -> bool:
+    try:
+        out = subprocess.check_output(["tasklist", "/FO", "CSV", "/NH"], text=True, errors="ignore")
+    except Exception:
+        return False
+    return "chrome.exe" in out.lower()
+
+
+def _chrome_installed() -> bool:
+    for candidate in (
+        os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+        os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+        os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
+    ):
+        if os.path.isfile(candidate):
+            return True
+    return False
+
+
 async def _ensure() -> Page:
-    """Usa o Chrome da porta 9222. Se a porta falhar, abre um Chromium visível."""
+    """Usa o Chrome da porta 9222. Não abre perfil anônimo se o Chrome pessoal já estiver aberto."""
     global _playwright, _browser, _page, _cdp
     if _page is not None:
         return _page
@@ -129,13 +149,24 @@ async def _ensure() -> Page:
     try:
         return await _attach()
     except Exception:
-        _browser = await _playwright.chromium.launch(headless=False)
-        context = await _browser.new_context()
-        _page = await context.new_page()
-        _cdp = False
-        await context.add_init_script("(" + _CURSOR_JS + ")();")
-        await _inject(_page)
-        return _page
+        pass
+    if _browser_running() or _chrome_installed():
+        await _playwright.stop()
+        _playwright = None
+        raise RuntimeError(
+            "O seu Chrome pessoal está aberto sem a porta 9222. "
+            "Para eu acessar suas contas logadas sem abrir janelas anônimas, "
+            "execute o script .\\iniciar-chrome-sessao.ps1 na raiz do projeto."
+            if _browser_running() else
+            "O Chrome não está na porta 9222. Execute .\\iniciar-chrome-sessao.ps1 para abrir o seu perfil logado."
+        )
+    _browser = await _playwright.chromium.launch(headless=False)
+    context = await _browser.new_context()
+    _page = await context.new_page()
+    _cdp = False
+    await context.add_init_script("(" + _CURSOR_JS + ")();")
+    await _inject(_page)
+    return _page
 
 
 def _clip(text: str) -> str:

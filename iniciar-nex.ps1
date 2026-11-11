@@ -59,21 +59,9 @@ if (-not (Test-Url "http://localhost:11434/api/version")) { Stop-WithError "O Ol
 Log "Ollama pronto." Green
 
 # ---------------------------------------------------------------------------------------------------------------
-# 2b. Chrome pessoal na porta 9222, só se essa porta ainda não responde.
+# 2b. Chrome pessoal na porta 9222, com o perfil logado. Reinicia o Chrome se a porta não estiver ativa.
 # ---------------------------------------------------------------------------------------------------------------
-$cdp = curl.exe -s -m 1 "http://127.0.0.1:9222/json/version" 2>$null
-if (-not $cdp) {
-    $chromePaths = @(
-        "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
-        "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
-        "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
-    )
-    $chromeExe = $chromePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
-    if ($chromeExe) {
-        Log "Iniciando Chrome com depuração na porta 9222..."
-        Start-Process $chromeExe -ArgumentList "--remote-debugging-port=9222", "--restore-last-session"
-    }
-}
+& "$PSScriptRoot\iniciar-chrome-sessao.ps1"
 
 # ---------------------------------------------------------------------------------------------------------------
 # 3. Tela (frontend): recompila quando mudou

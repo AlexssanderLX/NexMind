@@ -54,11 +54,29 @@
     },
     "browser": {
       "command": "backend/data/mcp/browser/venv/Scripts/python.exe",
-      "args": ["-m", "backend.Mcp.Browser.server"],
+      "args": [
+        "-m",
+        "backend.Mcp.Browser.server"
+      ],
       "env": {
         "HEADLESS": "false"
       },
-      "requiresApproval": ["browser_click"]
+      "requiresApproval": [
+        "browser_click"
+      ]
+    },
+    "desktop": {
+      "command": "data\\mcp\\desktop\\venv\\Scripts\\python.exe",
+      "args": [
+        "Mcp\\Desktop\\server.py"
+      ],
+      "enabled": true,
+      "requiresApproval": [
+        "desktop_click_element",
+        "desktop_mouse_click",
+        "desktop_type",
+        "desktop_press_hotkey"
+      ]
     }
   }
 }

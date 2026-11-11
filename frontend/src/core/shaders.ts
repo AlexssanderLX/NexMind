@@ -16,6 +16,8 @@ uniform float uRippleT;
 uniform vec3 uRippleDir;
 uniform vec3 uMouse;
 uniform float uMouseStrength;
+uniform vec3 uBulgeDir;
+uniform float uBulge;
 
 vec3 rotY(vec3 p, float a) {
   float c = cos(a);
@@ -44,6 +46,10 @@ vec3 displace(vec3 base, vec3 target, float seed) {
   vec3 d = uMouse - p;
   float f = smoothstep(0.75, 0.0, length(d));
   p += d * f * uMouseStrength * (0.4 + seed * 0.6);
+
+  // protuberância local: só o lado da esfera voltado para o cursor se alonga na direção dele
+  float facing = max(dot(dir, uBulgeDir), 0.0);
+  p += normalize(dir + uBulgeDir * 1.2) * pow(facing, 5.0) * uBulge * 0.34;
 
   // onda do clique, partindo do ponto clicado
   float ang = acos(clamp(dot(dir, uRippleDir), -1.0, 1.0));
@@ -166,10 +172,11 @@ uniform float uPhase;
 uniform float uIntensity;
 uniform float uError;
 uniform float uAlpha;
+uniform vec3 uNear;
 varying float vA;
 void main() {
   float m = step(0.45, fract(vA * uDash + uPhase));
-  vec3 col = mix(vec3(0.2, 0.85, 1.0), vec3(1.0, 0.32, 0.32), uError * 0.7);
+  vec3 col = mix(uNear, vec3(1.0, 0.32, 0.32), uError * 0.7);
   gl_FragColor = vec4(col * uIntensity, uAlpha * (0.25 + 0.75 * m));
 }
 `;
@@ -185,13 +192,15 @@ void main() {
 export const GLOW_FRAG = /* glsl */ `
 uniform float uGlow;
 uniform float uError;
+uniform vec3 uNear;
+uniform vec3 uFar;
 varying vec2 vUv;
 void main() {
   float d = length(vUv - 0.5) * 2.0;
   float core = exp(-d * d * 6.0);
   float halo = exp(-d * 2.6) * 0.28;
   float a = (core * 0.55 + halo) * uGlow;
-  vec3 col = mix(vec3(0.08, 0.55, 0.95), vec3(0.45, 0.95, 1.0), core);
+  vec3 col = mix(uFar, uNear, core);
   col = mix(col, vec3(1.0, 0.3, 0.3), uError * 0.6);
   gl_FragColor = vec4(col * a, a);
 }
@@ -225,6 +234,8 @@ export const HALO_FRAG = /* glsl */ `
 uniform float uTime;
 uniform float uIntensity;
 uniform float uError;
+uniform vec3 uNear;
+uniform vec3 uFar;
 varying float vSeed;
 varying float vFront;
 void main() {
@@ -232,7 +243,7 @@ void main() {
   if (d > 0.5) discard;
   float a = pow(1.0 - d * 2.0, 2.0);
   float tw = 0.6 + 0.4 * sin(uTime * 1.6 + vSeed * 50.0);
-  vec3 col = mix(vec3(0.1, 0.5, 0.95), vec3(0.6, 0.95, 1.0), vFront);
+  vec3 col = mix(uFar, uNear, vFront);
   col = mix(col, vec3(1.0, 0.32, 0.32), uError * 0.6);
   gl_FragColor = vec4(col * tw * uIntensity, a * 0.35 * (0.3 + 0.7 * vFront));
 }

@@ -22,6 +22,19 @@ export interface CoreStats {
   height: number;
   renderer: string;
   running: boolean;
+  /** Diagnóstico: estado visual atual, proximidade do cursor (0..1) e nível de áudio suavizado (0..1). */
+  state: CoreState;
+  prox: number;
+  audio: number;
+  /** Inclinação causada pelo cursor (radianos), sem contar o giro automático. */
+  yaw: number;
+  pitch: number;
+  /** Cor atual das partículas da frente (RGB 0..1), útil para ver a transição de paleta. */
+  nearColor: [number, number, number];
+  /** Protuberância local voltada para o cursor (0..1). */
+  bulge: number;
+  /** Raio visual da esfera em px (com a presença): serve para checar que ela cabe na área visível. */
+  radiusPx: number;
 }
 
 export interface CoreHandle {
@@ -38,6 +51,10 @@ export interface CoreHandle {
   /** Impulso breve de energia (ex.: a cada lote de tokens recebidos). */
   pulse(amount?: number): void;
   setMotion(scale: number): void;
+  /** Intensidade do seguimento do cursor, de 0 (desligado) a 1 (máximo). */
+  setFollow(v: number): void;
+  /** Muda a cor do núcleo (transição suave). Cores em RGB 0..1. */
+  setPalette(near: [number, number, number], far: [number, number, number], instant?: boolean): void;
   stats(): CoreStats;
   dispose(): void;
 }
@@ -124,7 +141,7 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
   let profile = initial;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 50);
-  const root = new THREE.Group(); // inclinação/paralaxe do cursor e escala de presença
+  const root = new THREE.Group(); // inclinação leve do cursor e escala de presença
   const coreGroup = new THREE.Group(); // giro automático
   const ringsGroup = new THREE.Group();
   root.add(coreGroup, ringsGroup);
@@ -142,6 +159,8 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
     uRippleDir: { value: new THREE.Vector3(0, 0, 1) },
     uMouse: { value: new THREE.Vector3(0, 0, 5) },
     uMouseStrength: { value: 0 },
+    uBulgeDir: { value: new THREE.Vector3(0, 0, 1) },
+    uBulge: { value: 0 },
     uCamZ: { value: 4 },
     uPointScale: { value: 2 },
     uProx: { value: 0 },
@@ -151,6 +170,9 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
     uFar: { value: new THREE.Vector3(0.08, 0.42, 0.95) },
   };
   const glowU = { value: 0.35 };
+  // cor de destino da paleta: as cores atuais (uNear/uFar) caminham até ela a cada quadro
+  const nearTarget = (U.uNear.value as THREE.Vector3).clone();
+  const farTarget = (U.uFar.value as THREE.Vector3).clone();
 
   // ---- estado dinâmico
   let state: CoreState = "idle";
@@ -158,6 +180,8 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
   let burst = 0, errorAmt = 0, pulseAmt = 0, rippleT = 99;
   let audio = 0, spin = 0, swirlPhase = 0, prox = 0;
   let px = 0, py = 0; // ponteiro suavizado (NDC)
+  let follow = 0.5; // intensidade do seguimento do cursor (0 desliga a protuberância e a inclinação)
+  let bulge = 0; // protuberância local: quanto o lado da esfera voltado para o cursor se alonga (0..1)
   let ptr: { x: number; y: number } | null = null; // ponteiro em px relativos ao canvas
   let pressed = false;
   let motion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? 0.25 : 1;
@@ -315,6 +339,7 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
             uniforms: {
               uIntensity: U.uIntensity,
               uError: U.uError,
+              uNear: U.uNear,
               uDash: { value: d.dash },
               uPhase: { value: 0 },
               uAlpha: { value: d.alpha },
@@ -358,7 +383,11 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
     {
       const g = track(new THREE.PlaneGeometry(4.6, 4.6));
       const m = track(
-        additive({ uniforms: { uGlow: glowU, uError: U.uError }, vertexShader: S.GLOW_VERT, fragmentShader: S.GLOW_FRAG }),
+        additive({
+          uniforms: { uGlow: glowU, uError: U.uError, uNear: U.uNear, uFar: U.uFar },
+          vertexShader: S.GLOW_VERT,
+          fragmentShader: S.GLOW_FRAG,
+        }),
       );
       glowMesh = new THREE.Mesh(g, m);
       glowMesh.position.z = -0.3;
@@ -386,7 +415,8 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
       composer.setSize(width, height);
     }
     // esfera com 240–500 px de diâmetro, conforme a área disponível
-    basePx = Math.min(500, Math.max(240, Math.min(width * 0.8, height * 0.78)));
+    // 150 px no mínimo: em telas bem estreitas a esfera encolhe para caber, em vez de ser cortada
+    basePx = Math.min(500, Math.max(150, Math.min(width * 0.8, height * 0.78)));
     const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     const camZ = height / (basePx * tan);
     camera.aspect = width / height;
@@ -402,6 +432,8 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
   const hitSphere = new THREE.Sphere(new THREE.Vector3(), 1.12);
   const ndc = new THREE.Vector2();
   const tmp = new THREE.Vector3();
+  const tmp2 = new THREE.Vector3();
+  const tmp3 = new THREE.Vector3();
 
   /** Ponto da esfera mais próximo do raio do cursor, em coordenadas locais do núcleo. */
   function pointerOnSphere(x: number, y: number, radius: number, out: THREE.Vector3) {
@@ -426,6 +458,10 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
     const k = 1 - Math.exp(-dt * 3);
     for (const key of Object.keys(cur) as (keyof Params)[]) cur[key] += (tgt[key] - cur[key]) * k;
 
+    const kc = 1 - Math.exp(-dt * 5); // transição suave de cor
+    (U.uNear.value as THREE.Vector3).lerp(nearTarget, kc);
+    (U.uFar.value as THREE.Vector3).lerp(farTarget, kc);
+
     burst = Math.max(0, burst - dt / 1.3);
     errorAmt = Math.max(0, errorAmt - dt / 1.7);
     pulseAmt = Math.max(0, pulseAmt - dt * 1.6);
@@ -449,21 +485,21 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
     const ty = ptr ? -(ptr.y / height) * 2 + 1 : 0;
     px += (tx - px) * kPtr;
     py += (ty - py) * kPtr;
+    const R = (basePx * presence.scale) / 2; // raio da esfera em px
     let proxT = 0;
-    if (ptr) {
-      const r = (basePx * presence.scale) / 2;
-      proxT = 1 - smooth(r * 0.9, r * 2.4, Math.hypot(ptr.x - width / 2, ptr.y - height / 2));
-    }
+    if (ptr) proxT = 1 - smooth(R * 0.9, R * 2.4, Math.hypot(ptr.x - width / 2, ptr.y - height / 2));
     prox += (proxT - prox) * (1 - Math.exp(-dt * 5));
     U.uProx.value = prox;
 
     // movimento
     spin += dt * cur.spin * motion;
     coreGroup.rotation.set(0.22, spin, 0);
-    root.rotation.set(-py * 0.35 * motion, px * 0.55 * motion, 0);
-    root.position.set(px * 0.1 * motion, py * 0.08 * motion, 0);
+    // inclinação leve em direção ao cursor; a esfera em si não sai do lugar
+    const lean = (0.3 + 0.7 * follow) * motion;
+    root.rotation.set(-py * 0.2 * lean, px * 0.32 * lean, 0);
     root.scale.setScalar(presence.scale);
     if (glowMesh) glowMesh.scale.setScalar(presence.scale);
+    const kf = 1 - Math.exp(-dt * 5);
     for (const r of ringLoops) {
       r.loop.rotation.z += dt * r.speed * (0.3 + cur.ring) * motion;
       r.mat.uniforms.uPhase.value += dt * Math.sign(r.speed) * 0.15 * (0.3 + cur.ring) * motion;
@@ -478,14 +514,29 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
     U.uPointScale.value = basePx * dpr * 0.0045 * presence.scale;
     glowU.value = (cur.glow + audio * 0.35 + prox * 0.12 + burst * 0.4) * presence.intensity;
 
-    // gravidade do cursor, no espaço local do núcleo
+    // gravidade do cursor + protuberância local, no espaço do núcleo
     root.updateMatrixWorld(true);
+    let tBulge = 0;
     if (ptr) {
       pointerOnSphere(ptr.x, ptr.y, 1.12, U.uMouse.value as THREE.Vector3);
       U.uMouseStrength.value = (0.1 + 0.34 * prox + (pressed ? 0.25 : 0)) * motion;
+      if (follow > 0) {
+        const dx = ptr.x - width / 2, dy = ptr.y - height / 2;
+        // folga até a borda da área visível: a ponta da protuberância (até ~34% do raio) nunca passa dela
+        const margin = Math.max(0, Math.min(width / 2, height / 2) - R * 1.06 - 6);
+        const room = Math.min(1, margin / (R * 0.37));
+        tBulge = follow * motion * smooth(R * 0.6, R * 2.8, Math.hypot(dx, dy)) * room;
+        tmp2.set(dx, -dy, R * 0.6).normalize(); // direção do cursor no mundo (y da tela cresce para baixo)
+        coreGroup.getWorldPosition(tmp3);
+        tmp3.add(tmp2);
+        coreGroup.worldToLocal(tmp3); // o centro vira a origem, então o ponto já é a direção local
+        (U.uBulgeDir.value as THREE.Vector3).copy(tmp3).normalize();
+      }
     } else {
       U.uMouseStrength.value = 0;
     }
+    bulge += (tBulge - bulge) * kf;
+    U.uBulge.value = bulge;
   }
 
   function render() {
@@ -494,7 +545,7 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
   }
 
   // ---- laço de quadros, com teto de fps do perfil e medição
-  let raf = 0, running = true, lastRender = 0;
+  let raf = 0, running = true, lastRender = 0, lastTick = 0, acc = 1000;
   const frameDts: number[] = [];
   const jsTimes: number[] = [];
   const push = (arr: number[], v: number) => {
@@ -505,10 +556,19 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
   const frame = (now: number) => {
     raf = requestAnimationFrame(frame);
     if (!running || document.hidden) {
-      lastRender = 0; // evita um salto de tempo ao voltar
+      lastTick = 0; // evita um salto de tempo ao voltar
+      lastRender = 0;
+      acc = 1000;
       return;
     }
-    if (lastRender && now - lastRender < 1000 / profile.fps - 2) return;
+    // Teto de fps com acumulador: o tempo que sobra de um quadro conta para o próximo, então a média bate com o teto
+    // em qualquer taxa de atualização da tela (60, 100, 144 Hz). Comparar só "passou X ms?" arredondava para
+    // múltiplos do intervalo da tela (ex.: 60 fps de teto virava 50 numa tela de 100 Hz).
+    acc += lastTick ? now - lastTick : 0;
+    lastTick = now;
+    const interval = 1000 / profile.fps;
+    if (acc < interval - 0.5) return;
+    acc = Math.min(acc - interval, interval);
     const dtMs = lastRender ? now - lastRender : 16.7;
     lastRender = now;
     const t0 = performance.now();
@@ -589,6 +649,17 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
     setMotion(scale) {
       motion = scale;
     },
+    setFollow(v) {
+      follow = Math.max(0, Math.min(1, v));
+    },
+    setPalette(near, far, instant = false) {
+      nearTarget.set(...near);
+      farTarget.set(...far);
+      if (instant) {
+        (U.uNear.value as THREE.Vector3).copy(nearTarget);
+        (U.uFar.value as THREE.Vector3).copy(farTarget);
+      }
+    },
     stats() {
       const dt = avg(frameDts);
       return {
@@ -606,6 +677,14 @@ export function createCore(canvas: HTMLCanvasElement, initial: Profile, opts: Co
         height,
         renderer: rendererName,
         running: running && !document.hidden,
+        state,
+        prox,
+        audio,
+        yaw: root.rotation.y,
+        pitch: root.rotation.x,
+        nearColor: (U.uNear.value as THREE.Vector3).toArray() as [number, number, number],
+        bulge,
+        radiusPx: (basePx * presence.scale) / 2,
       };
     },
     dispose() {

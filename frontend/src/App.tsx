@@ -3,8 +3,10 @@ import { api, streamChat } from "./api";
 import Background from "./components/Background";
 import MessageView from "./components/MessageView";
 import MetricsModal, { loadColor, loadPercent } from "./components/MetricsModal";
+import NexStage from "./components/NexStage";
 import SettingsPanel from "./components/SettingsPanel";
 import Sidebar from "./components/Sidebar";
+import { useNexCore } from "./hooks/useNexCore";
 import { usePolling } from "./hooks/usePolling";
 import { createTokenBuffer } from "./lib/tokenBuffer";
 import type { ConversationSummary, Message, Metrics, OllamaStatus, Settings } from "./types";
@@ -70,6 +72,7 @@ export default function App() {
   const [reasoning, setReasoning] = useState(false);
   const activeModel = reasoning ? settings.reasoningModel : settings.chatModel;
   const modelMissing = !!status?.connected && !status.models.some((m) => m.name === activeModel);
+  const nex = useNexCore({ streaming, bgAnim });
 
   const refreshList = useCallback(() => api.list().then(setConversations).catch(() => {}), []);
 
@@ -171,10 +174,12 @@ export default function App() {
       setMessages((all) => all.map((m, i) => (i === all.length - 1 ? fn(m) : m)));
 
     // tokens em lotes (ver lib/tokenBuffer): re-renderizar a cada token é o maior custo do streaming
-    const buffer = createTokenBuffer((c, t) =>
-      patchLast((m) => ({ ...m, content: m.content + c, thinking: t ? (m.thinking ?? "") + t : m.thinking })),
-    );
+    const buffer = createTokenBuffer((c, t) => {
+      patchLast((m) => ({ ...m, content: m.content + c, thinking: t ? (m.thinking ?? "") + t : m.thinking }));
+      nex.pulse(0.25); // o núcleo reage a cada lote de tokens
+    });
 
+    let failed = false;
     let firstEvent = true;
     try {
       await streamChat(
@@ -193,6 +198,7 @@ export default function App() {
             buffer.flush();
             patchLast((m) => ({ ...m, stats: ev.stats }));
           } else if (ev.type === "error") {
+            failed = true;
             buffer.flush();
             setChatError(ev.message);
           }
@@ -200,10 +206,15 @@ export default function App() {
         abort.signal,
       );
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setChatError(`Falha na conexão com o backend: ${(e as Error).message}`);
+      if ((e as Error).name !== "AbortError") {
+        failed = true;
+        setChatError(`Falha na conexão com o backend: ${(e as Error).message}`);
+      }
     } finally {
       buffer.flush(); // parada/queda: entrega o que já chegou
       setStreaming(false);
+      if (failed) nex.flash("error");
+      else if (!abort.signal.aborted) nex.flash("success"); // parada pelo usuário não é sucesso nem erro
       abortRef.current = null;
       // Sincroniza com o que foi salvo no servidor (inclui parciais e a pergunta mesmo em caso de erro)
       api.get(id).then((c) => setMessages(c.messages)).catch(() => {});
@@ -219,10 +230,22 @@ export default function App() {
       : null;
   const title = conversations.find((c) => c.id === activeId)?.title ?? "Nova conversa";
   const load = loadPercent(metrics);
+  // execuções recentes: respostas desta conversa com as estatísticas reais devolvidas pelo Ollama
+  const runs = messages
+    .filter((m) => m.role === "assistant" && m.stats)
+    .slice(-5)
+    .reverse()
+    .map((m) => ({
+      model: m.model ?? "modelo",
+      tokens: m.stats!.outputTokens,
+      tokPerSec: m.stats!.tokensPerSec,
+      seconds: m.stats!.totalSeconds,
+    }));
 
   return (
     <div className="relative flex h-full">
-      <Background enabled={bgAnim} active={streaming} />
+      {/* fundo 2D: só como plano B se o WebGL do núcleo não estiver disponível */}
+      {nex.fallback && <Background enabled={bgAnim} active={streaming} />}
 
       <Sidebar
         items={conversations}
@@ -238,11 +261,12 @@ export default function App() {
         onDelete={remove}
       />
 
-      <main className="relative z-10 flex min-w-0 flex-1 flex-col">
+      {/* sem z-index aqui: um z-index criaria um contexto de empilhamento isolado e o canvas do núcleo (mix-blend-mode: screen) não conseguiria se misturar com o fundo da página */}
+      <main className="relative flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 px-6 py-3">
           <div className="flex min-w-0 items-baseline gap-3">
             <h1 className="truncate text-sm font-medium">{title}</h1>
-            <span className="shrink-0 text-xs text-mute">
+            <span className="shrink-0 text-xs text-mute max-sm:hidden">
               {activeModel} · ctx {settings.numCtx}
             </span>
           </div>
@@ -278,22 +302,31 @@ export default function App() {
             status={status}
             bgAnim={bgAnim}
             onBgAnim={changeBgAnim}
+            core={nex.settingsProps}
           />
         )}
 
-        <div className="flex-1 overflow-y-auto px-6 py-6">
+        <NexStage
+          core={nex}
+          empty={messages.length === 0}
+          streaming={streaming}
+          hero={
+            <>
+              <h2 className="text-2xl font-medium">Como posso ajudar?</h2>
+              <p className="mt-2 text-sm text-mute">
+                {status?.connected && status.models.length === 0
+                  ? `Nenhum modelo instalado. Rode: ollama pull ${activeModel}`
+                  : nex.micOn
+                    ? "Estou ouvindo: o núcleo reage ao seu microfone."
+                    : "Escreva uma pergunta abaixo ou clique no núcleo para mudar a cor."}
+              </p>
+            </>
+          }
+          info={{ mode: reasoning ? "Raciocínio" : "Conversa", model: activeModel, connected }}
+          runs={runs}
+          tools={[]}
+        >
           <div className="mx-auto max-w-3xl space-y-6">
-            {messages.length === 0 && (
-              <div className="mt-24 text-center">
-                <div className="text-4xl text-accent">✦</div>
-                <h2 className="mt-4 text-2xl font-medium">Como posso ajudar?</h2>
-                <p className="mt-2 text-sm text-mute">
-                  {status?.connected && status.models.length === 0
-                    ? `Nenhum modelo instalado. Rode: ollama pull ${activeModel}`
-                    : "Escreva uma pergunta abaixo para começar."}
-                </p>
-              </div>
-            )}
             {messages.map((m, i) => (
               <MessageView key={i} m={m} streaming={streaming && i === messages.length - 1 && m.role === "assistant"} />
             ))}
@@ -304,7 +337,7 @@ export default function App() {
             )}
             <div ref={bottomRef} />
           </div>
-        </div>
+        </NexStage>
 
         <div className="px-6 pb-4">
           <form

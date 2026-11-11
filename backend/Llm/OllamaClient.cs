@@ -30,9 +30,12 @@ public class OllamaClient(HttpClient http, IOptions<OllamaOptions> options)
         cts.CancelAfter(TimeSpan.FromSeconds(2));
         try
         {
-            var v = await http.GetFromJsonAsync<JsonElement>("/api/version", cts.Token);
-            var version = v.GetProperty("version").GetString();
-            var tags = await http.GetFromJsonAsync<JsonElement>("/api/tags", cts.Token);
+            // as duas consultas em paralelo: a latência vira a da mais lenta, não a soma
+            var versionTask = http.GetFromJsonAsync<JsonElement>("/api/version", cts.Token);
+            var tagsTask = http.GetFromJsonAsync<JsonElement>("/api/tags", cts.Token);
+            await Task.WhenAll(versionTask, tagsTask);
+            var version = versionTask.Result.GetProperty("version").GetString();
+            var tags = tagsTask.Result;
             var models = new List<ModelInfo>();
             if (tags.TryGetProperty("models", out var arr))
                 foreach (var m in arr.EnumerateArray())

@@ -1,4 +1,4 @@
-﻿# Sobe o Nex inteiro, do zero e limpo: encerra o que sobrou de execuções anteriores, inicia o Ollama (com o perfil
+# Sobe o Nex inteiro, do zero e limpo: encerra o que sobrou de execuções anteriores, inicia o Ollama (com o perfil
 # econômico de VRAM), espera ele ficar pronto, inicia o Nex e só então abre a tela no navegador.
 # Feche esta janela para parar o Nex.
 param([switch]$NoBrowser, [switch]$Force, [switch]$DryRun)

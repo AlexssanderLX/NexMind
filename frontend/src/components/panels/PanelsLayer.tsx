@@ -1,8 +1,8 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { NeuralCoreHandle } from "../../core/NeuralCore";
 import type { CoreStats } from "../../core/scene";
 import type { PanelId } from "../../hooks/useNexCore";
-import FloatingPanel, { PanelRow } from "./FloatingPanel";
+import FloatingPanel, { PanelRow, type PanelPos } from "./FloatingPanel";
 
 export interface ActivityInfo {
   stateLabel: string;
@@ -70,9 +70,108 @@ function ActivityBody({ info, coreRef }: { info: ActivityInfo; coreRef: RefObjec
   );
 }
 
+const ICON_PROPS = { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" } as const;
+const ICONS: Record<PanelId, ReactNode> = {
+  activity: (
+    <svg {...ICON_PROPS}>
+      <path d="M3 12h4l3-8 4 16 3-8h4" />
+    </svg>
+  ),
+  tools: (
+    <svg {...ICON_PROPS}>
+      <path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3 17.8V21h3.2l6.3-6.3a4 4 0 0 0 5.2-5.4l-2.6 2.6-2.4-.6-.6-2.4z" />
+    </svg>
+  ),
+  runs: (
+    <svg {...ICON_PROPS}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  ),
+};
+
+const POS_KEY = "nexPanelPos";
+type Positions = Record<PanelId, PanelPos>;
+
+function defaultPositions(w: number, h: number): Positions {
+  return {
+    activity: { x: 16, y: 56 },
+    tools: { x: Math.max(16, w - 288 - 16), y: 56 },
+    runs: { x: 16, y: Math.max(56, h - 210) },
+  };
+}
+
+/** Lista compacta: nome + toggle. A descrição fica recolhida (clique no nome) e há busca quando são muitas. */
+function ToolsBody({ tools, onToggle }: { tools: ToolItem[]; onToggle?: (name: string) => void }) {
+  const [q, setQ] = useState("");
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const needle = q.trim().toLowerCase();
+  const list = needle
+    ? tools.filter((t) => `${t.label ?? ""} ${t.name} ${t.description ?? ""}`.toLowerCase().includes(needle))
+    : tools;
+
+  return (
+    <>
+      {tools.length > 6 && (
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={`Buscar entre ${tools.length} ferramentas…`}
+          className="mb-2 w-full rounded-lg border border-line bg-transparent px-2.5 py-1.5 text-xs outline-none placeholder:text-mute focus:border-accent/50"
+        />
+      )}
+      <div className="max-h-72 overflow-y-auto pr-1">
+        {list.length === 0 && <Empty>Nenhuma ferramenta encontrada.</Empty>}
+        {list.map((t) => {
+          const on = t.status !== "desligada";
+          const open = expanded === t.name;
+          return (
+            <div key={t.name} className="border-b border-line/60 last:border-0">
+              <div className="flex items-center gap-2 py-1.5">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_COLOR[t.status]}`} />
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => setExpanded(open ? null : t.name)}
+                  title="Ver descrição"
+                  className="min-w-0 flex-1 truncate text-left text-fg hover:text-accent"
+                >
+                  {t.label ?? t.name}
+                </button>
+                {onToggle && (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={on}
+                    aria-label={`${on ? "Desligar" : "Ligar"} ${t.label ?? t.name}`}
+                    onClick={() => onToggle(t.name)}
+                    className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${
+                      on ? "border-accent/60 bg-accent/30" : "border-line bg-white/5"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-all ${on ? "left-[18px] bg-accent" : "left-0.5 bg-mute"}`}
+                    />
+                  </button>
+                )}
+              </div>
+              {open && (
+                <p className="pb-2 pl-4 leading-snug text-mute">
+                  {t.description ?? "Sem descrição."}
+                  {t.status === "executando" && <span className="ml-1 text-accent">· {t.note ?? "executando"}</span>}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 export default function PanelsLayer({
   panels,
-  onClose,
+  onToggle,
   glass,
   info,
   runs,
@@ -82,7 +181,7 @@ export default function PanelsLayer({
   coreRef,
 }: {
   panels: Record<PanelId, boolean>;
-  onClose: (id: PanelId) => void;
+  onToggle: (id: PanelId) => void;
   glass: boolean;
   info: ActivityInfo;
   runs: RunItem[];
@@ -92,66 +191,91 @@ export default function PanelsLayer({
   coreRef: RefObject<NeuralCoreHandle | null>;
 }) {
   const shownTools = tools.length > 0 ? tools : demo ? DEMO_TOOLS : [];
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [bounds, setBounds] = useState({ w: 0, h: 0 });
+  const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 767px)").matches);
+  const [pos, setPos] = useState<Partial<Positions>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(POS_KEY) ?? "{}");
+    } catch {
+      return {};
+    }
+  });
+  const posRef = useRef(pos);
+  posRef.current = pos;
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const read = () => setBounds({ w: el.clientWidth, h: el.clientHeight });
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    const mq = window.matchMedia("(max-width: 767px)");
+    const onMq = () => setMobile(mq.matches);
+    mq.addEventListener("change", onMq);
+    return () => {
+      ro.disconnect();
+      mq.removeEventListener("change", onMq);
+    };
+  }, []);
+
+  const base = defaultPositions(bounds.w, bounds.h);
+  const at = (id: PanelId): PanelPos => pos[id] ?? base[id];
+  const common = (id: PanelId) => ({
+    open: panels[id],
+    onToggle: () => onToggle(id),
+    pos: at(id),
+    bounds,
+    onMove: (p: PanelPos) => setPos((all) => ({ ...all, [id]: p })),
+    onMoveEnd: () => {
+      try {
+        localStorage.setItem(POS_KEY, JSON.stringify(posRef.current));
+      } catch {
+        /* sem armazenamento: a posição vale só nesta sessão */
+      }
+    },
+    mobile,
+    glass,
+    icon: ICONS[id],
+  });
+
   return (
-    <div className="pointer-events-none absolute inset-0 z-30">
-      <FloatingPanel title="Atividade do Nex" anchor="tl" glass={glass} open={panels.activity} onClose={() => onClose("activity")}>
-        <ActivityBody info={info} coreRef={coreRef} />
-      </FloatingPanel>
+    <div ref={rootRef} className="pointer-events-none absolute inset-0 z-30">
+      {bounds.w > 0 && (
+        <>
+          <FloatingPanel title="Atividade do Nex" {...common("activity")}>
+            <ActivityBody info={info} coreRef={coreRef} />
+          </FloatingPanel>
 
-      <FloatingPanel
-        title="Ferramentas disponíveis"
-        anchor="tr"
-        glass={glass}
-        open={panels.tools}
-        onClose={() => onClose("tools")}
-        badge={tools.length === 0 && demo ? "exemplo" : undefined}
-      >
-        {shownTools.length === 0 ? (
-          <Empty>Nenhuma ferramenta conectada ainda. MCPs e skills aparecerão aqui quando forem integrados.</Empty>
-        ) : (
-          shownTools.map((t) => (
-            <div key={t.name} className="flex items-start gap-2 border-b border-line/60 py-2 last:border-0">
-              <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATUS_COLOR[t.status]}`} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-fg">{t.label ?? t.name}</div>
-                {t.description && <div className="text-xs leading-snug text-mute">{t.description}</div>}
-                {t.status === "executando" && <div className="text-xs text-accent">{t.note ?? "executando"}</div>}
-              </div>
-              {onToggleTool && (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={t.status !== "desligada"}
-                  aria-label={`${t.status === "desligada" ? "Ligar" : "Desligar"} ${t.label ?? t.name}`}
-                  onClick={() => onToggleTool(t.name)}
-                  className={`shrink-0 rounded-lg border px-2.5 py-1 text-xs transition-colors ${
-                    t.status === "desligada"
-                      ? "border-line text-mute hover:bg-white/5 hover:text-fg"
-                      : "border-accent/60 bg-accent/15 text-accent"
-                  }`}
-                >
-                  {t.status === "desligada" ? "Ligar" : "Ligada"}
-                </button>
-              )}
-            </div>
-          ))
-        )}
-      </FloatingPanel>
+          <FloatingPanel
+            title="Ferramentas"
+            {...common("tools")}
+            badge={tools.length === 0 && demo ? "exemplo" : undefined}
+          >
+            {shownTools.length === 0 ? (
+              <Empty>Nenhuma ferramenta conectada ainda.</Empty>
+            ) : (
+              <ToolsBody tools={shownTools} onToggle={onToggleTool} />
+            )}
+          </FloatingPanel>
 
-      <FloatingPanel title="Execuções recentes" anchor="bl" glass={glass} open={panels.runs} onClose={() => onClose("runs")}>
-        {runs.length === 0 ? (
-          <Empty>Nenhuma resposta nesta conversa ainda.</Empty>
-        ) : (
-          runs.map((r, i) => (
-            <div key={i} className="border-b border-line/60 py-1.5 last:border-0">
-              <div className="truncate text-fg">{r.model}</div>
-              <div className="text-mute">
-                {r.tokens} tokens · {r.tokPerSec} tok/s · {r.seconds}s
-              </div>
-            </div>
-          ))
-        )}
-      </FloatingPanel>
+          <FloatingPanel title="Execuções recentes" {...common("runs")}>
+            {runs.length === 0 ? (
+              <Empty>Nenhuma resposta nesta conversa ainda.</Empty>
+            ) : (
+              runs.map((r, i) => (
+                <div key={i} className="border-b border-line/60 py-1.5 last:border-0">
+                  <div className="truncate text-fg">{r.model}</div>
+                  <div className="text-mute">
+                    {r.tokens} tokens · {r.tokPerSec} tok/s · {r.seconds}s
+                  </div>
+                </div>
+              ))
+            )}
+          </FloatingPanel>
+        </>
+      )}
     </div>
   );
 }

@@ -2,20 +2,14 @@ import { useRef, type ReactNode } from "react";
 import NeuralCore from "../core/NeuralCore";
 import { PROFILES } from "../core/profiles";
 import { stateLabel } from "../core/events";
-import type { NexCore, PanelId } from "../hooks/useNexCore";
+import type { NexCore } from "../hooks/useNexCore";
 import PanelsLayer, { type ActivityInfo, type RunItem, type ToolItem } from "./panels/PanelsLayer";
 import PerfHud from "./PerfHud";
 
-const DOCK: { id: PanelId; label: string }[] = [
-  { id: "activity", label: "Atividade" },
-  { id: "tools", label: "Ferramentas" },
-  { id: "runs", label: "Execuções" },
-];
-
 /**
  * Palco do Nex: o núcleo neural centralizado na área de conteúdo (sem contar a sidebar), a conversa por cima,
- * a saudação da tela inicial, o dock de painéis e os painéis flutuantes.
- * Camadas: núcleo (z-0) · conversa (z-10) · dock (z-30) · painéis (z-30) · medidor (z-40).
+ * a saudação da tela inicial e os painéis flutuantes (bolinhas com ícone que abrem no próprio lugar e podem ser arrastadas).
+ * Camadas: núcleo (z-0) · conversa (z-10) · painéis (z-30) · medidor (z-40).
  */
 export default function NexStage({
   core,
@@ -69,27 +63,9 @@ export default function NexStage({
         </div>
       )}
 
-      <div
-        data-no-core
-        className="absolute left-1/2 top-3 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 gap-1 overflow-x-auto whitespace-nowrap rounded-full border border-line bg-panel/70 p-1 text-xs"
-      >
-        {DOCK.map((d) => (
-          <button
-            key={d.id}
-            aria-pressed={core.panels[d.id]}
-            onClick={() => core.togglePanel(d.id)}
-            className={`rounded-full px-3 py-1 transition-colors ${
-              core.panels[d.id] ? "bg-accent/20 text-accent" : "text-mute hover:text-fg"
-            }`}
-          >
-            {d.label}
-          </button>
-        ))}
-      </div>
-
       <PanelsLayer
         panels={core.panels}
-        onClose={core.togglePanel}
+        onToggle={core.togglePanel}
         glass={profile.glass}
         info={{ ...info, stateLabel: stateLabel(core.state), micOn: core.micOn, profileLabel: profile.label }}
         runs={runs}

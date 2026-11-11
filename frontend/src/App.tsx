@@ -4,7 +4,7 @@ import Background from "./components/Background";
 import MessageView from "./components/MessageView";
 import MetricsModal, { loadColor, loadPercent } from "./components/MetricsModal";
 import NexStage from "./components/NexStage";
-import SettingsPanel from "./components/SettingsPanel";
+import SettingsModal from "./components/SettingsModal";
 import Sidebar from "./components/Sidebar";
 import { useNexCore } from "./hooks/useNexCore";
 import { usePolling } from "./hooks/usePolling";
@@ -115,14 +115,24 @@ export default function App() {
   const activeModel = reasoning ? settings.reasoningModel : settings.chatModel;
   const modelMissing = !!status?.connected && !status.models.some((m) => m.name === activeModel);
   // Um único microfone, o da voz: o botão do campo de texto e o do dock do núcleo chamam esta mesma função.
+  // Com a voz desligada, o primeiro clique liga a voz sozinho (e salva) e começa a ouvir: não abre configurações.
+  const pendingMic = useRef(false);
   const onMicClick = () => {
     if (!voiceSettings.enabled) {
-      setVoiceNote("Ative a voz em Configurações. O navegador vai pedir o microfone.");
-      setShowSettings(true);
+      pendingMic.current = true;
+      setVoiceSettings((s) => ({ ...s, enabled: true }));
       return;
     }
     void voice.toggleMic();
   };
+  useEffect(() => {
+    // roda depois da voz ficar ligada: só então o toggleMic do useVoice passa a funcionar
+    if (pendingMic.current && voiceSettings.enabled) {
+      pendingMic.current = false;
+      void voice.toggleMic();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceSettings.enabled]);
   const nex = useNexCore({ streaming, bgAnim, mic: { active: voice.phase === "listening", toggle: onMicClick } });
 
   const refreshList = useCallback(() => api.list().then(setConversations).catch(() => {}), []);
@@ -350,6 +360,7 @@ export default function App() {
         onNew={newConversation}
         onSelect={select}
         onDelete={remove}
+        onSettings={() => setShowSettings(true)}
       />
 
       {/* sem z-index aqui: um z-index criaria um contexto de empilhamento isolado e o canvas do núcleo (mix-blend-mode: screen) não conseguiria se misturar com o fundo da página */}
@@ -362,12 +373,6 @@ export default function App() {
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              onClick={() => setShowSettings((s) => !s)}
-              className="rounded-lg px-3 py-1.5 text-xs text-mute hover:bg-white/5 hover:text-fg"
-            >
-              {showSettings ? "Fechar configurações" : "Configurações"}
-            </button>
             <button
               onClick={() => setShowMetrics(true)}
               title="Consumo do sistema"
@@ -386,21 +391,6 @@ export default function App() {
         </header>
 
         {banner && <div className="border-y border-red-900/60 bg-red-950/70 px-6 py-2 text-sm text-red-300">{banner}</div>}
-        {showSettings && (
-          <SettingsPanel
-            settings={settings}
-            onChange={setSettings}
-            status={status}
-            bgAnim={bgAnim}
-            onBgAnim={changeBgAnim}
-            core={nex.settingsProps}
-            voice={voiceSettings}
-            onVoice={setVoiceSettings}
-            voiceStatus={voiceStatus}
-            devices={voice.devices}
-          />
-        )}
-
         <NexStage
           core={nex}
           empty={messages.length === 0}
@@ -554,6 +544,21 @@ export default function App() {
       </main>
 
       {showMetrics && <MetricsModal metrics={metrics} onClose={() => setShowMetrics(false)} />}
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          settings={settings}
+          onChange={setSettings}
+          status={status}
+          bgAnim={bgAnim}
+          onBgAnim={changeBgAnim}
+          core={nex.settingsProps}
+          voice={voiceSettings}
+          onVoice={setVoiceSettings}
+          voiceStatus={voiceStatus}
+          devices={voice.devices}
+        />
+      )}
     </div>
   );
 }

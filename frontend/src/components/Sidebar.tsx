@@ -7,6 +7,13 @@ const PanelIcon = () => (
   </svg>
 );
 
+const GearIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+  </svg>
+);
+
 export default function Sidebar({
   items,
   activeId,
@@ -17,7 +24,9 @@ export default function Sidebar({
   onNew,
   onSelect,
   onDelete,
+  onSettings,
 }: {
+  onSettings: () => void;
   items: ConversationSummary[];
   activeId: string | null;
   connected: boolean;
@@ -45,6 +54,9 @@ export default function Sidebar({
             +
           </button>
           <div className="flex-1" />
+          <button onClick={onSettings} title="Configurações" className="mb-2 rounded-lg p-2 text-mute hover:bg-white/5 hover:text-accent">
+            <GearIcon />
+          </button>
           <span title={connectionLabel} className="pb-1">
             {dot}
           </span>
@@ -93,7 +105,15 @@ export default function Sidebar({
             ))}
           </nav>
 
-          <div className="flex items-center gap-2 border-t border-line px-5 py-3 text-xs text-mute">
+          <div className="border-t border-line px-3 pt-2">
+            <button
+              onClick={onSettings}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-mute hover:bg-white/5 hover:text-fg"
+            >
+              <GearIcon /> Configurações
+            </button>
+          </div>
+          <div className="flex items-center gap-2 px-5 py-3 text-xs text-mute">
             {dot}
             {connectionLabel}
           </div>

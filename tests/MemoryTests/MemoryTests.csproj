@@ -14,6 +14,7 @@
     <Compile Include="..\..\backend\Memory\*.cs" />
     <Compile Include="..\..\backend\Storage\ConversationStore.cs" />
     <Compile Include="..\..\backend\Models.cs" />
+    <Compile Include="..\..\backend\voice\VoiceAssets.cs" />
   </ItemGroup>
 
 </Project>

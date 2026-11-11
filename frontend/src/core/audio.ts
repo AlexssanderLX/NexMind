@@ -2,7 +2,8 @@
  * Fontes de nível de áudio (0..1) para o núcleo reagir.
  *
  * - startMic: microfone real via Web Audio (AnalyserNode). Só chame a partir de um clique do usuário.
- *   IMPORTANTE: isto só VISUALIZA o som. Não há transcrição de voz (STT) nem resposta falada (TTS) no Nex ainda.
+ *   Isto só mede o nível do som para a esfera reagir. A transcrição (STT) e a fala (TTS) são do hook useVoice e do backend
+ *   (backend/voice), que rodam na CPU: a VRAM fica toda para o Qwen.
  * - startDemoAudio: sinal sintético com envelope parecido com fala, para testar as animações sem microfone.
  */
 export interface AudioSource {

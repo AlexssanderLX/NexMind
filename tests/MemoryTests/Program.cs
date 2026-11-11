@@ -3,6 +3,7 @@ using LocalAi.Api;
 using LocalAi.Api.Llm;
 using LocalAi.Api.Memory;
 using LocalAi.Api.Storage;
+using LocalAi.Api.Voice;
 
 // Testes do micro-RAG da conversa. Sem framework: cada Check imprime OK/FALHA e o processo sai com 1 se algo falhar.
 var failures = 0;
@@ -133,6 +134,40 @@ try
     Check("Rename mantém histórico, fatos e caderno", File.Exists(Path.Combine(convDir, rn.Id, "scratchpad.md")) && File.Exists(Path.Combine(convDir, rn.Id, "facts.md")) && store.Get(rn.Id)!.Messages.Count == 0);
     var store3 = new ConversationStore(convDir);
     Check("Rename sobrevive a reiniciar o Nex", store3.List().Any(s => s.Id == rn.Id && s.Title.StartsWith("aaa")));
+
+    // ---------- ativos de voz (Piper e modelo): caminho configurado, senão a pasta comum
+    var voiceRoot = Path.Combine(root, "voice-comum");
+    var cfgDir = Path.Combine(root, "backend");
+    Directory.CreateDirectory(Path.Combine(voiceRoot, "piper"));
+    Directory.CreateDirectory(Path.Combine(voiceRoot, "models"));
+    File.WriteAllText(Path.Combine(voiceRoot, "piper", "piper.exe"), "x");
+    File.WriteAllText(Path.Combine(voiceRoot, "models", "pt_BR-faber-medium.onnx"), "x");
+    var (vExe, vModel) = VoiceAssets.Resolve(cfgDir, "voice/bin/piper/piper.exe", "voice/models/pt_BR-faber-medium.onnx", voiceRoot);
+    Check("voz: sem o caminho configurado, usa a pasta comum (exe)", vExe == Path.Combine(voiceRoot, "piper", "piper.exe"), vExe);
+    Check("voz: sem o caminho configurado, usa a pasta comum (modelo)", vModel == Path.Combine(voiceRoot, "models", "pt_BR-faber-medium.onnx"), vModel);
+    var local = Path.Combine(cfgDir, "voice", "bin", "piper");
+    Directory.CreateDirectory(local);
+    Directory.CreateDirectory(Path.Combine(cfgDir, "voice", "models"));
+    File.WriteAllText(Path.Combine(local, "piper.exe"), "x");
+    File.WriteAllText(Path.Combine(cfgDir, "voice", "models", "pt_BR-faber-medium.onnx"), "x");
+    var (lExe, lModel) = VoiceAssets.Resolve(cfgDir, "voice/bin/piper/piper.exe", "voice/models/pt_BR-faber-medium.onnx", voiceRoot);
+    Check("voz: o caminho configurado que existe tem prioridade", lExe == Path.GetFullPath(Path.Combine(local, "piper.exe")) && lModel.StartsWith(cfgDir), lExe + " | " + lModel);
+    var (nExe, nModel) = VoiceAssets.Resolve(cfgDir, "voice/bin/piper/piper.exe", "voice/models/pt_BR-faber-medium.onnx", Path.Combine(root, "nao-existe"));
+    Check("voz: configurado existe e a pasta comum não: nada muda", File.Exists(nExe) && File.Exists(nModel));
+    File.Delete(Path.Combine(local, "piper.exe"));
+    File.Delete(Path.Combine(cfgDir, "voice", "models", "pt_BR-faber-medium.onnx"));
+    var (mExe, mModel) = VoiceAssets.Resolve(cfgDir, "voice/bin/piper/piper.exe", "voice/models/pt_BR-faber-medium.onnx", Path.Combine(root, "nao-existe"));
+    Check("voz: nada em lugar nenhum: devolve os caminhos configurados (Piper fica indisponível, sem exceção)", !File.Exists(mExe) && !File.Exists(mModel) && mExe.EndsWith("piper.exe"));
+    var (eExe, eModel) = VoiceAssets.Resolve(cfgDir, "", null, voiceRoot);
+    Check("voz: configuração vazia usa a pasta comum para o exe e deixa o modelo vazio", eExe == Path.Combine(voiceRoot, "piper", "piper.exe") && eModel == "");
+    var (aExe, aModel) = VoiceAssets.Resolve(cfgDir, Path.Combine(voiceRoot, "piper", "piper.exe"), Path.Combine(voiceRoot, "models", "pt_BR-faber-medium.onnx"), Path.Combine(root, "x"));
+    Check("voz: caminho absoluto configurado é respeitado", aExe == Path.Combine(voiceRoot, "piper", "piper.exe") && File.Exists(aModel));
+    Check("voz: dica de instalação cita o script", VoiceAssets.SetupHint.Contains("setup-voice-assets.ps1"));
+    var antes = Environment.GetEnvironmentVariable("NEX_VOICE_HOME");
+    Environment.SetEnvironmentVariable("NEX_VOICE_HOME", Path.Combine(root, "outro-lugar"));
+    Check("voz: NEX_VOICE_HOME troca a pasta comum", VoiceAssets.LocalRoot == Path.Combine(root, "outro-lugar"), VoiceAssets.LocalRoot);
+    Environment.SetEnvironmentVariable("NEX_VOICE_HOME", antes);
+    Check("voz: sem NEX_VOICE_HOME volta para %LOCALAPPDATA%\nex\voice", VoiceAssets.LocalRoot.EndsWith(Path.Combine("nex", "voice")), VoiceAssets.LocalRoot);
 
     // ---------- Delete leva a micropasta inteira
     Check("Delete remove a micropasta inteira", store.Delete(c2.Id) && !Directory.Exists(Path.Combine(convDir, c2.Id)) && store.Get(c2.Id) is null);

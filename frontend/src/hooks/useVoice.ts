@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { emitNexAudioLevel, emitNexState } from "../core/events";
+import { pickEngine, shouldFallBack } from "../lib/ttsEngine";
 import type { VoiceSettings } from "../types";
 
 export type VoicePhase = "off" | "listening" | "transcribing" | "speaking" | "error";
@@ -97,6 +98,8 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
   const turnOpen = useRef(false);
   const firstAudioAt = useRef<number | null>(null);
   const speakT0 = useRef(0);
+  // Motor de fala que o servidor recusou (503: Piper não instalado). Enquanto o ajuste continuar nele, usa a voz do Windows.
+  const failedEngine = useRef<string | null>(null);
 
   settingsRef.current = settings;
   busyRef.current = busy;
@@ -388,17 +391,25 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
   }
 
   async function playOne(text: string, token: number) {
+    const wanted = settingsRef.current.ttsEngine;
+    const engine = pickEngine(wanted, failedEngine.current);
     const res = await fetch("/api/voice/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text,
-        engine: settingsRef.current.ttsEngine,
-        voice: settingsRef.current.ttsVoice || null,
+        engine,
+        // a voz escolhida é do motor pedido; a do Windows usa a padrão quando caímos nela
+        voice: engine === wanted ? settingsRef.current.ttsVoice || null : null,
         rate: settingsRef.current.speechRate,
       }),
     });
     if (token !== playGen.current) return;
+    if (shouldFallBack(res.status, engine)) {
+      // Piper não está instalado nesta máquina/pasta: não deixa o Nex mudo, fala com a voz do Windows
+      failedEngine.current = engine;
+      return playOne(text, token);
+    }
     if (!res.ok) throw new Error(await res.text());
     const blob = await res.blob();
     if (token !== playGen.current) return;

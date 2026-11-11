@@ -28,16 +28,10 @@ public sealed class VoiceEngine : IDisposable
     public VoiceEngine(IConfiguration config, IWebHostEnvironment env, ILogger<VoiceEngine> log)
     {
         _opt = config.GetSection("Voice").Get<VoiceOptions>() ?? new VoiceOptions();
-        _opt.PiperExe = Resolve(env.ContentRootPath, _opt.PiperExe);
-        _opt.PiperModel = Resolve(env.ContentRootPath, _opt.PiperModel);
+        // o Piper e a voz ficam fora do git: se o caminho configurado não existe nesta pasta, usa o da pasta comum (%LOCALAPPDATA%\nex\voice)
+        (_opt.PiperExe, _opt.PiperModel) = VoiceAssets.Resolve(env.ContentRootPath, _opt.PiperExe, _opt.PiperModel);
         _sttScript = Path.Combine(env.ContentRootPath, "voice", "stt.py");
         _log = log;
-    }
-
-    private static string Resolve(string root, string path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return path;
-        return Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(root, path));
     }
 
     public VoiceOptions Options => _opt;
@@ -53,7 +47,7 @@ public sealed class VoiceEngine : IDisposable
             new("sapi", "tts", OperatingSystem.IsWindows(),
                 OperatingSystem.IsWindows() ? "voz do Windows (System.Speech), sem download" : "somente Windows"),
             new("piper", "tts", PiperReady(),
-                PiperReady() ? _opt.PiperModel : "defina Voice:PiperExe e Voice:PiperModel em appsettings.json"),
+                PiperReady() ? _opt.PiperModel : "Piper não encontrado. " + VoiceAssets.SetupHint),
         };
         return list;
     }
@@ -167,7 +161,7 @@ public sealed class VoiceEngine : IDisposable
         if (engine == "piper")
         {
             if (!PiperReady())
-                throw new InvalidOperationException("Piper não configurado. Use a voz do Windows (sapi) ou defina Voice:PiperExe e Voice:PiperModel.");
+                throw new InvalidOperationException("Piper não encontrado. " + VoiceAssets.SetupHint);
             var wav = await SpeakPiperAsync(text, rate, ct);
             return (wav, (int)sw.ElapsedMilliseconds, "piper");
         }
@@ -216,7 +210,7 @@ public sealed class VoiceEngine : IDisposable
     {
         if (_opt.PiperExe.All(c => c < 128) && _opt.PiperModel.All(c => c < 128))
             return (_opt.PiperExe, _opt.PiperModel);
-        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "nex", "voice");
+        var root = VoiceAssets.LocalRoot;
         var exeDir = Path.Combine(root, "piper");
         var exe = Path.Combine(exeDir, "piper.exe");
         var model = Path.Combine(root, "models", Path.GetFileName(_opt.PiperModel));

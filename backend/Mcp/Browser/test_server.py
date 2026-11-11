@@ -39,7 +39,14 @@ async def fake_host(token="tok-teste", answer=True):
             while True:
                 msg = await read_frame(reader)
                 if answer:
-                    result = {"url": msg.get("url")} if msg["op"] == "navigate" else {"released": 0}
+                    if msg["op"] == "navigate":
+                        result = {"url": msg.get("url"), "tabId": msg.get("tabId") or 101, "loaded": True}
+                    elif msg["op"] == "tabs":
+                        result = {"tabs": [{"id": 5, "title": "Gmail", "url": "https://mail.google.com/", "current": True}, {"id": 6, "title": "GitHub", "url": "https://github.com/", "current": False}]}
+                    elif msg["op"] == "get_dom":
+                        result = {"text": "ola", "items": [{"id": 1, "tag": "a", "label": "Inbox"}], "tabId": msg.get("tabId") or 5, "url": "https://mail.google.com/"}
+                    else:
+                        result = {"released": 0, "seen": msg}
                     writer.write(frame({"id": msg["id"], "ok": True, "result": result}))
                     await writer.drain()
         except (asyncio.IncompleteReadError, ConnectionError):
@@ -91,7 +98,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         r, w, t = await fake_host()
         await asyncio.sleep(0.2)
         out = await server.browser_navigate("https://example.com/")
-        self.assertIn("Aberto no grupo Nex", out)
+        self.assertIn("do grupo Nex", out)
         w.close()
         t.cancel()
 
@@ -140,6 +147,32 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         w.close()
         t.cancel()
 
+    async def test_browser_tabs_lista_o_grupo(self):
+        r, w, t = await fake_host()
+        await asyncio.sleep(0.2)
+        out = await server.browser_tabs()
+        self.assertIn("[5] (atual) Gmail", out)
+        self.assertIn("[6] GitHub", out)
+        w.close()
+        t.cancel()
+
+    async def test_get_dom_mostra_a_aba_lida_e_aceita_tab_id(self):
+        r, w, t = await fake_host()
+        await asyncio.sleep(0.2)
+        out = await server.browser_get_dom(tab_id=6)
+        self.assertIn("Aba [6]", out)
+        self.assertIn("[1] a Inbox", out)
+        w.close()
+        t.cancel()
+
+    async def test_navigate_nova_aba_por_padrao_e_com_tab_id_reusa(self):
+        r, w, t = await fake_host()
+        await asyncio.sleep(0.2)
+        self.assertIn("aba [101]", await server.browser_navigate("https://example.com/a"))
+        self.assertIn("aba [6]", await server.browser_navigate("https://example.com/b", tab_id=6))
+        w.close()
+        t.cancel()
+
     async def test_sem_host_o_erro_manda_carregar_a_extensao_sem_mexer_no_chrome(self):
         with self.assertRaises(RuntimeError) as cm:
             await server.browser_navigate("https://example.com/")
@@ -153,7 +186,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         r2, w2, t2 = await fake_host()
         await asyncio.sleep(0.2)
         out = await server.browser_navigate("https://example.com/")
-        self.assertIn("Aberto", out)
+        self.assertIn("do grupo Nex", out)
         for w in (w1, w2):
             w.close()
         t1.cancel()

@@ -1,7 +1,9 @@
-// Extensão do Nex. Só enxerga e mexe no que ELA criou: um grupo de abas "Nex" e as abas dentro dele.
-// Abas suas, e grupos que você mesmo nomear "Nex", nunca são adotados nem navegados.
+// Extensão do Nex. A fronteira é o grupo de abas chamado "Nex": o Nex abre, lê, clica e digita SÓ nas abas desse grupo.
+// Você decide o que entra: abra o Gmail, o GitHub etc. dentro do grupo (ou peça para o Nex abrir). Abas fora do grupo
+// nunca são vistas nem tocadas. Se você renomear o grupo, o Nex perde o acesso na hora.
 const GROUP = "Nex";
 const STATE_KEY = "nexState";
+const MAX_TABS = 10;
 let port = null;
 
 function connect() {
@@ -24,51 +26,62 @@ function reply(id, ok, result, error) {
   port.postMessage({ id, ok, result, error });
 }
 
-// Estado guardado em storage.session: sobrevive ao service worker dormir e some quando o Chrome fecha.
+// Estado em storage.session: sobrevive ao service worker dormir e some quando o Chrome fecha.
 async function loadState() {
   const data = await chrome.storage.session.get(STATE_KEY);
-  return data[STATE_KEY] || { groupId: null, tabIds: [] };
+  return data[STATE_KEY] || { groupId: null, currentTabId: null };
 }
 
 async function saveState(state) {
   await chrome.storage.session.set({ [STATE_KEY]: state });
 }
 
-// Aba do Nex = foi criada por esta extensão, ainda existe e continua no grupo que a extensão criou.
-async function ownedTabs() {
+// O grupo do Nex: o último usado, se ainda se chama "Nex", ou qualquer grupo chamado exatamente "Nex".
+async function findGroupId() {
   const state = await loadState();
-  if (state.groupId == null) return [];
-  const alive = [];
-  for (const id of state.tabIds) {
+  if (state.groupId != null) {
     try {
-      const tab = await chrome.tabs.get(id);
-      if (tab.groupId === state.groupId) alive.push(tab);
-    } catch { /* aba fechada */ }
+      const group = await chrome.tabGroups.get(state.groupId);
+      if (group.title === GROUP) return state.groupId;
+    } catch { /* grupo sumiu */ }
   }
-  if (alive.length !== state.tabIds.length) {
-    state.tabIds = alive.map((t) => t.id);
-    if (!alive.length) state.groupId = null;
+  const found = await chrome.tabGroups.query({ title: GROUP });
+  const groupId = found.length ? found[0].id : null;
+  if (groupId !== state.groupId) {
+    state.groupId = groupId;
+    state.currentTabId = null;
     await saveState(state);
   }
-  return alive;
+  return groupId;
 }
 
-async function ensureTab(url) {
-  const tabs = await ownedTabs();
-  if (tabs.length) {
-    const tab = tabs[tabs.length - 1];
-    if (url) await chrome.tabs.update(tab.id, { url, active: false });
-    return tab.id;
+async function groupTabs() {
+  const groupId = await findGroupId();
+  if (groupId == null) return [];
+  return chrome.tabs.query({ groupId });
+}
+
+// Aba pedida (tabId) ou a atual do Nex (a última aberta ou usada). Só vale se estiver no grupo.
+async function resolveTab(requested, noTabMessage) {
+  const tabs = await groupTabs();
+  if (!tabs.length) throw new Error(noTabMessage);
+  if (requested) {
+    const tab = tabs.find((t) => t.id === requested);
+    if (!tab) throw new Error(`A aba ${requested} não está no grupo Nex. Use browser_tabs para ver as abas do grupo.`);
+    return tab;
   }
-  const created = await chrome.tabs.create({ url: url || "about:blank", active: false });
-  const groupId = await chrome.tabs.group({ tabIds: [created.id] });
-  await chrome.tabGroups.update(groupId, { title: GROUP, color: "green" });
-  await saveState({ groupId, tabIds: [created.id] });
-  return created.id;
+  const state = await loadState();
+  return tabs.find((t) => t.id === state.currentTabId) || tabs[tabs.length - 1];
+}
+
+async function setCurrent(tabId) {
+  const state = await loadState();
+  state.currentTabId = tabId;
+  await saveState(state);
 }
 
 async function withDebugger(tabId, fn) {
-  const tabs = await ownedTabs();
+  const tabs = await groupTabs();
   if (!tabs.some((t) => t.id === tabId)) throw new Error("A aba não é do grupo Nex.");
   await chrome.debugger.attach({ tabId }, "1.3");
   try {
@@ -118,17 +131,35 @@ function sameDocument(a, b) {
   } catch { return false; }
 }
 
-async function lastOwnedTabId(noTabMessage) {
-  const tabs = await ownedTabs();
-  if (!tabs.length) throw new Error(noTabMessage);
-  return tabs[tabs.length - 1].id;
+async function openInGroup(url) {
+  const tabs = await groupTabs();
+  if (tabs.length >= MAX_TABS) throw new Error(`O grupo Nex já tem ${MAX_TABS} abas. Reutilize uma passando tab_id, ou peça ao Alexssander para fechar algumas.`);
+  const created = await chrome.tabs.create({ url, active: false });
+  const groupId = await findGroupId();
+  if (groupId == null) {
+    const fresh = await chrome.tabs.group({ tabIds: [created.id] });
+    await chrome.tabGroups.update(fresh, { title: GROUP, color: "green" });
+    const state = await loadState();
+    state.groupId = fresh;
+    await saveState(state);
+  } else {
+    await chrome.tabs.group({ tabIds: [created.id], groupId });
+  }
+  return created.id;
 }
 
 async function handle(msg) {
+  if (msg.op === "tabs") {
+    const tabs = await groupTabs();
+    const state = await loadState();
+    const current = (tabs.find((t) => t.id === state.currentTabId) || tabs[tabs.length - 1] || {}).id;
+    return { tabs: tabs.map((t) => ({ id: t.id, title: String(t.title || "").slice(0, 100), url: t.url, current: t.id === current })) };
+  }
   if (msg.op === "get_dom") {
-    const tabId = await lastOwnedTabId("O grupo Nex ainda não tem aba. Peça para abrir uma URL.");
-    await waitLoaded(tabId, 10000);
-    const read = () => withDebugger(tabId, (id) => chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", {
+    const tab = await resolveTab(msg.tabId, "O grupo Nex não tem abas. Peça para abrir uma URL ou abra uma página dentro do grupo Nex.");
+    await setCurrent(tab.id);
+    await waitLoaded(tab.id, 10000);
+    const read = () => withDebugger(tab.id, (id) => chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", {
       expression: DOM_JS,
       returnByValue: true
     }));
@@ -137,14 +168,23 @@ async function handle(msg) {
       await sleep(1500); // página ainda montando: uma segunda leitura antes de dizer que está vazia
       value = await read();
     }
-    return value.result.value;
+    return { ...value.result.value, tabId: tab.id, url: tab.url };
   }
   if (msg.op === "navigate") {
     if (typeof msg.url !== "string" || !/^https?:\/\//i.test(msg.url)) throw new Error("Só são abertos endereços http e https.");
-    const before = (await ownedTabs()).slice(-1)[0];
-    const tabId = await ensureTab(msg.url);
+    let tabId;
+    let before = null;
+    if (msg.tabId) {
+      const tab = await resolveTab(msg.tabId, "O grupo Nex não tem abas.");
+      before = tab.url;
+      await chrome.tabs.update(tab.id, { url: msg.url, active: false });
+      tabId = tab.id;
+    } else {
+      tabId = await openInGroup(msg.url); // por padrão abre uma aba NOVA: nunca sobrescreve uma aba sua
+    }
+    await setCurrent(tabId);
     let loaded = true;
-    if (!before || !sameDocument(before.url, msg.url)) {
+    if (!before || !sameDocument(before, msg.url)) {
       await sleep(300); // deixa a aba entrar em "loading" antes de olhar o status
       loaded = await waitLoaded(tabId, 15000);
       if (loaded) await sleep(500); // folga para o que a página monta por JavaScript
@@ -154,22 +194,23 @@ async function handle(msg) {
   if (msg.op === "click" || msg.op === "type") {
     const elementId = Number(msg.elementId);
     if (!Number.isInteger(elementId) || elementId < 1) throw new Error("Elemento inválido.");
-    const tabId = await lastOwnedTabId("O grupo Nex ainda não tem aba.");
+    const tab = await resolveTab(msg.tabId, "O grupo Nex não tem abas.");
+    await setCurrent(tab.id);
     const pick = `document.querySelector('[data-nex-id="${elementId}"]')`;
-    return withDebugger(tabId, async (id) => {
+    return withDebugger(tab.id, async (id) => {
       const send = (method, params) => chrome.debugger.sendCommand({ tabId: id }, method, params);
       const evalJs = async (expression) => (await send("Runtime.evaluate", { expression, returnByValue: true })).result.value;
       try { await send("Emulation.setFocusEmulationEnabled", { enabled: true }); } catch { /* opcional: aba em segundo plano */ }
       if (msg.op === "click") {
         const r = await evalJs(`(() => { const el = ${pick}; if (!el) return { ok: false }; el.scrollIntoView({ block: "center" }); el.click(); return { ok: true }; })()`);
-        if (!r || !r.ok) throw new Error("Elemento não está mais na aba do grupo Nex.");
+        if (!r || !r.ok) throw new Error("Elemento não está mais na aba. Chame browser_get_dom de novo para ver os itens atuais.");
         await sleep(800);
         await waitLoaded(id, 8000);
         return { ok: true };
       }
       // Digitação de verdade (eventos confiáveis do Chrome): funciona em campos React/Angular, que ignoram el.value = ...
       const r = await evalJs(`(() => { const el = ${pick}; if (!el) return { ok: false }; el.scrollIntoView({ block: "center" }); el.focus(); if (el.select) el.select(); return { ok: true }; })()`);
-      if (!r || !r.ok) throw new Error("Elemento não está mais na aba do grupo Nex.");
+      if (!r || !r.ok) throw new Error("Elemento não está mais na aba. Chame browser_get_dom de novo para ver os itens atuais.");
       await send("Input.insertText", { text: String(msg.text || "") });
       if (msg.pressEnter) {
         for (const type of ["keyDown", "keyUp"]) {
@@ -183,7 +224,7 @@ async function handle(msg) {
     });
   }
   if (msg.op === "release") {
-    const tabs = await ownedTabs();
+    const tabs = await groupTabs();
     for (const tab of tabs) {
       try { await chrome.debugger.detach({ tabId: tab.id }); } catch { /* solto */ }
     }
@@ -191,7 +232,6 @@ async function handle(msg) {
   }
   throw new Error("Operação desconhecida.");
 }
-
 
 // Recarrega a extensão sozinha quando os arquivos dela mudam (extensão sem pacote): você não precisa mais clicar em
 // "recarregar" em chrome://extensions depois de cada atualização do Nex.

@@ -188,49 +188,61 @@ async def _call(op: str, **args):
 
 
 @mcp.tool()
-async def browser_navigate(url: str) -> str:
-    """Abre a URL na aba do grupo Nex, no Chrome já aberto. Só http e https. Respeita o escopo e o ritmo definidos."""
+async def browser_tabs() -> str:
+    """Lista as abas do grupo Nex (id, título, site e qual é a atual). Use para saber o que já está aberto, inclusive o que o Alexssander abriu."""
+    payload = await _call("tabs")
+    tabs = payload.get("tabs") or []
+    if not tabs:
+        return "O grupo Nex não tem abas. Abra uma URL com browser_navigate, ou peça ao Alexssander para abrir páginas dentro do grupo Nex."
+    lines = [f"[{t['id']}]{' (atual)' if t.get('current') else ''} {t.get('title') or '(sem título)'} - {t.get('url')}" for t in tabs]
+    return "Abas do grupo Nex:\n" + "\n".join(lines)
+
+
+@mcp.tool()
+async def browser_navigate(url: str, tab_id: int = 0) -> str:
+    """Abre a URL em uma aba NOVA do grupo Nex (padrão). Com tab_id, troca o endereço dessa aba do grupo. Só http e https. Respeita o escopo e o ritmo definidos."""
     pacer = _get_pacer()
     try:
         host = check_url(url, pacer.cfg)
         waited = await pacer.before_navigate(host)
     except PolicyError as exc:
         raise RuntimeError(str(exc)) from exc
-    result = await _call("navigate", url=url)
+    result = await _call("navigate", url=url, tabId=int(tab_id) or None)
     note = f" (aguardei {waited:.1f} s para não acelerar o site)" if waited >= 0.5 else ""
     pending = "" if result.get("loaded", True) else " A página ainda estava carregando: chame browser_get_dom de novo em instantes."
-    return f"Aberto no grupo Nex, sem fechar o Chrome: {result.get('url')}{note}{pending}"
+    return f"Aberto na aba [{result.get('tabId')}] do grupo Nex, sem fechar o Chrome: {result.get('url')}{note}{pending}"
 
 
 @mcp.tool()
-async def browser_get_dom() -> str:
-    """Lê o texto visível da aba do grupo Nex. Não mexe nas outras abas."""
+async def browser_get_dom(tab_id: int = 0) -> str:
+    """Lê o texto visível e os itens clicáveis de uma aba do grupo Nex (a atual, ou a indicada em tab_id). Não mexe nas abas fora do grupo."""
     await _get_pacer().before_action()
-    payload = await _call("get_dom")
+    payload = await _call("get_dom", tabId=int(tab_id) or None)
     items = payload.get("items") or []
     lines = [f"[{item['id']}] {item['tag']} {item['label']}".strip() for item in items]
     text = (payload.get("text") or "").strip()
+    head = f"Aba [{payload.get('tabId')}] {payload.get('url')}\n"
     if not text and not lines:
-        return "Nenhum texto visível no grupo Nex."
-    body = "Texto visível:\n" + (text or "(vazio)")
+        return head + "Nenhum texto visível nessa aba."
+    body = head + "Texto visível:\n" + (text or "(vazio)")
     if lines:
-        body += "\n\nInterativos:\n" + "\n".join(lines)
+        body += "\n\nInterativos (os números valem só para esta aba):\n" + "\n".join(lines)
     return _clip(body)
 
 
 @mcp.tool()
-async def browser_click(element_id: int) -> str:
-    """Clica um elemento da aba do grupo Nex."""
+async def browser_click(element_id: int, tab_id: int = 0) -> str:
+    """Clica um elemento de uma aba do grupo Nex (a atual, ou a indicada em tab_id). O número vem de browser_get_dom da mesma aba."""
     await _get_pacer().before_action()
-    await _call("click", elementId=int(element_id))
+    await _call("click", elementId=int(element_id), tabId=int(tab_id) or None)
     return f"Clique em [{element_id}] feito no grupo Nex. A página pode ter mudado: chame browser_get_dom para ver o que apareceu antes de relatar qualquer resultado."
 
 
 @mcp.tool()
-async def browser_type(element_id: int, text: str, press_enter: bool = False) -> str:
-    """Digita num campo da aba do grupo Nex."""
+async def browser_type(element_id: int, text: str, press_enter: bool = False, tab_id: int = 0) -> str:
+    """Digita num campo de uma aba do grupo Nex (a atual, ou a indicada em tab_id). O número vem de browser_get_dom da mesma aba."""
     await _get_pacer().before_action()
-    result = await _call("type", elementId=int(element_id), text=text, pressEnter=bool(press_enter))
+    result = await _call("type", elementId=int(element_id), text=text, pressEnter=bool(press_enter), tabId=int(tab_id) or None)
     now = (result or {}).get("value")
     shown = f" Valor que ficou no campo: {now!r}." if now is not None else ""
     return f"Texto digitado em [{element_id}] no grupo Nex.{shown} Chame browser_get_dom para ler o resultado na página antes de relatá-lo."
@@ -238,12 +250,12 @@ async def browser_type(element_id: int, text: str, press_enter: bool = False) ->
 
 @mcp.tool()
 async def browser_close() -> str:
-    """Solta o debugger da aba do grupo Nex. Não fecha o Chrome."""
+    """Solta o controle das abas do grupo Nex. Não fecha abas nem o Chrome."""
     try:
         await _call("release")
     except RuntimeError:
         return "Extensão desconectada. O Chrome continua aberto."
-    return "Debugger solto no grupo Nex. O Chrome continua aberto."
+    return "Controle solto no grupo Nex. As abas e o Chrome continuam abertos."
 
 
 if __name__ == "__main__":

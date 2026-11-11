@@ -48,7 +48,8 @@ Log "Iniciando o Ollama..." Cyan
 $env:OLLAMA_FLASH_ATTENTION = "1"     # atenção otimizada: usa menos VRAM
 $env:OLLAMA_KV_CACHE_TYPE = "q8_0"    # cache de contexto na metade do tamanho
 $env:OLLAMA_MAX_LOADED_MODELS = "1"   # um modelo na VRAM por vez
-$env:OLLAMA_NUM_PARALLEL = "1"        # sem requisições paralelas (cada uma multiplicaria o cache de contexto)
+$env:OLLAMA_KEEP_ALIVE = "60m"        # mantém o modelo na VRAM: sem os ~7 s de carregar a cada pausa (o padrão descarrega em 5 min)
+$env:OLLAMA_NUM_PARALLEL = "1"       # sem requisições paralelas (cada uma multiplicaria o cache de contexto)
 $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
 if (-not $ollama) { $ollama = "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
 if (-not (Test-Path $ollama)) { Stop-WithError "Ollama não encontrado. Instale em https://ollama.com/download" }

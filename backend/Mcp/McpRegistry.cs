@@ -17,6 +17,7 @@ public sealed class McpServerEntry
     public string[]? AllowedTools { get; set; }
     /// <summary>Trechos de caminho que nunca podem ser lidos nem escritos (chaves, credenciais, perfis de navegador...).</summary>
     public string[]? BlockedPaths { get; set; }
+    public Dictionary<string, string>? Env { get; set; }
 }
 
 public sealed class McpServersFile
@@ -42,11 +43,24 @@ public sealed class McpRegistry : IAsyncDisposable
     public static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(30);
 
     private readonly string _configPath;
+    private readonly string _rootDir;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, McpClient> _clients = new();
     private List<NexTool>? _tools;
 
-    public McpRegistry(string configPath) => _configPath = configPath;
+    public McpRegistry(string configPath)
+    {
+        _configPath = configPath;
+        var configDir = Path.GetDirectoryName(Path.GetFullPath(configPath));
+        _rootDir = Directory.GetParent(configDir!)?.FullName ?? AppContext.BaseDirectory;
+    }
+
+    private string ResolveCommand(string command)
+    {
+        if (Path.IsPathRooted(command)) return command;
+        var candidate = Path.GetFullPath(Path.Combine(_rootDir, command.Replace('/', Path.DirectorySeparatorChar)));
+        return File.Exists(candidate) ? candidate : command;
+    }
 
     private McpServersFile LoadConfig()
     {
@@ -65,12 +79,18 @@ public sealed class McpRegistry : IAsyncDisposable
     private async Task<McpClient> ClientAsync(string server, McpServerEntry cfg, CancellationToken ct)
     {
         if (_clients.TryGetValue(server, out var c)) return c;
+        var envVars = new Dictionary<string, string?> { ["PYTHONUTF8"] = "1" };
+        if (cfg.Env is not null)
+        {
+            foreach (var (k, v) in cfg.Env) envVars[k] = v;
+        }
         c = await McpClient.CreateAsync(new StdioClientTransport(new StdioClientTransportOptions
         {
             Name = server,
-            Command = cfg.Command,
+            Command = ResolveCommand(cfg.Command),
             Arguments = cfg.Args,
-            EnvironmentVariables = new Dictionary<string, string?> { ["PYTHONUTF8"] = "1" },
+            WorkingDirectory = _rootDir,
+            EnvironmentVariables = envVars,
         }), cancellationToken: ct);
         _clients[server] = c;
         return c;

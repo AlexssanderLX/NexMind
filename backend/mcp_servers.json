@@ -62,7 +62,8 @@
         "HEADLESS": "false"
       },
       "requiresApproval": [
-        "browser_click"
+        "browser_click",
+        "browser_type"
       ]
     },
     "desktop": {

@@ -1,21 +1,39 @@
-"""Ponte MCP entre o Nex e a extensão no Chrome já aberto. Não lança Chrome."""
+"""Ponte MCP entre o Nex e a extensão no Chrome já aberto. Não lança Chrome.
+
+O Chrome chama o host nativo (NexChromeHost.exe), que se conecta aqui em 127.0.0.1:9334 e prova que é ele
+com o token de %LOCALAPPDATA%\\Nex\\chrome-host\\token. Sem o token a conexão é recusada.
+Todo pedido passa antes por policy.py (esquema da URL, escopo e ritmo).
+"""
 
 from __future__ import annotations
 
 import asyncio
+import hmac
 import itertools
 import json
+import os
+import sys
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("nex-browser")
+try:  # execução como pacote (python -m backend.Mcp.Browser.server)
+    from .policy import Pacer, PolicyError, check_url, load_policy
+except ImportError:  # execução direta do arquivo
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from policy import Pacer, PolicyError, check_url, load_policy
 
-_PORT = 9334
-_reader = None
+_PORT = int(os.environ.get("NEX_BROWSER_PORT", "9334"))
+_TOKEN_FILE = Path(os.environ.get("NEX_BROWSER_TOKEN_FILE") or (Path(os.environ.get("LOCALAPPDATA", "")) / "Nex" / "chrome-host" / "token"))
+_HELLO_TIMEOUT = 3.0
+
 _writer = None
 _pending: dict[int, asyncio.Future] = {}
 _ids = itertools.count(1)
-_server_started = False
+_server = None
+_bind_error: str | None = None
+_pacer: Pacer | None = None
 
 _MAX_TOKENS = 1500
 _CHARS_PER_TOKEN = 4
@@ -27,6 +45,10 @@ _MISSING = (
 )
 
 
+def _log(msg: str) -> None:
+    print(f"[nex-browser] {msg}", file=sys.stderr, flush=True)
+
+
 def _clip(text: str) -> str:
     limit = _MAX_TOKENS * _CHARS_PER_TOKEN
     if len(text) <= limit:
@@ -34,75 +56,130 @@ def _clip(text: str) -> str:
     return text[:limit].rsplit("\n", 1)[0] + "\n[truncado em 1500 tokens]"
 
 
-async def _read_exact(reader: asyncio.StreamReader, n: int) -> bytes:
-    data = await reader.readexactly(n)
-    return data
+def _token() -> str | None:
+    try:
+        value = _TOKEN_FILE.read_text(encoding="ascii").strip()
+    except OSError:
+        return None
+    return value or None
 
 
-async def _read_frame(reader: asyncio.StreamReader) -> str | None:
+async def _read_frame(reader: asyncio.StreamReader, timeout: float | None = None) -> str | None:
+    async def _go() -> str | None:
+        try:
+            header = await reader.readexactly(4)
+            length = int.from_bytes(header, "little")
+            if length <= 0 or length > 1024 * 1024:
+                return None
+            payload = await reader.readexactly(length)
+        except (asyncio.IncompleteReadError, ConnectionError):
+            return None
+        return payload.decode("utf-8", "replace")
+
+    if timeout is None:
+        return await _go()
     try:
-        header = await _read_exact(reader, 4)
-    except asyncio.IncompleteReadError:
+        return await asyncio.wait_for(_go(), timeout)
+    except asyncio.TimeoutError:
         return None
-    length = int.from_bytes(header, "little")
-    if length <= 0 or length > 1024 * 1024:
-        return None
-    try:
-        payload = await _read_exact(reader, length)
-    except asyncio.IncompleteReadError:
-        return None
-    return payload.decode("utf-8", "replace")
 
 
 async def _send_frame(writer: asyncio.StreamWriter, payload: bytes) -> None:
-    if writer is None:
-        return
     writer.write(len(payload).to_bytes(4, "little") + payload)
     await writer.drain()
 
 
+def _fail_pending(reason: str) -> None:
+    for fut in list(_pending.values()):
+        if not fut.done():
+            fut.set_exception(RuntimeError(reason))
+
+
 async def _client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-    global _reader, _writer
-    _reader, _writer = reader, writer
+    global _writer
+    expected = _token()
+    hello = await _read_frame(reader, _HELLO_TIMEOUT)
+    ok = False
+    if expected and hello:
+        try:
+            got = json.loads(hello).get("hello")
+            ok = isinstance(got, str) and hmac.compare_digest(got.encode(), expected.encode())
+        except ValueError:
+            ok = False
+    if not ok:
+        _log("conexão recusada: token ausente ou inválido")
+        writer.close()
+        return
+    old = _writer
+    _writer = writer
+    if old is not None and old is not writer:
+        old.close()  # o host mais novo vale; o anterior está morto ou sobrando
     try:
         while True:
             frame = await _read_frame(reader)
             if frame is None:
                 break
-            data = json.loads(frame)
-            fut = _pending.get(data.get("id"))
+            try:
+                data = json.loads(frame)
+            except ValueError:
+                continue
+            fut = _pending.get(data.get("id")) if isinstance(data, dict) else None
             if fut is not None and not fut.done():
                 fut.set_result(data)
     finally:
         if _writer is writer:
-            _reader = None
             _writer = None
+            _fail_pending("A extensão desconectou durante o pedido.")
         writer.close()
 
 
 async def _ensure_server() -> None:
-    global _server_started
-    if _server_started:
+    global _server, _bind_error
+    if _server is not None:
         return
-    await asyncio.start_server(_client, "127.0.0.1", _PORT)
-    _server_started = True
+    try:
+        _server = await asyncio.start_server(_client, "127.0.0.1", _PORT)
+        _bind_error = None
+    except OSError as exc:
+        _bind_error = f"A porta {_PORT} do Nex está ocupada por outro processo ({exc.strerror}). Feche a janela antiga do Nex e tente de novo."
+        _log(_bind_error)
+
+
+@asynccontextmanager
+async def _lifespan(_app):
+    await _ensure_server()  # já escuta ao subir, assim o host nativo conecta antes do primeiro pedido
+    yield
+
+
+mcp = FastMCP("nex-browser", lifespan=_lifespan)
+
+
+def _get_pacer() -> Pacer:
+    global _pacer
+    if _pacer is None:
+        _pacer = Pacer(load_policy())
+    return _pacer
 
 
 async def _call(op: str, **args):
     await _ensure_server()
+    if _bind_error:
+        raise RuntimeError(_bind_error)
     for _ in range(30):
         if _writer is not None:
             break
         await asyncio.sleep(0.1)
-    if _writer is None:
+    writer = _writer
+    if writer is None:
         raise RuntimeError(_MISSING)
     call_id = next(_ids)
-    loop = asyncio.get_running_loop()
-    fut: asyncio.Future = loop.create_future()
+    fut: asyncio.Future = asyncio.get_running_loop().create_future()
     _pending[call_id] = fut
     try:
-        await _send_frame(_writer, json.dumps({"id": call_id, "op": op, **args}).encode())
+        await _send_frame(writer, json.dumps({"id": call_id, "op": op, **args}).encode())
         data = await asyncio.wait_for(fut, 20)
+    except (ConnectionError, asyncio.TimeoutError) as exc:
+        raise RuntimeError("A extensão não respondeu a tempo. O Chrome continua aberto.") from exc
     finally:
         _pending.pop(call_id, None)
     if not data.get("ok"):
@@ -112,14 +189,22 @@ async def _call(op: str, **args):
 
 @mcp.tool()
 async def browser_navigate(url: str) -> str:
-    """Abre a URL numa aba nova do grupo Nex, no Chrome já aberto. Não relança o Chrome."""
+    """Abre a URL na aba do grupo Nex, no Chrome já aberto. Só http e https. Respeita o escopo e o ritmo definidos."""
+    pacer = _get_pacer()
+    try:
+        host = check_url(url, pacer.cfg)
+        waited = await pacer.before_navigate(host)
+    except PolicyError as exc:
+        raise RuntimeError(str(exc)) from exc
     result = await _call("navigate", url=url)
-    return f"Aberto no grupo Nex, sem fechar o Chrome: {result.get('url')}"
+    note = f" (aguardei {waited:.1f} s para não acelerar o site)" if waited >= 0.5 else ""
+    return f"Aberto no grupo Nex, sem fechar o Chrome: {result.get('url')}{note}"
 
 
 @mcp.tool()
 async def browser_get_dom() -> str:
-    """Lê o texto visível da última aba do grupo Nex. Não mexe nas outras abas."""
+    """Lê o texto visível da aba do grupo Nex. Não mexe nas outras abas."""
+    await _get_pacer().before_action()
     payload = await _call("get_dom")
     items = payload.get("items") or []
     lines = [f"[{item['id']}] {item['tag']} {item['label']}".strip() for item in items]
@@ -134,21 +219,23 @@ async def browser_get_dom() -> str:
 
 @mcp.tool()
 async def browser_click(element_id: int) -> str:
-    """Clica um elemento da última aba do grupo Nex."""
-    await _call("click", elementId=element_id)
+    """Clica um elemento da aba do grupo Nex."""
+    await _get_pacer().before_action()
+    await _call("click", elementId=int(element_id))
     return f"Clique em [{element_id}] no grupo Nex."
 
 
 @mcp.tool()
 async def browser_type(element_id: int, text: str, press_enter: bool = False) -> str:
-    """Digita num campo da última aba do grupo Nex."""
-    await _call("type", elementId=element_id, text=text, pressEnter=press_enter)
+    """Digita num campo da aba do grupo Nex."""
+    await _get_pacer().before_action()
+    await _call("type", elementId=int(element_id), text=text, pressEnter=bool(press_enter))
     return f"Texto digitado em [{element_id}] no grupo Nex."
 
 
 @mcp.tool()
 async def browser_close() -> str:
-    """Solta o debugger das abas do grupo Nex. Não fecha o Chrome."""
+    """Solta o debugger da aba do grupo Nex. Não fecha o Chrome."""
     try:
         await _call("release")
     except RuntimeError:

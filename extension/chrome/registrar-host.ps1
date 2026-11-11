@@ -2,6 +2,14 @@
 $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 $outDir = "$env:LOCALAPPDATA\Nex\chrome-host"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+# Troca o host em uso: so o NexChromeHost (o Chrome sobe outro sozinho). O Chrome em si nao e tocado.
+Get-Process NexChromeHost -ErrorAction SilentlyContinue | Stop-Process -Force
+$tokenPath = "$outDir\token"
+if (-not (Test-Path $tokenPath)) {
+    $bytes = New-Object byte[] 24
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    [IO.File]::WriteAllText($tokenPath, (($bytes | ForEach-Object { $_.ToString("x2") }) -join ""), [Text.Encoding]::ASCII)
+}
 & $csc /nologo /out:"$outDir\NexChromeHost.exe" "$PSScriptRoot\host\NexChromeHost.cs"
 $jsonPath = "$outDir\com.nex.chrome.json"
 @{

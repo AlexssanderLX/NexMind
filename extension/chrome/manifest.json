@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Grupo de abas do Nex no Chrome já aberto. Não relança o navegador.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnzZ6IgVAS7OebhmCLy0H0rpMJtdDObA6errlSeZu23ZesEC431Xgl9HWWnHbxjppMYknLBYlPFCRHkc5P9rGscBT8h+gZxoYhgY5dYSAnKmBy3pIE/jwXrkNArvOTpOHenxEt8FU/UI0wZwGYJ7cAdfZCqr28UYcTi/XsIUzRUkeQkYacpewSIMfEGzRh6zj5xfQx0xompkB0MRyUT0q1tOvRHIHtng4EF0LnDg6IoGU4uGPzygpSbaXAW5Xk0lkVbLHulwmWMhiKoYTfBEu0rFE+VMtyD0OnnKjOTLDDl1pQMoq46T84ZokXVbGiQoF6QeBJvNyHt2FwJu6AiNXHQIDAQAB",
-  "permissions": ["tabs", "tabGroups", "debugger", "scripting", "nativeMessaging"],
+  "permissions": ["tabs", "tabGroups", "debugger", "scripting", "nativeMessaging", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" }
 }

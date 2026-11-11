@@ -9,7 +9,7 @@ $lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$root\iniciar-nex.p
 $lnk.WorkingDirectory = $root
 $lnk.IconLocation = "$root\assets\nex.ico"
 $lnk.WindowStyle = 1 # janela normal: mostra cada passo (limpeza, Ollama, Nex); fechar a janela para o Nex
-$lnk.Description = "Inicia o Nex (Ollama + app) e o Chrome na porta 9222, com a sessão do usuário"
+$lnk.Description = "Inicia o Nex (Ollama + app). O Chrome não é aberto nem reiniciado: o Nex usa a extensão no navegador já aberto"
 $lnk.Save()
 
 $chromeExe = @(
@@ -24,7 +24,7 @@ $chrome.Arguments = "-ExecutionPolicy Bypass -File `"$root\iniciar-chrome-sessao
 $chrome.WorkingDirectory = $root
 if ($chromeExe) { $chrome.IconLocation = "$chromeExe,0" }
 $chrome.WindowStyle = 1
-$chrome.Description = "Abre o Chrome com a sessão logada e a porta 9222 para o Nex"
+$chrome.Description = "Não faz nada (o Nex não abre nem fecha o Chrome). Mantido só por compatibilidade"
 $chrome.Save()
 
 Write-Host "Atalho criado: $desktop\Nex.lnk"

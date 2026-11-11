@@ -4,6 +4,7 @@ using LocalAi.Api;
 using LocalAi.Api.Llm;
 using LocalAi.Api.Metrics;
 using LocalAi.Api.Storage;
+using LocalAi.Api.Voice;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,6 +17,7 @@ builder.Services.AddHttpClient<OllamaClient>((sp, http) =>
 });
 builder.Services.AddSingleton(new ConversationStore(Path.Combine(builder.Environment.ContentRootPath, "data", "conversations")));
 builder.Services.AddSingleton<SystemMetrics>();
+builder.Services.AddSingleton<VoiceEngine>();
 
 var app = builder.Build();
 var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -108,6 +110,58 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
 
     if (ct.IsCancellationRequested) return;
     await Send(error is null ? new { type = "done", stats } : new { type = "error", message = error });
+});
+
+api.MapGet("/voice/status", (VoiceEngine voice) => new
+{
+    engines = voice.List(),
+    voices = voice.WindowsVoices(),
+    whisperModel = voice.Options.WhisperModel,
+});
+
+api.MapPost("/voice/transcribe", async (HttpRequest request, VoiceEngine voice, CancellationToken ct) =>
+{
+    if (!request.HasFormContentType) return Results.BadRequest("Envie o áudio em multipart (campo audio).");
+    var form = await request.ReadFormAsync(ct);
+    var file = form.Files["audio"];
+    if (file is null || file.Length == 0) return Results.BadRequest("Áudio vazio.");
+    if (file.Length > 8 * 1024 * 1024) return Results.BadRequest("Áudio acima de 8 MB.");
+    var tmp = Path.Combine(Path.GetTempPath(), "nex-stt-" + Guid.NewGuid().ToString("n") + ".wav");
+    try
+    {
+        await using (var fs = File.Create(tmp))
+            await file.CopyToAsync(fs, ct);
+        var (text, ms) = await voice.TranscribeAsync(tmp, ct);
+        return Results.Ok(new { text, sttMs = ms });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 503);
+    }
+    finally
+    {
+        try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* temporário */ }
+    }
+});
+
+api.MapPost("/voice/speak", async (SpeakRequest req, VoiceEngine voice, HttpContext ctx) =>
+{
+    var text = (req.Text ?? "").Trim();
+    if (text.Length == 0) { ctx.Response.StatusCode = 400; return; }
+    if (text.Length > 4000) text = text[..4000];
+    try
+    {
+        var (wav, ms, engine) = await voice.SpeakAsync(text, req.Engine ?? "sapi", req.Voice, req.Rate <= 0 ? 1 : req.Rate, ctx.RequestAborted);
+        ctx.Response.ContentType = "audio/wav";
+        ctx.Response.Headers["X-Tts-Ms"] = ms.ToString();
+        ctx.Response.Headers["X-Tts-Engine"] = engine;
+        await ctx.Response.Body.WriteAsync(wav, ctx.RequestAborted);
+    }
+    catch (InvalidOperationException ex)
+    {
+        ctx.Response.StatusCode = 503;
+        await ctx.Response.WriteAsync(ex.Message);
+    }
 });
 
 app.MapFallbackToFile("index.html");

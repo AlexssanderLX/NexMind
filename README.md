@@ -74,6 +74,15 @@ no navegador. O app avisa quando o modelo do modo atual não está instalado. A 
 CPU, RAM, GPU e VRAM da máquina, RAM usada pelo Ollama e quanto do modelo carregado está na GPU
 (abaixo de 100% = parte rodando na CPU, mais lento). Cada resposta mostra tokens/s e tempos.
 
+## Voz (branch `feature/voice-integration`)
+Fluxo local: microfone no navegador → pausa configurável → `POST /api/voice/transcribe` (faster-whisper na CPU) → o mesmo chat do Ollama → `POST /api/voice/speak` (voz do Windows ou Piper). O histórico é o da conversa aberta. Áudio bruto fica só em arquivo temporário e é apagado. Uma frase falada não executa ferramentas.
+
+```powershell
+pip install -r backend/voice/requirements.txt   # primeira vez; baixa o modelo "base" no primeiro uso
+.\start.ps1
+```
+Em Configurações, ligue **Voz local** e use o botão **Microfone**. Piper é opcional (`Voice:PiperExe` e `Voice:PiperModel` no `appsettings.json`). Sem o Python, o chat de texto e a síntese pelo Windows continuam; só a transcrição fica indisponível.
+
 ## Observação sobre o `qwen3:4b`
 A versão atual do `qwen3:4b` no Ollama é a variante que **sempre raciocina**. Ela responde certo, mas gasta muitos
 tokens pensando (uma pergunta simples levou ~1.900 tokens, ~50 s a ~41 tok/s). "Raciocínio: Desligado" não a impede de

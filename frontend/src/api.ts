@@ -1,4 +1,4 @@
-import type { Conversation, ConversationSummary, Metrics, OllamaStatus, Settings, StreamEvent } from "./types";
+import type { Conversation, ConversationSummary, Metrics, OllamaStatus, Settings, StreamEvent, VoiceStatus } from "./types";
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
@@ -13,6 +13,7 @@ export const api = {
   create: () => req<Conversation>("/api/conversations", { method: "POST" }),
   get: (id: string) => req<Conversation>(`/api/conversations/${id}`),
   remove: (id: string) => req<void>(`/api/conversations/${id}`, { method: "DELETE" }),
+  voiceStatus: () => req<VoiceStatus>("/api/voice/status"),
 };
 
 /** Envia a mensagem e entrega os eventos NDJSON conforme chegam. */

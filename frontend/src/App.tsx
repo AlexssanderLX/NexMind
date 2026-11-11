@@ -6,8 +6,29 @@ import MetricsModal, { loadColor, loadPercent } from "./components/MetricsModal"
 import SettingsPanel from "./components/SettingsPanel";
 import Sidebar from "./components/Sidebar";
 import { usePolling } from "./hooks/usePolling";
+import { useVoice } from "./hooks/useVoice";
 import { createTokenBuffer } from "./lib/tokenBuffer";
-import type { ConversationSummary, Message, Metrics, OllamaStatus, Settings } from "./types";
+import type { ConversationSummary, Message, Metrics, OllamaStatus, Settings, VoiceSettings, VoiceStatus, VoiceTimings } from "./types";
+
+const VOICE_DEFAULTS: VoiceSettings = {
+  enabled: false,
+  mode: "auto",
+  vadSilenceMs: 900,
+  vadSensitivity: 0.06,
+  speechRate: 1,
+  sttEngine: "faster-whisper",
+  ttsEngine: "sapi",
+  ttsVoice: "",
+  inputDeviceId: "",
+};
+
+function loadVoice(): VoiceSettings {
+  try {
+    return { ...VOICE_DEFAULTS, ...JSON.parse(localStorage.getItem("voice-settings") ?? "{}") };
+  } catch {
+    return VOICE_DEFAULTS;
+  }
+}
 
 const DEFAULTS: Settings = {
   chatModel: "qwen3:4b-instruct",
@@ -68,6 +89,27 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [reasoning, setReasoning] = useState(false);
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadVoice);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  const [timings, setTimings] = useState<VoiceTimings | null>(null);
+  const sendRef = useRef<(text?: string, fromVoice?: boolean, heardAt?: number) => void>(() => {});
+
+  const voice = useVoice({
+    settings: voiceSettings,
+    busy: streaming,
+    onUtterance: (text, heardAt) => sendRef.current(text, true, heardAt),
+    onInterrupt: () => abortRef.current?.abort(),
+    onError: (message) => setVoiceNote(message),
+  });
+
+  useEffect(() => {
+    localStorage.setItem("voice-settings", JSON.stringify(voiceSettings));
+  }, [voiceSettings]);
+
+  useEffect(() => {
+    api.voiceStatus().then(setVoiceStatus).catch(() => setVoiceStatus(null));
+  }, [showSettings]);
   const activeModel = reasoning ? settings.reasoningModel : settings.chatModel;
   const modelMissing = !!status?.connected && !status.models.some((m) => m.name === activeModel);
 
@@ -145,10 +187,12 @@ export default function App() {
     refreshList();
   }
 
-  async function send() {
-    const text = input.trim();
+  async function send(textOverride?: string, fromVoice = false, heardAt = performance.now()) {
+    const text = (textOverride ?? input).trim();
     if (!text || streaming) return;
     setChatError(null);
+    setVoiceNote(null);
+    voice.interrupt();
 
     let id = activeId;
     try {
@@ -161,7 +205,8 @@ export default function App() {
       return;
     }
 
-    setInput("");
+    if (!textOverride) setInput("");
+    else setInput("");
     setMessages((m) => [...m, { role: "user", content: text }, { role: "assistant", content: "" }]);
     setStreaming(true);
     const abort = new AbortController();
@@ -176,6 +221,9 @@ export default function App() {
     );
 
     let firstEvent = true;
+    let reply = "";
+    let firstTokenMs: number | null = null;
+    const speakBack = fromVoice && voiceSettings.enabled;
     try {
       await streamChat(
         id,
@@ -187,7 +235,11 @@ export default function App() {
             firstEvent = false;
             refreshList(); // a conversa já está salva com título: mostra na sidebar logo
           }
-          if (ev.type === "token") buffer.push("content", ev.text);
+          if (ev.type === "token") {
+            if (firstTokenMs === null) firstTokenMs = Math.round(performance.now() - heardAt);
+            reply += ev.text;
+            buffer.push("content", ev.text);
+          }
           else if (ev.type === "thinking") buffer.push("thinking", ev.text);
           else if (ev.type === "done") {
             buffer.flush();
@@ -205,11 +257,21 @@ export default function App() {
       buffer.flush(); // parada/queda: entrega o que já chegou
       setStreaming(false);
       abortRef.current = null;
+      if (speakBack && reply.trim() && !abort.signal.aborted) {
+        const firstAudioMs = await voice.speak(reply, heardAt);
+        setTimings({
+          sttMs: null,
+          firstTokenMs,
+          firstAudioMs: firstAudioMs === null ? null : Math.round(firstAudioMs),
+          totalMs: Math.round(performance.now() - heardAt),
+        });
+      }
       // Sincroniza com o que foi salvo no servidor (inclui parciais e a pergunta mesmo em caso de erro)
       api.get(id).then((c) => setMessages(c.messages)).catch(() => {});
       refreshList();
     }
   }
+  sendRef.current = send;
 
   const connected = !!status?.connected && !backendDown;
   const banner = backendDown
@@ -278,6 +340,10 @@ export default function App() {
             status={status}
             bgAnim={bgAnim}
             onBgAnim={changeBgAnim}
+            voice={voiceSettings}
+            onVoice={setVoiceSettings}
+            voiceStatus={voiceStatus}
+            devices={voice.devices}
           />
         )}
 
@@ -331,6 +397,27 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => {
+                    if (!voiceSettings.enabled) {
+                      setVoiceNote("Ative a voz em Configurações. O navegador vai pedir o microfone.");
+                      setShowSettings(true);
+                      return;
+                    }
+                    void voice.toggleMic();
+                  }}
+                  className={`rounded-lg border px-2.5 py-1 text-xs ${
+                    voice.phase === "listening"
+                      ? "border-accent/60 bg-accent/15 text-accent"
+                      : voice.phase === "error"
+                        ? "border-red-800 text-red-300"
+                        : "border-line text-mute hover:bg-white/5 hover:text-fg"
+                  }`}
+                  title={voice.phase === "listening" ? "Parar microfone" : "Falar com o Nex"}
+                >
+                  {voice.phase === "listening" ? "Ouvindo" : voice.phase === "transcribing" ? "Transcrevendo" : voice.phase === "speaking" ? "Interromper" : "Microfone"}
+                </button>
+                <button
+                  type="button"
                   aria-pressed={reasoning}
                   onClick={() => setReasoning((r) => !r)}
                   className={`rounded-lg border px-2.5 py-1 text-xs transition-colors ${
@@ -354,7 +441,10 @@ export default function App() {
               {streaming ? (
                 <button
                   type="button"
-                  onClick={() => abortRef.current?.abort()}
+                  onClick={() => {
+                    voice.interrupt();
+                    abortRef.current?.abort();
+                  }}
                   className="flex h-8 w-8 items-center justify-center rounded-lg bg-fg text-bg hover:opacity-90"
                   title="Parar"
                 >
@@ -377,7 +467,14 @@ export default function App() {
               O modelo "{activeModel}" não está instalado. Rode: ollama pull {activeModel}
             </p>
           ) : (
-            <p className="mt-2 text-center text-[11px] text-mute">Nex roda localmente no seu computador, via Ollama.</p>
+            <p className="mt-2 text-center text-[11px] text-mute">
+              Nex roda localmente no seu computador, via Ollama.
+              {voice.partial ? ` Ouvi: ${voice.partial}` : ""}
+              {voiceNote ? ` ${voiceNote}` : ""}
+              {timings
+                ? ` Voz: 1º token ${timings.firstTokenMs ?? "—"} ms, 1º áudio ${timings.firstAudioMs ?? "—"} ms, total ${timings.totalMs ?? "—"} ms.`
+                : ""}
+            </p>
           )}
         </div>
       </main>

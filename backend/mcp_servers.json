@@ -51,6 +51,14 @@
         "write_file",
         "edit_file"
       ]
+    },
+    "browser": {
+      "command": "backend/data/mcp/browser/venv/Scripts/python.exe",
+      "args": ["-m", "backend.Mcp.Browser.server"],
+      "env": {
+        "HEADLESS": "false"
+      },
+      "requiresApproval": ["browser_click"]
     }
   }
 }

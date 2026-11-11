@@ -1,152 +1,32 @@
-"""Servidor MCP do navegador visível do Nex. Transporte: stdio, SDK oficial mcp."""
+"""Ponte MCP entre o Nex e a extensão no Chrome já aberto. Não lança Chrome."""
 
 from __future__ import annotations
 
-import os
-import subprocess
+import asyncio
+import base64
+import hashlib
+import itertools
+import json
 
 from mcp.server.fastmcp import FastMCP
-from playwright.async_api import Browser, Page, Playwright, async_playwright
 
 mcp = FastMCP("nex-browser")
 
-_playwright: Playwright | None = None
-_browser: Browser | None = None
-_page: Page | None = None
-_cdp = False
+_PORT = 9334
+_reader = None
+_writer = None
+_pending: dict[int, asyncio.Future] = {}
+_ids = itertools.count(1)
+_server_started = False
 
 _MAX_TOKENS = 1500
 _CHARS_PER_TOKEN = 4
 
-_CURSOR_JS = """
-() => {
-  if (document.getElementById("nex-virtual-mouse")) return;
-  const style = document.createElement("style");
-  style.textContent = "@keyframes nex-ripple{from{opacity:1;transform:translate(-50%,-50%) scale(1)}to{opacity:0;transform:translate(-50%,-50%) scale(3.2)}}";
-  document.documentElement.appendChild(style);
-  const cursor = document.createElement("div");
-  cursor.id = "nex-virtual-mouse";
-  cursor.style.cssText = "position:fixed;left:48px;top:48px;width:16px;height:16px;margin:0;border-radius:50%;background:#7CFF6B;box-shadow:0 0 0 2px #062;pointer-events:none;z-index:2147483647;transform:translate(-50%,-50%)";
-  document.documentElement.appendChild(cursor);
-}
-"""
-
-_MOVE_JS = """
-async ({ x, y }) => {
-  const cursor = document.getElementById("nex-virtual-mouse");
-  if (!cursor) return;
-  const start = { x: parseFloat(cursor.style.left) || 48, y: parseFloat(cursor.style.top) || 48 };
-  const bend = { x: (start.x + x) / 2 + 36, y: Math.min(start.y, y) - 28 };
-  const duration = 260;
-  const t0 = performance.now();
-  await new Promise((resolve) => {
-    const frame = (now) => {
-      const t = Math.min(1, (now - t0) / duration);
-      const u = 1 - t;
-      cursor.style.left = (u * u * start.x + 2 * u * t * bend.x + t * t * x) + "px";
-      cursor.style.top = (u * u * start.y + 2 * u * t * bend.y + t * t * y) + "px";
-      if (t < 1) requestAnimationFrame(frame);
-      else resolve();
-    };
-    requestAnimationFrame(frame);
-  });
-}
-"""
-
-_RIPPLE_JS = """
-({ x, y }) => {
-  const ripple = document.createElement("div");
-  ripple.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:12px;height:12px;border:2px solid #7CFF6B;border-radius:50%;pointer-events:none;z-index:2147483647;animation:nex-ripple .35s ease-out forwards`;
-  document.documentElement.appendChild(ripple);
-  setTimeout(() => ripple.remove(), 400);
-}
-"""
-
-_DOM_JS = """
-() => {
-  const nodes = Array.from(document.querySelectorAll("a, button, input, textarea, select"));
-  const visible = nodes.filter((el) => {
-    if (el.getAttribute("aria-hidden") === "true" || el.closest("[aria-hidden='true']")) return false;
-    const box = el.getBoundingClientRect();
-    const style = getComputedStyle(el);
-    return box.width >= 2 && box.height >= 2 && style.visibility !== "hidden" && style.display !== "none";
-  }).slice(0, 60);
-  const items = visible.map((el, index) => {
-    const id = index + 1;
-    el.setAttribute("data-nex-id", String(id));
-    const box = el.getBoundingClientRect();
-    const label = (el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.getAttribute("name") || el.getAttribute("type") || "").replace(/\\s+/g, " ").trim().slice(0, 80);
-    return { id, tag: el.tagName.toLowerCase(), label, x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
-  });
-  const text = (document.body ? document.body.innerText : "").replace(/[ \\t]+/g, " ").replace(/\\n{2,}/g, "\\n").trim().slice(0, 2500);
-  return { text, items };
-}
-"""
-
-
-def _current() -> Page:
-    if _page is None:
-        raise RuntimeError("Nenhum navegador aberto. Chame browser_navigate primeiro.")
-    return _page
-
-
-async def _inject(page: Page) -> None:
-    await page.evaluate(_CURSOR_JS)
-
-
-async def _center(element_id: int) -> tuple[float, float]:
-    page = _current()
-    box = await page.locator(f'[data-nex-id="{element_id}"]').bounding_box()
-    if box is None:
-        raise RuntimeError(f"Elemento [{element_id}] não está visível. Chame browser_get_dom de novo.")
-    return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
-
-
-async def _move(page: Page, x: float, y: float) -> None:
-    await _inject(page)
-    await page.evaluate(_MOVE_JS, {"x": x, "y": y})
-
-
-async def _attach() -> Page:
-    """Conecta no Chrome da porta 9222 e usa a aba visível."""
-    global _browser, _page, _cdp
-    assert _playwright is not None
-    _browser = await _playwright.chromium.connect_over_cdp("http://127.0.0.1:9222")
-    context = _browser.contexts[0] if _browser.contexts else await _browser.new_context()
-    _cdp = True
-    existing = [p for p in context.pages if not p.url.startswith("devtools")]
-    _page = existing[-1] if existing else await context.new_page()
-    await context.add_init_script("(" + _CURSOR_JS + ")();")
-    await _inject(_page)
-    return _page
-
-
-def _browser_running() -> bool:
-    try:
-        out = subprocess.check_output(["tasklist", "/FO", "CSV", "/NH"], text=True, errors="ignore")
-    except Exception:
-        return False
-    return "chrome.exe" in out.lower()
-
-
-def _chrome_installed() -> bool:
-    for candidate in (
-        os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
-        os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
-        os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
-    ):
-        if os.path.isfile(candidate):
-            return True
-    return False
-
-
-async def _ensure() -> Page:
-    """Não conecta no Chrome. A porta 9222 faz o site tratar a sessão como robô e o Chrome derruba o perfil."""
-    raise RuntimeError(
-        "A automação interna do Chrome está desligada. "
-        "Ela entra pela porta de depuração, os sites marcam como bot e o Chrome reseta login e abas. "
-        "Não abra outro navegador, não rode iniciar-chrome-sessao.ps1 e não reinicie o Chrome do Alexssander."
-    )
+_MISSING = (
+    "A extensão Nex não está conectada neste Chrome. "
+    "Carregue uma vez a pasta extension/chrome em chrome://extensions, modo do desenvolvedor, sem fechar o Chrome. "
+    "O Nex só mexe nas abas do grupo Nex. Não rode iniciar-chrome-sessao.ps1 e não reinicie o navegador."
+)
 
 
 def _clip(text: str) -> str:
@@ -156,28 +36,128 @@ def _clip(text: str) -> str:
     return text[:limit].rsplit("\n", 1)[0] + "\n[truncado em 1500 tokens]"
 
 
+async def _read_exact(reader: asyncio.StreamReader, n: int) -> bytes:
+    data = await reader.readexactly(n)
+    return data
+
+
+async def _read_frame(reader: asyncio.StreamReader) -> str | None:
+    try:
+        header = await _read_exact(reader, 2)
+    except asyncio.IncompleteReadError:
+        return None
+    length = header[1] & 0x7F
+    if length == 126:
+        length = int.from_bytes(await _read_exact(reader, 2), "big")
+    elif length == 127:
+        length = int.from_bytes(await _read_exact(reader, 8), "big")
+    mask = await _read_exact(reader, 4) if header[1] & 0x80 else b""
+    payload = await _read_exact(reader, length)
+    if mask:
+        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    opcode = header[0] & 0x0F
+    if opcode == 0x8:
+        return None
+    if opcode == 0x9:
+        await _send_frame(_writer, payload, 0xA)
+        return await _read_frame(reader)
+    return payload.decode("utf-8", "replace")
+
+
+async def _send_frame(writer: asyncio.StreamWriter, payload: bytes, opcode: int = 0x1) -> None:
+    if writer is None:
+        return
+    head = bytes([0x80 | opcode])
+    n = len(payload)
+    if n < 126:
+        head += bytes([n])
+    elif n < 65536:
+        head += bytes([126]) + n.to_bytes(2, "big")
+    else:
+        head += bytes([127]) + n.to_bytes(8, "big")
+    writer.write(head + payload)
+    await writer.drain()
+
+
+async def _client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    global _reader, _writer
+    request = await reader.readuntil(b"\r\n\r\n")
+    text = request.decode("utf-8", "replace")
+    key = ""
+    for line in text.split("\r\n"):
+        if line.lower().startswith("sec-websocket-key:"):
+            key = line.split(":", 1)[1].strip()
+    accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+    writer.write(
+        "HTTP/1.1 101 Switching Protocols\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Accept: {accept}\r\n\r\n".encode()
+    )
+    await writer.drain()
+    _reader, _writer = reader, writer
+    try:
+        while True:
+            frame = await _read_frame(reader)
+            if frame is None:
+                break
+            data = json.loads(frame)
+            fut = _pending.get(data.get("id"))
+            if fut is not None and not fut.done():
+                fut.set_result(data)
+    finally:
+        if _writer is writer:
+            _reader = None
+            _writer = None
+        writer.close()
+
+
+async def _ensure_server() -> None:
+    global _server_started
+    if _server_started:
+        return
+    await asyncio.start_server(_client, "127.0.0.1", _PORT)
+    _server_started = True
+
+
+async def _call(op: str, **args):
+    await _ensure_server()
+    for _ in range(30):
+        if _writer is not None:
+            break
+        await asyncio.sleep(0.1)
+    if _writer is None:
+        raise RuntimeError(_MISSING)
+    call_id = next(_ids)
+    loop = asyncio.get_running_loop()
+    fut: asyncio.Future = loop.create_future()
+    _pending[call_id] = fut
+    try:
+        await _send_frame(_writer, json.dumps({"id": call_id, "op": op, **args}).encode())
+        data = await asyncio.wait_for(fut, 20)
+    finally:
+        _pending.pop(call_id, None)
+    if not data.get("ok"):
+        raise RuntimeError(data.get("error") or "A extensão recusou a operação.")
+    return data.get("result")
+
+
 @mcp.tool()
 async def browser_navigate(url: str) -> str:
-    """Não abre URL. A automação interna do Chrome está desligada."""
-    page = await _ensure()
-    await page.bring_to_front()
-    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-    await _inject(page)
-    modo = "Chrome do usuário, sessão preservada" if _cdp else "Chromium isolado: o Chrome não estava na porta 9222"
-    return f"Aberto ({modo}): {page.url}"
+    """Abre a URL numa aba nova do grupo Nex, no Chrome já aberto. Não relança o Chrome."""
+    result = await _call("navigate", url=url)
+    return f"Aberto no grupo Nex, sem fechar o Chrome: {result.get('url')}"
 
 
 @mcp.tool()
 async def browser_get_dom() -> str:
-    """Devolve o texto visível da página e os controles com ids [1], [2], ... em no máximo 1500 tokens."""
-    page = await _ensure()
-    await _inject(page)
-    payload = await page.evaluate(_DOM_JS)
-    items = payload["items"]
-    lines = [f"[{item['id']}] {item['tag']} {item['label']}".strip() for item in items if item["x"] > 0 or item["y"] > 0]
+    """Lê o texto visível da última aba do grupo Nex. Não mexe nas outras abas."""
+    payload = await _call("get_dom")
+    items = payload.get("items") or []
+    lines = [f"[{item['id']}] {item['tag']} {item['label']}".strip() for item in items]
     text = (payload.get("text") or "").strip()
     if not text and not lines:
-        return "Nenhum texto visível."
+        return "Nenhum texto visível no grupo Nex."
     body = "Texto visível:\n" + (text or "(vazio)")
     if lines:
         body += "\n\nInterativos:\n" + "\n".join(lines)
@@ -186,51 +166,27 @@ async def browser_get_dom() -> str:
 
 @mcp.tool()
 async def browser_click(element_id: int) -> str:
-    """Move o cursor até o elemento, mostra o clique e aciona o elemento."""
-    page = _current()
-    x, y = await _center(element_id)
-    await _move(page, x, y)
-    await page.evaluate(_RIPPLE_JS, {"x": x, "y": y})
-    await page.locator(f'[data-nex-id="{element_id}"]').click(timeout=15000)
-    return f"Clique em [{element_id}] em ({int(x)}, {int(y)})."
+    """Clica um elemento da última aba do grupo Nex."""
+    await _call("click", elementId=element_id)
+    return f"Clique em [{element_id}] no grupo Nex."
 
 
 @mcp.tool()
 async def browser_type(element_id: int, text: str, press_enter: bool = False) -> str:
-    """Move o cursor até o campo, foca, digita e pode pressionar Enter."""
-    page = _current()
-    x, y = await _center(element_id)
-    await _move(page, x, y)
-    locator = page.locator(f'[data-nex-id="{element_id}"]')
-    await locator.click(timeout=8000, force=True)
-    await locator.fill("")
-    await locator.type(text, delay=28)
-    if press_enter:
-        await locator.press("Enter")
-    return f"Texto digitado em [{element_id}]."
+    """Digita num campo da última aba do grupo Nex."""
+    await _call("type", elementId=element_id, text=text, pressEnter=press_enter)
+    return f"Texto digitado em [{element_id}] no grupo Nex."
 
 
 @mcp.tool()
 async def browser_close() -> str:
-    """Solta o Chrome do usuário ou fecha o Chromium isolado."""
-    global _playwright, _browser, _page, _cdp
-    if _browser is not None:
-        # No CDP, close() só desconecta. Não encerra a janela nem a sessão do usuário.
-        await _browser.close()
-    if _playwright is not None:
-        await _playwright.stop()
-    era_cdp = _cdp
-    _browser = None
-    _playwright = None
-    _page = None
-    _cdp = False
-    return "Desconectado do Chrome. A janela continua aberta." if era_cdp else "Navegador isolado fechado."
-
-
-def main() -> None:
-    os.environ.setdefault("HEADLESS", "false")
-    mcp.run(transport="stdio")
+    """Solta o debugger das abas do grupo Nex. Não fecha o Chrome."""
+    try:
+        await _call("release")
+    except RuntimeError:
+        return "Extensão desconectada. O Chrome continua aberto."
+    return "Debugger solto no grupo Nex. O Chrome continua aberto."
 
 
 if __name__ == "__main__":
-    main()
+    mcp.run()

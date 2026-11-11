@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "Nex",
+  "version": "0.1.0",
+  "description": "Grupo de abas do Nex no Chrome já aberto. Não relança o navegador.",
+  "permissions": ["tabs", "tabGroups", "debugger", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" }
+}

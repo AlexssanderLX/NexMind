@@ -1,0 +1,5 @@
+backend/bin/
+backend/obj/
+backend/data/
+backend/wwwroot/
+frontend/node_modules/

@@ -6,7 +6,7 @@
         "-y",
         "@modelcontextprotocol/server-filesystem",
         "C:\\",
-        "data/workspace"
+        "backend/data/workspace"
       ],
       "enabled": true,
       "requiresApproval": [
@@ -66,9 +66,9 @@
       ]
     },
     "desktop": {
-      "command": "data\\mcp\\desktop\\venv\\Scripts\\python.exe",
+      "command": "backend/data/mcp/desktop/venv/Scripts/python.exe",
       "args": [
-        "Mcp\\Desktop\\server.py"
+        "backend/Mcp/Desktop/server.py"
       ],
       "enabled": true,
       "requiresApproval": [

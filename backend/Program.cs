@@ -37,6 +37,10 @@ builder.Services.AddSingleton<Research>();
 
 var app = builder.Build();
 var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+const string BasePrompt =
+    "Responda em português do Brasil, de forma direta e curta: vá ao ponto, sem introdução, sem repetir a pergunta e sem fechamento do tipo \"espero ter ajudado\". " +
+    "Use no máximo alguns parágrafos curtos ou uma lista enxuta. Só detalhe, explique passo a passo ou escreva longo se o usuário pedir. " +
+    "Ao analisar um arquivo anexado, comece pela conclusão principal e cite apenas o que importa.";
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -103,7 +107,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
     try
     {
         var history = conv.Messages.Select(m => (m.Role, m.Content)).ToList();
-        var system = req.System;
+        // Regra base: respostas diretas. O modelo de 4B tende a escrever muito; texto longo custa tempo (tokens na GPU/CPU).
+        var system = BasePrompt + (string.IsNullOrWhiteSpace(req.System) ? "" : "\n\n" + req.System);
         if (req.Search)
         {
             await Send(new { type = "tool", name = "pesquisa", state = "filtrando" });

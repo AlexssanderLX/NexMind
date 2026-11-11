@@ -261,12 +261,16 @@ export default function App() {
       }
     };
     if (speakBack) voice.armSpeech();
+    // Contexto sob medida: o de 32 mil joga parte do modelo na CPU (3x mais lento). Usa o menor que cabe na conversa
+    // (+ espaço para a resposta) e só sobe quando o texto realmente precisa; Configurações fica como limite máximo.
+    const neededTokens = Math.ceil((messages.reduce((n, m) => n + m.content.length, 0) + text.length) / 3) + 1500;
+    const ctxNow = [4096, 8192, 16384, 32768].find((c) => c >= neededTokens && c <= settings.numCtx) ?? settings.numCtx;
     try {
       await streamChat(
         id,
         text,
         activeModel,
-        settings,
+        { ...settings, numCtx: Math.min(ctxNow, settings.numCtx) },
         (ev) => {
           if (firstEvent) {
             firstEvent = false;
@@ -508,7 +512,8 @@ export default function App() {
                   setAttaching(true);
                   setChatError(null);
                   // metade do contexto, em caracteres (~3 por token), fica para o arquivo; o resto é pergunta e resposta
-                  const budget = Math.round((settings.numCtx * 1.5) / picked.length);
+                  // arquivo grande deixa tudo lento (prompt longo + contexto grande): limite de ~12 mil caracteres no total
+                  const budget = Math.round(Math.min(12000, settings.numCtx * 1.5) / picked.length);
                   for (const f of picked) {
                     try {
                       const r = await api.readFile(f, budget);

@@ -17,7 +17,7 @@ const VOICE_DEFAULTS: VoiceSettings = {
   vadSensitivity: 0.06,
   speechRate: 1,
   sttEngine: "faster-whisper",
-  ttsEngine: "sapi",
+  ttsEngine: "piper",
   ttsVoice: "",
   inputDeviceId: "",
 };
@@ -224,6 +224,23 @@ export default function App() {
     let reply = "";
     let firstTokenMs: number | null = null;
     const speakBack = fromVoice && voiceSettings.enabled;
+    let speechBuf = "";
+    const takeSentences = () => {
+      if (!speakBack) return;
+      for (;;) {
+        const m = speechBuf.match(/^([\s\S]*?[.!?])(?:\s+|$)/);
+        if (!m) break;
+        voice.enqueueSentence(m[1]);
+        speechBuf = speechBuf.slice(m[0].length);
+      }
+      if (speechBuf.length > 180) {
+        const cut = speechBuf.lastIndexOf(" ", 180);
+        const at = cut > 40 ? cut : 180;
+        voice.enqueueSentence(speechBuf.slice(0, at));
+        speechBuf = speechBuf.slice(at);
+      }
+    };
+    if (speakBack) voice.armSpeech();
     try {
       await streamChat(
         id,
@@ -238,6 +255,8 @@ export default function App() {
           if (ev.type === "token") {
             if (firstTokenMs === null) firstTokenMs = Math.round(performance.now() - heardAt);
             reply += ev.text;
+            speechBuf += ev.text;
+            takeSentences();
             buffer.push("content", ev.text);
           }
           else if (ev.type === "thinking") buffer.push("thinking", ev.text);
@@ -258,14 +277,15 @@ export default function App() {
       setStreaming(false);
       abortRef.current = null;
       if (speakBack && reply.trim() && !abort.signal.aborted) {
-        const firstAudioMs = await voice.speak(reply, heardAt);
+        if (speechBuf.trim()) voice.enqueueSentence(speechBuf);
+        const firstAudioMs = voice.finishSpeech();
         setTimings({
           sttMs: null,
           firstTokenMs,
-          firstAudioMs: firstAudioMs === null ? null : Math.round(firstAudioMs),
-          totalMs: Math.round(performance.now() - heardAt),
+          firstAudioMs,
+          totalMs: firstAudioMs === null ? null : Math.round(performance.now() - heardAt),
         });
-      }
+      } else if (speakBack) voice.interrupt();
       // Sincroniza com o que foi salvo no servidor (inclui parciais e a pergunta mesmo em caso de erro)
       api.get(id).then((c) => setMessages(c.messages)).catch(() => {});
       refreshList();

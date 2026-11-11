@@ -87,6 +87,11 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
   const playGen = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const urlRef = useRef<string | null>(null);
+  const queueRef = useRef<string[]>([]);
+  const pumping = useRef(false);
+  const turnOpen = useRef(false);
+  const firstAudioAt = useRef<number | null>(null);
+  const speakT0 = useRef(0);
 
   settingsRef.current = settings;
   busyRef.current = busy;
@@ -309,69 +314,112 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
     await openMic();
   }
 
-  async function speak(text: string, turnMark: number): Promise<number | null> {
-    const clean = text.replace(/[#*_`>|]/g, " ").replace(/\s+/g, " ").trim();
-    if (!clean || !settingsRef.current.enabled) return null;
-    const token = ++playGen.current;
+  function cleanSpeech(text: string) {
+    return text.replace(/[#*_`>|]/g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  function armSpeech() {
+    playGen.current++;
     stopPlayback();
-    playGen.current = token;
-    setPhaseBoth("speaking");
-    const t0 = performance.now();
-    try {
-      const res = await fetch("/api/voice/speak", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: clean.slice(0, 4000),
-          engine: settingsRef.current.ttsEngine,
-          voice: settingsRef.current.ttsVoice || null,
-          rate: settingsRef.current.speechRate,
-        }),
-      });
-      if (token !== playGen.current) return null;
-      if (!res.ok) throw new Error(await res.text());
-      const ttsMs = Number(res.headers.get("X-Tts-Ms") || "0");
-      const blob = await res.blob();
-      if (token !== playGen.current) return null;
-      const url = URL.createObjectURL(blob);
-      urlRef.current = url;
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      await new Promise<void>((resolve, reject) => {
-        audio.onended = () => resolve();
-        audio.onerror = () => reject(new Error("Não foi possível reproduzir a voz."));
-        const id = window.setInterval(() => {
-          if (token !== playGen.current) {
-            window.clearInterval(id);
-            resolve();
-            return;
-          }
-          emitNexAudioLevel(audio.paused ? 0 : 0.35 + Math.random() * 0.4);
-        }, 80);
-        audio.onended = () => {
+    queueRef.current = [];
+    turnOpen.current = true;
+    firstAudioAt.current = null;
+    speakT0.current = performance.now();
+  }
+
+  function enqueueSentence(text: string) {
+    const clean = cleanSpeech(text).slice(0, 500);
+    if (!clean || !turnOpen.current || !settingsRef.current.enabled) return;
+    queueRef.current.push(clean);
+    void pump();
+  }
+
+  async function playOne(text: string, token: number) {
+    const res = await fetch("/api/voice/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        engine: settingsRef.current.ttsEngine,
+        voice: settingsRef.current.ttsVoice || null,
+        rate: settingsRef.current.speechRate,
+      }),
+    });
+    if (token !== playGen.current) return;
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    if (token !== playGen.current) return;
+    const url = URL.createObjectURL(blob);
+    urlRef.current = url;
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    if (firstAudioAt.current === null) firstAudioAt.current = performance.now();
+    await new Promise<void>((resolve, reject) => {
+      const id = window.setInterval(() => {
+        if (token !== playGen.current) {
           window.clearInterval(id);
           resolve();
-        };
-        void audio.play().catch(reject);
-      });
-      if (token !== playGen.current) return null;
-      stopPlayback();
-      const firstAudio = performance.now() - t0;
+          return;
+        }
+        emitNexAudioLevel(audio.paused ? 0 : 0.35 + Math.random() * 0.4);
+      }, 80);
+      audio.onended = () => {
+        window.clearInterval(id);
+        resolve();
+      };
+      audio.onerror = () => {
+        window.clearInterval(id);
+        reject(new Error("Não foi possível reproduzir a voz."));
+      };
+      void audio.play().catch(reject);
+    });
+    if (urlRef.current === url) {
+      URL.revokeObjectURL(url);
+      urlRef.current = null;
+    }
+  }
+
+  async function pump() {
+    if (pumping.current) return;
+    pumping.current = true;
+    const token = playGen.current;
+    setPhaseBoth("speaking");
+    try {
+      while (token === playGen.current && queueRef.current.length > 0) {
+        const next = queueRef.current.shift()!;
+        await playOne(next, token);
+      }
+    } catch (e) {
+      if (token === playGen.current) {
+        setPhaseBoth("error");
+        onError((e as Error).message || "Falha na síntese de voz.");
+        turnOpen.current = false;
+      }
+    } finally {
+      pumping.current = false;
+    }
+    if (token === playGen.current && !turnOpen.current && queueRef.current.length === 0) {
       if (settingsRef.current.mode === "auto" && settingsRef.current.enabled) await openMic();
       else setPhaseBoth("off");
-      return firstAudio || ttsMs;
-    } catch (e) {
-      if (token !== playGen.current) return null;
-      setPhaseBoth("error");
-      onError((e as Error).message || "Falha na síntese de voz.");
-      return null;
-    } finally {
-      void turnMark;
     }
+  }
+
+  function finishSpeech(): number | null {
+    turnOpen.current = false;
+    if (!pumping.current && queueRef.current.length === 0 && phaseRef.current === "speaking") {
+      if (settingsRef.current.mode === "auto" && settingsRef.current.enabled) void openMic();
+      else setPhaseBoth("off");
+    } else if (queueRef.current.length > 0) {
+      void pump();
+    }
+    return firstAudioAt.current === null ? null : Math.round(firstAudioAt.current - speakT0.current);
   }
 
   function interrupt() {
     gen.current++;
+    turnOpen.current = false;
+    queueRef.current = [];
+    playGen.current++;
     stopPlayback();
     if (phaseRef.current === "speaking") {
       emitNexState("listening");
@@ -380,5 +428,5 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
     }
   }
 
-  return { phase, devices, partial, toggleMic, speak, interrupt, refreshDevices };
+  return { phase, devices, partial, toggleMic, armSpeech, enqueueSentence, finishSpeech, interrupt, refreshDevices };
 }

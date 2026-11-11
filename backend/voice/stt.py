@@ -1,29 +1,28 @@
 """STT local via faster-whisper. CPU + int8 para deixar a GPU com o Qwen.
 
-Uso: python stt.py <wav> <modelo>
-Imprime uma linha JSON: {"text": "...", "ms": 123, "model": "base"}
-Não grava o áudio em disco além do arquivo temporário que o backend apaga.
+Um processo residente (--serve) carrega o modelo uma vez e transcreve vários arquivos.
+Sem --serve, transcreve um wav e encerra (útil para teste).
+
+Não grava o áudio. O backend apaga o wav temporário.
 """
 import json
 import sys
 import time
 
 
-def main() -> int:
-    if len(sys.argv) < 3:
-        print(json.dumps({"error": "uso: stt.py <wav> <modelo>"}))
-        return 2
-    wav, model = sys.argv[1], sys.argv[2]
+def load(model: str):
     try:
         from faster_whisper import WhisperModel
     except ImportError:
         print(json.dumps({
             "error": "faster-whisper não instalado. No ambiente Python: pip install -r backend/voice/requirements.txt"
-        }))
-        return 3
+        }), flush=True)
+        raise SystemExit(3)
+    return WhisperModel(model, device="cpu", compute_type="int8")
 
+
+def transcribe(whisper, wav: str) -> dict:
     t0 = time.perf_counter()
-    whisper = WhisperModel(model, device="cpu", compute_type="int8")
     segments, _info = whisper.transcribe(
         wav,
         language="pt",
@@ -32,14 +31,41 @@ def main() -> int:
         condition_on_previous_text=False,
     )
     text = " ".join(s.text.strip() for s in segments).strip()
-    ms = int((time.perf_counter() - t0) * 1000)
-    print(json.dumps({"text": text, "ms": ms, "model": model}, ensure_ascii=False))
+    return {"text": text, "ms": int((time.perf_counter() - t0) * 1000)}
+
+
+def serve(model: str) -> int:
+    whisper = load(model)
+    print(json.dumps({"ready": True, "model": model}), flush=True)
+    for line in sys.stdin:
+        wav = line.strip().strip('"')
+        if not wav:
+            continue
+        try:
+            print(json.dumps(transcribe(whisper, wav), ensure_ascii=False), flush=True)
+        except Exception as ex:  # noqa: BLE001
+            print(json.dumps({"error": str(ex)}), flush=True)
+    return 0
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    if args and args[0] == "--serve":
+        if len(args) < 2:
+            print(json.dumps({"error": "uso: stt.py --serve <modelo>"}))
+            return 2
+        return serve(args[1])
+    if len(args) < 2:
+        print(json.dumps({"error": "uso: stt.py <wav> <modelo>"}))
+        return 2
+    whisper = load(args[1])
+    print(json.dumps({**transcribe(whisper, args[0]), "model": args[1]}, ensure_ascii=False))
     return 0
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except Exception as ex:  # noqa: BLE001 — devolve erro legível ao backend
-        print(json.dumps({"error": str(ex)}))
+    except Exception as ex:  # noqa: BLE001
+        print(json.dumps({"error": str(ex)}), flush=True)
         raise SystemExit(1)

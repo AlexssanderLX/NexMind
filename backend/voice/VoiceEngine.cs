@@ -15,17 +15,28 @@ public sealed class VoiceOptions
 
 public sealed record VoiceEngineInfo(string Id, string Kind, bool Available, string Detail);
 
-public sealed class VoiceEngine
+public sealed class VoiceEngine : IDisposable
 {
     private readonly VoiceOptions _opt;
     private readonly string _sttScript;
     private readonly ILogger<VoiceEngine> _log;
+    private readonly SemaphoreSlim _sttGate = new(1, 1);
+    private Process? _stt;
+    private readonly object _sttLock = new();
 
     public VoiceEngine(IConfiguration config, IWebHostEnvironment env, ILogger<VoiceEngine> log)
     {
         _opt = config.GetSection("Voice").Get<VoiceOptions>() ?? new VoiceOptions();
+        _opt.PiperExe = Resolve(env.ContentRootPath, _opt.PiperExe);
+        _opt.PiperModel = Resolve(env.ContentRootPath, _opt.PiperModel);
         _sttScript = Path.Combine(env.ContentRootPath, "voice", "stt.py");
         _log = log;
+    }
+
+    private static string Resolve(string root, string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return path;
+        return Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(root, path));
     }
 
     public VoiceOptions Options => _opt;
@@ -65,35 +76,83 @@ public sealed class VoiceEngine
         if (!File.Exists(_sttScript))
             throw new InvalidOperationException("Reconhecimento local indisponível: backend/voice/stt.py não encontrado.");
 
-        var psi = new ProcessStartInfo
+        await _sttGate.WaitAsync(ct);
+        try
         {
-            FileName = _opt.Python,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        psi.ArgumentList.Add(_sttScript);
-        psi.ArgumentList.Add(wavPath);
-        psi.ArgumentList.Add(_opt.WhisperModel);
-
-        using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Não foi possível iniciar o Python.");
-        var stdout = await proc.StandardOutput.ReadToEndAsync(ct);
-        var stderr = await proc.StandardError.ReadToEndAsync(ct);
-        await proc.WaitForExitAsync(ct);
-        if (proc.ExitCode != 0)
-        {
-            var msg = TryError(stdout) ?? (string.IsNullOrWhiteSpace(stderr) ? stdout : stderr);
-            _log.LogWarning("STT falhou ({Code}): {Msg}", proc.ExitCode, msg);
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(msg)
-                ? "Falha no reconhecimento de fala."
-                : msg.Trim());
+            var proc = EnsureStt();
+            await proc.StandardInput.WriteLineAsync(wavPath.AsMemory(), ct);
+            await proc.StandardInput.FlushAsync(ct);
+            var line = await proc.StandardOutput.ReadLineAsync(ct);
+            if (line is null)
+            {
+                StopStt();
+                throw new InvalidOperationException("O reconhecimento encerrou no meio da transcrição.");
+            }
+            using var doc = JsonDocument.Parse(line);
+            if (doc.RootElement.TryGetProperty("error", out var err))
+                throw new InvalidOperationException(err.GetString() ?? "Falha no reconhecimento de fala.");
+            var text = doc.RootElement.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
+            var ms = doc.RootElement.TryGetProperty("ms", out var m) ? m.GetInt32() : 0;
+            return (text, ms);
         }
+        finally
+        {
+            _sttGate.Release();
+        }
+    }
 
-        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(stdout) ? "{}" : stdout);
-        var text = doc.RootElement.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
-        var ms = doc.RootElement.TryGetProperty("ms", out var m) ? m.GetInt32() : 0;
-        return (text, ms);
+    private Process EnsureStt()
+    {
+        lock (_sttLock)
+        {
+            if (_stt is { HasExited: false }) return _stt;
+            var psi = new ProcessStartInfo
+            {
+                FileName = _opt.Python,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add(_sttScript);
+            psi.ArgumentList.Add("--serve");
+            psi.ArgumentList.Add(_opt.WhisperModel);
+            var proc = Process.Start(psi) ?? throw new InvalidOperationException("Não foi possível iniciar o Python.");
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var err = await proc.StandardError.ReadToEndAsync();
+                    if (!string.IsNullOrWhiteSpace(err)) _log.LogWarning("STT: {Err}", err.Trim());
+                }
+                catch { /* processo já encerrou */ }
+            });
+            var ready = proc.StandardOutput.ReadLine();
+            if (ready is null || !ready.Contains("\"ready\"", StringComparison.Ordinal))
+            {
+                var msg = TryError(ready ?? "") ?? "O reconhecimento não ficou pronto.";
+                try { proc.Kill(entireProcessTree: true); } catch { /* já saiu */ }
+                throw new InvalidOperationException(msg);
+            }
+            _stt = proc;
+            return proc;
+        }
+    }
+
+    private void StopStt()
+    {
+        lock (_sttLock)
+        {
+            try { _stt?.Kill(entireProcessTree: true); } catch { /* já saiu */ }
+            _stt = null;
+        }
+    }
+
+    public void Dispose()
+    {
+        StopStt();
+        _sttGate.Dispose();
     }
 
     public async Task<(byte[] Wav, int Ms, string Engine)> SpeakAsync(string text, string engine, string? voice, double rate, CancellationToken ct)
@@ -132,21 +191,55 @@ public sealed class VoiceEngine
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// O espeak do Piper não abre caminhos com acento. Copia o executável e a voz para %LOCALAPPDATA%\nex\voice.
+    /// </summary>
+    private (string Exe, string Model) PiperAsciiPaths()
+    {
+        if (_opt.PiperExe.All(c => c < 128) && _opt.PiperModel.All(c => c < 128))
+            return (_opt.PiperExe, _opt.PiperModel);
+        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "nex", "voice");
+        var exeDir = Path.Combine(root, "piper");
+        var exe = Path.Combine(exeDir, "piper.exe");
+        var model = Path.Combine(root, "models", Path.GetFileName(_opt.PiperModel));
+        if (!File.Exists(exe))
+        {
+            Directory.CreateDirectory(exeDir);
+            foreach (var file in Directory.GetFiles(Path.GetDirectoryName(_opt.PiperExe)!, "*", SearchOption.AllDirectories))
+            {
+                var rel = Path.GetRelativePath(Path.GetDirectoryName(_opt.PiperExe)!, file);
+                var dest = Path.Combine(exeDir, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(file, dest, overwrite: true);
+            }
+        }
+        if (!File.Exists(model))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(model)!);
+            File.Copy(_opt.PiperModel, model, overwrite: true);
+            var json = _opt.PiperModel + ".json";
+            if (File.Exists(json)) File.Copy(json, model + ".json", overwrite: true);
+        }
+        return (exe, model);
+    }
+
     private async Task<byte[]> SpeakPiperAsync(string text, double rate, CancellationToken ct)
     {
+        var (exe, model) = PiperAsciiPaths();
         var outFile = Path.Combine(Path.GetTempPath(), "nex-tts-" + Guid.NewGuid().ToString("n") + ".wav");
         try
         {
             var psi = new ProcessStartInfo
             {
-                FileName = _opt.PiperExe,
+                FileName = exe,
+                WorkingDirectory = Path.GetDirectoryName(exe) ?? "",
                 RedirectStandardInput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
             psi.ArgumentList.Add("--model");
-            psi.ArgumentList.Add(_opt.PiperModel);
+            psi.ArgumentList.Add(model);
             psi.ArgumentList.Add("--output_file");
             psi.ArgumentList.Add(outFile);
             var lengthScale = rate <= 0.1 ? 1.0 : 1.0 / rate;

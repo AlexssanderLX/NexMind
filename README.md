@@ -81,7 +81,7 @@ Fluxo local: microfone no navegador → pausa configurável → `POST /api/voice
 pip install -r backend/voice/requirements.txt   # primeira vez; baixa o modelo "base" no primeiro uso
 .\start.ps1
 ```
-Em Configurações, ligue **Voz local** e use o botão **Microfone**. Piper é opcional (`Voice:PiperExe` e `Voice:PiperModel` no `appsettings.json`). Sem o Python, o chat de texto e a síntese pelo Windows continuam; só a transcrição fica indisponível.
+Em Configurações, ligue **Voz local** e use o botão **Microfone**. O reconhecimento fica residente (o modelo não recarrega a cada frase). A resposta falada começa na primeira frase, enquanto o restante ainda é gerado. A voz padrão é o Piper `pt_BR-faber-medium` (arquivos em `backend/voice/bin` e `backend/voice/models`, fora do git). A voz do Windows continua disponível como `sapi`. Sem o Python, o chat de texto segue; só a transcrição fica indisponível.
 
 ## Observação sobre o `qwen3:4b`
 A versão atual do `qwen3:4b` no Ollama é a variante que **sempre raciocina**. Ela responde certo, mas gasta muitos

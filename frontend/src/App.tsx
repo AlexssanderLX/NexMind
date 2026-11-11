@@ -99,6 +99,8 @@ export default function App() {
   const [mcpState, setMcpState] = useState<"pronta" | "executando">("pronta");
   const [browserOn, setBrowserOn] = useState(() => localStorage.getItem("nexBrowser") === "1");
   const [browserState, setBrowserState] = useState<"pronta" | "executando">("pronta");
+  const [desktopOn, setDesktopOn] = useState(() => localStorage.getItem("nexDesktop") === "1");
+  const [desktopState, setDesktopState] = useState<"pronta" | "executando">("pronta");
   const [approval, setApproval] = useState<{ id: string; tool: string; args: unknown; write?: boolean; warning?: string | null } | null>(null);
   const [searchState, setSearchState] = useState<"desligada" | "pronta" | "executando">("desligada");
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadVoice);
@@ -322,8 +324,9 @@ export default function App() {
             setSearchState(ev.state === "executando" || ev.state === "filtrando" ? "executando" : "pronta");
           else if (ev.type === "mcp") {
             const busy = ev.state === "carregando" || ev.state === "executando";
-            if (String(ev.name).startsWith("browser__") || (browserOn && !mcpOn)) setBrowserState(busy ? "executando" : "pronta");
-            else setMcpState(busy ? "executando" : "pronta");
+            if (String(ev.name).startsWith("browser__")) setBrowserState(busy ? "executando" : "pronta");
+            else if (String(ev.name).startsWith("desktop__")) setDesktopState(busy ? "executando" : "pronta");
+            else if (String(ev.name).startsWith("arquivos__") || ev.name === "mcp") setMcpState(busy ? "executando" : "pronta");
             if (ev.name !== "mcp") {
               patchLast((m) => {
                 const tools = [...(m.tools ?? [])];
@@ -350,6 +353,7 @@ export default function App() {
         searchOn,
         mcpOn,
         browserOn,
+        desktopOn,
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
@@ -485,6 +489,13 @@ export default function App() {
               note: !browserOn ? "desligada" : browserState === "executando" ? "navegando" : "ligada",
             },
             {
+              name: "desktop",
+              label: "Computador",
+              description: "Lê e controla janelas do Windows. Clique, digitação e atalho pedem a sua aprovação.",
+              status: !desktopOn ? "desligada" : desktopState === "executando" ? "executando" : "pronta",
+              note: !desktopOn ? "desligada" : desktopState === "executando" ? "executando" : "ligada",
+            },
+            {
               name: "mcp",
               label: "Arquivos do Nex",
               description: "Lê arquivos de qualquer pasta do PC e cria ou edita arquivos. Criar, editar e áreas sensíveis pedem a sua aprovação, com aviso das consequências. O tamanho das leituras é limitado pelo contexto.",
@@ -498,6 +509,15 @@ export default function App() {
                 const next = !on;
                 localStorage.setItem("nexBrowser", next ? "1" : "0");
                 if (!next) setBrowserState("pronta");
+                return next;
+              });
+              return;
+            }
+            if (name === "desktop") {
+              setDesktopOn((on) => {
+                const next = !on;
+                localStorage.setItem("nexDesktop", next ? "1" : "0");
+                if (!next) setDesktopState("pronta");
                 return next;
               });
               return;

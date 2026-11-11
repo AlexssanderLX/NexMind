@@ -47,6 +47,7 @@ export async function streamChat(
   search = false,
   tools = false,
   browser = false,
+  desktop = false,
 ) {
   const res = await fetch(`/api/conversations/${id}/chat`, {
     method: "POST",
@@ -60,6 +61,7 @@ export async function streamChat(
       search,
       tools,
       browser,
+      desktop,
     }),
     signal,
   });

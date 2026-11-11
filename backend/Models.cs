@@ -25,7 +25,7 @@ public record RenameRequest(string? Title);
 /// <param name="System">Prompt de sistema opcional (não é salvo na conversa; vem das configurações).</param>
 /// <param name="Search">Só é verdade quando o usuário ligou a ferramenta de pesquisa.</param>
 /// <param name="Tools">Só é verdade quando o usuário ligou as ferramentas MCP (as ferramentas pesam no contexto).</param>
-public record ChatRequest(string Content, string Model, int NumCtx, bool? Think, string? System, bool Search = false, bool Tools = false, bool Browser = false);
+public record ChatRequest(string Content, string Model, int NumCtx, bool? Think, string? System, bool Search = false, bool Tools = false, bool Browser = false, bool Desktop = false);
 
 public record SpeakRequest(string? Text, string? Engine, string? Voice, double Rate);
 

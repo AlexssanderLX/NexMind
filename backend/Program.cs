@@ -159,15 +159,21 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         var autoFiles = req.Tools || textLower.Contains("arquivo") || textLower.Contains("pasta")
             || textLower.Contains("diretorio") || textLower.Contains("diretório") || textLower.Contains(".cs") || textLower.Contains(".ts")
             || textLower.Contains("codigo") || textLower.Contains("código");
+        var autoDesktop = req.Desktop || textLower.Contains("computador") || textLower.Contains("janela")
+            || textLower.Contains("calculadora") || textLower.Contains("bloco de notas") || textLower.Contains("aplicativo");
         IReadOnlyList<NexTool> mcpTools = [];
-        if (autoFiles || autoBrowser)
+        if (autoFiles || autoBrowser || autoDesktop)
         {
             await Send(new { type = "mcp", name = "mcp", state = "carregando" });
             var all = await mcp.GetToolsAsync(false, ct);
-            mcpTools = all.Where(t => (autoFiles && t.Server == "arquivos") || (autoBrowser && t.Server == "browser")).ToList();
+            mcpTools = all.Where(t =>
+                (autoFiles && t.Server == "arquivos") ||
+                (autoBrowser && t.Server == "browser") ||
+                (autoDesktop && t.Server == "desktop")).ToList();
         }
         var fileTools = mcpTools.Where(t => t.Server == "arquivos").ToList();
         var browserTools = mcpTools.Where(t => t.Server == "browser").ToList();
+        var desktopTools = mcpTools.Where(t => t.Server == "desktop").ToList();
         var agora = DateTime.Now.ToString("dddd, dd 'de' MMMM 'de' yyyy, HH:mm:ss", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
         var system =
             $"Data e hora atual do sistema: {agora} (Horário local do Alexssander).\n" +
@@ -193,6 +199,9 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         system += browserTools.Count > 0
             ? $"- MCP Navegador: LIGADO, no Chrome que o Alexssander já tem aberto e logado ({string.Join(", ", browserTools.Select(t => t.QualifiedName))}). Sua mesa de trabalho é o grupo de abas verde chamado Nex, com várias abas: é o único lugar onde você enxerga e age. O Alexssander pode abrir Gmail, LinkedIn, GitHub etc. dentro desse grupo, já logado, e pedir para você trabalhar neles; você também pode abrir sites (o grupo é criado por você: nunca peça para ele criar). Cada ferramenta traz na descrição o que faz, quando usar, como usar e o que NÃO fazer: siga à risca. Regras gerais: (1) no começo de uma tarefa, chame browser_tabs; (2) leia a página com browser_get_dom antes de afirmar qualquer coisa sobre ela; (3) depois de clicar ou digitar, leia de novo e relate só o que leu, sem inventar; (4) pedido com várias partes: uma de cada vez, na ordem, e responda no fim cobrindo todas; (5) se uma ferramenta disser que o ritmo está alto, que o site está fora do escopo ou bloqueado, ou que a extensão não respondeu, conte isso em uma frase e pare de insistir; (6) nunca peça para fechar ou reiniciar o Chrome; se a extensão não estiver ligada, diga para recarregar uma vez a pasta extension/chrome em chrome://extensions.\n"
             : "- MCP Navegador: DESLIGADO. Se o Alexssander pedir para você acessar links, ler páginas web ou automatizar sites, avise-o: 'Para eu acessar seu navegador e abas, por favor ligue o interruptor \"Navegador\" no painel lateral de Ferramentas.'\n";
+        system += desktopTools.Count > 0
+            ? $"- MCP Computador: LIGADO ({string.Join(", ", desktopTools.Select(t => t.QualifiedName))}). Use só em janelas do Windows. Clique, digitação e atalho pedem aprovação.\n"
+            : "- MCP Computador: DESLIGADO. Se ele pedir para controlar um programa do Windows, avise: 'Para eu controlar o computador, ligue \"Computador\" em Ferramentas.'\n";
         system += "\nRegra de Seleção de Ferramentas:\n" +
                   "- PÁGINAS DA WEB: use o MCP Navegador só no grupo de abas Nex. Nunca peça para rodar iniciar-chrome-sessao.ps1 e nunca peça para reabrir o Chrome.\n" +
                   "- APLICATIVOS E JANELAS DO WINDOWS (Bloco de Notas, Calculadora, alternar janelas, atalhos do sistema): use o MCP Computador (desktop_list_windows, desktop_inspect_window, desktop_click_element).\n" +

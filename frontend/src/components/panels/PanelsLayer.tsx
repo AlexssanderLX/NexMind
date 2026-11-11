@@ -24,7 +24,7 @@ export interface RunItem {
 /** Contrato para o futuro painel de ferramentas (MCPs, skills): hoje nenhuma ferramenta está conectada. */
 export interface ToolItem {
   name: string;
-  status: "pronta" | "executando" | "erro";
+  status: "desligada" | "pronta" | "executando" | "erro";
   note?: string;
 }
 
@@ -35,6 +35,7 @@ const DEMO_TOOLS: ToolItem[] = [
 ];
 
 const STATUS_COLOR: Record<ToolItem["status"], string> = {
+  desligada: "bg-mute",
   pronta: "bg-emerald-400",
   executando: "bg-accent animate-pulse",
   erro: "bg-red-500",
@@ -73,6 +74,7 @@ export default function PanelsLayer({
   info,
   runs,
   tools,
+  onToggleTool,
   demo,
   coreRef,
 }: {
@@ -82,6 +84,7 @@ export default function PanelsLayer({
   info: ActivityInfo;
   runs: RunItem[];
   tools: ToolItem[];
+  onToggleTool?: (name: string) => void;
   demo: boolean;
   coreRef: RefObject<NeuralCoreHandle | null>;
 }) {
@@ -104,11 +107,16 @@ export default function PanelsLayer({
           <Empty>Nenhuma ferramenta conectada ainda. MCPs e skills aparecerão aqui quando forem integrados.</Empty>
         ) : (
           shownTools.map((t) => (
-            <div key={t.name} className="flex items-center gap-2 py-1">
+            <button
+              key={t.name}
+              type="button"
+              onClick={() => onToggleTool?.(t.name)}
+              className="flex w-full items-center gap-2 py-1 text-left"
+            >
               <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_COLOR[t.status]}`} />
               <span className="flex-1 truncate text-fg">{t.name}</span>
-              <span className="text-mute">{t.status}</span>
-            </div>
+              <span className="text-mute">{t.note ?? t.status}</span>
+            </button>
           ))
         )}
       </FloatingPanel>

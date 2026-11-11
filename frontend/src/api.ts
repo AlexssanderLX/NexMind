@@ -35,6 +35,7 @@ export async function streamChat(
   s: Settings,
   onEvent: (e: StreamEvent) => void,
   signal: AbortSignal,
+  search = false,
 ) {
   const res = await fetch(`/api/conversations/${id}/chat`, {
     method: "POST",
@@ -45,6 +46,7 @@ export async function streamChat(
       numCtx: s.numCtx,
       think: null, // quem decide é o modelo escolhido (instruct não pensa; o de raciocínio sempre pensa)
       system: s.system.trim() || null,
+      search,
     }),
     signal,
   });

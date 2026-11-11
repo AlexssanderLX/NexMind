@@ -5,6 +5,7 @@ using LocalAi.Api.Llm;
 using LocalAi.Api.Mcp;
 using LocalAi.Api.Metrics;
 using LocalAi.Api.Storage;
+using LocalAi.Api.Tools;
 using LocalAi.Api.Voice;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -27,6 +28,12 @@ builder.Services.AddSingleton(sp =>
     if (!Path.IsPathRooted(cfg.Command)) cfg.Command = Path.GetFullPath(Path.Combine(root, cfg.Command));
     return new FileReader(cfg, Path.Combine(root, "data"));
 });
+builder.Services.AddHttpClient("search", http =>
+{
+    http.Timeout = TimeSpan.FromSeconds(8);
+    http.DefaultRequestHeaders.UserAgent.ParseAdd("NexMind/1.0 (pesquisa local)");
+});
+builder.Services.AddSingleton<Research>();
 
 var app = builder.Build();
 var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -57,7 +64,7 @@ api.MapDelete("/conversations/{id}", (string id, ConversationStore s) =>
 
 // --- Chat com streaming (NDJSON: {type: thinking|token|done|error, ...})
 api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpContext ctx,
-    ConversationStore store, OllamaClient ollama) =>
+    ConversationStore store, OllamaClient ollama, Research research) =>
 {
     var ct = ctx.RequestAborted;
     var conv = store.Get(id);
@@ -96,7 +103,34 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
     try
     {
         var history = conv.Messages.Select(m => (m.Role, m.Content)).ToList();
-        await foreach (var chunk in ollama.ChatAsync(req.Model, req.System, history, req.NumCtx, req.Think, ct))
+        var system = req.System;
+        if (req.Search)
+        {
+            await Send(new { type = "tool", name = "pesquisa", state = "filtrando" });
+            var (action, query, question) = await research.DecideAsync(req.Model, history, ct);
+            if (action == "filtrar" && question.Length > 0)
+            {
+                content.Append(question);
+                await Send(new { type = "token", text = question });
+                await Send(new { type = "tool", name = "pesquisa", state = "pronta" });
+            }
+            else if (action == "pesquisar")
+            {
+                await Send(new { type = "tool", name = "pesquisa", state = "executando", query });
+                var hits = await research.SearchAsync(query, ct);
+                var notes = hits.Count == 0
+                    ? "A busca não devolveu trechos. Diga isso e não invente o fato."
+                    : string.Join("\n", hits.Select(h => $"- {h.Title} ({h.Url}): {h.Snippet}"));
+                system = (system ?? "") + $"\n\nPesquisa autorizada para esta tarefa, consulta \"{query}\":\n{notes}\nResponda com base nesses trechos e cite a fonte. Não invente o que não estiver aí.";
+                await Send(new { type = "tool", name = "pesquisa", state = "pronta" });
+            }
+            else await Send(new { type = "tool", name = "pesquisa", state = "pronta" });
+        }
+        if (content.Length == 0) // pesquisa pediu esclarecimento: pergunta já enviada, não chama o modelo
+        {
+        // Qwen3 4B tem 36 camadas. Acima de 16 mil tokens, 24 ficam na GPU e 12 na RAM desde o carregamento.
+        int? numGpu = req.NumCtx > 16384 ? 24 : null;
+        await foreach (var chunk in ollama.ChatAsync(req.Model, system, history, req.NumCtx, req.Think, numGpu, ct))
         {
             if (!string.IsNullOrEmpty(chunk.Thinking))
             {
@@ -109,6 +143,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                 await Send(new { type = "token", text = chunk.Content });
             }
             if (chunk.Stats is not null) stats = chunk.Stats;
+        }
         }
     }
     catch (OperationCanceledException) { /* usuário parou ou fechou a aba: salva o parcial */ }

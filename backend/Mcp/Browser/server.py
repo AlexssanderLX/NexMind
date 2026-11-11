@@ -70,13 +70,15 @@ _DOM_JS = """
     const style = getComputedStyle(el);
     return box.width >= 2 && box.height >= 2 && style.visibility !== "hidden" && style.display !== "none";
   }).slice(0, 60);
-  return visible.map((el, index) => {
+  const items = visible.map((el, index) => {
     const id = index + 1;
     el.setAttribute("data-nex-id", String(id));
     const box = el.getBoundingClientRect();
     const label = (el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.getAttribute("name") || el.getAttribute("type") || "").replace(/\\s+/g, " ").trim().slice(0, 80);
     return { id, tag: el.tagName.toLowerCase(), label, x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
   });
+  const text = (document.body ? document.body.innerText : "").replace(/[ \\t]+/g, " ").replace(/\\n{2,}/g, "\\n").trim().slice(0, 2500);
+  return { text, items };
 }
 """
 
@@ -156,14 +158,19 @@ async def browser_navigate(url: str) -> str:
 
 @mcp.tool()
 async def browser_get_dom() -> str:
-    """Lista links, botões e campos visíveis com ids [1], [2], ... em no máximo 1500 tokens."""
+    """Devolve o texto visível da página e os controles com ids [1], [2], ... em no máximo 1500 tokens."""
     page = await _ensure()
     await _inject(page)
-    items = await page.evaluate(_DOM_JS)
+    payload = await page.evaluate(_DOM_JS)
+    items = payload["items"]
     lines = [f"[{item['id']}] {item['tag']} {item['label']}".strip() for item in items if item["x"] > 0 or item["y"] > 0]
-    if not lines:
-        return "Nenhum elemento interativo visível."
-    return _clip("\n".join(lines))
+    text = (payload.get("text") or "").strip()
+    if not text and not lines:
+        return "Nenhum texto visível."
+    body = "Texto visível:\n" + (text or "(vazio)")
+    if lines:
+        body += "\n\nInterativos:\n" + "\n".join(lines)
+    return _clip(body)
 
 
 @mcp.tool()

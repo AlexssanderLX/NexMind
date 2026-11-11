@@ -81,6 +81,9 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
   const analyserRef = useRef<AnalyserNode | null>(null);
   const procRef = useRef<ScriptProcessorNode | null>(null);
   const chunksRef = useRef<Float32Array[]>([]);
+  // Últimos blocos de áudio ANTES de a fala ser detectada: sem isto o começo da frase era cortado
+  // ("Olá, tudo bem?" virava "Por lá tudo").
+  const preRollRef = useRef<Float32Array[]>([]);
   const heardRef = useRef(false);
   const silenceMsRef = useRef(0);
   const lastTickRef = useRef(0);
@@ -209,6 +212,12 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
         return;
       }
       setPartial(data.text);
+      // Ditado (uma frase): terminou. Sem isto o estado ficava preso em "transcrevendo" e os botões Microfone e
+      // Chat de voz passavam a não fazer nada (ambos saem em silêncio nesse estado), e o núcleo ficava em "pensando".
+      if (!conversationRef.current) {
+        setPhaseBoth("off");
+        stopTracks();
+      }
       onUtterance(data.text, started - data.sttMs, conversationRef.current);
     } catch (e) {
       if (mine !== gen.current) return;
@@ -279,7 +288,16 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
     proc.onaudioprocess = (ev) => {
       if (phaseRef.current !== "listening") return;
       const copy = new Float32Array(ev.inputBuffer.getChannelData(0));
-      if (heardRef.current || levelNow() >= settingsRef.current.vadSensitivity) chunksRef.current.push(copy);
+      if (heardRef.current || levelNow() >= settingsRef.current.vadSensitivity) {
+        if (preRollRef.current.length) {
+          chunksRef.current.push(...preRollRef.current); // devolve o começo da fala
+          preRollRef.current = [];
+        }
+        chunksRef.current.push(copy);
+      } else {
+        preRollRef.current.push(copy);
+        if (preRollRef.current.length > 5) preRollRef.current.shift(); // ~0,4 s a 48 kHz
+      }
     };
     const mute = ctx.createGain();
     mute.gain.value = 0;
@@ -288,6 +306,7 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
     mute.connect(ctx.destination);
     procRef.current = proc;
     heardRef.current = false;
+    preRollRef.current = [];
     silenceMsRef.current = 0;
     lastTickRef.current = 0;
     setPhaseBoth("listening");

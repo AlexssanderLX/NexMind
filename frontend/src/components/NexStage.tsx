@@ -25,6 +25,7 @@ export default function NexStage({
   info,
   runs,
   tools,
+  onToggleTool,
   children,
 }: {
   core: NexCore;
@@ -34,6 +35,7 @@ export default function NexStage({
   info: Omit<ActivityInfo, "stateLabel" | "micOn" | "profileLabel">;
   runs: RunItem[];
   tools: ToolItem[];
+  onToggleTool?: (name: string) => void;
   children: ReactNode;
 }) {
   const hitRef = useRef<HTMLDivElement>(null);
@@ -92,6 +94,7 @@ export default function NexStage({
         info={{ ...info, stateLabel: stateLabel(core.state), micOn: core.micOn, profileLabel: profile.label }}
         runs={runs}
         tools={tools}
+        onToggleTool={onToggleTool}
         demo={core.demo}
         coreRef={core.coreRef}
       />

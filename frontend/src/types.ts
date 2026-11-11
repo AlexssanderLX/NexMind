@@ -72,5 +72,6 @@ export type VoiceStatus = {
 export type StreamEvent =
   | { type: "token"; text: string }
   | { type: "thinking"; text: string }
+  | { type: "tool"; name: string; state: string; query?: string }
   | { type: "done"; stats: ChatStats | null }
   | { type: "error"; message: string };

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import Markdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
@@ -11,7 +12,8 @@ function normalizeMath(text: string): string {
     .replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => `$${m}$`);
 }
 
-export default function MessageView({ m, streaming }: { m: Message; streaming?: boolean }) {
+/** memo: só a mensagem que está chegando re-renderiza; as anteriores (e o markdown delas) ficam como estão. */
+function MessageView({ m, streaming }: { m: Message; streaming?: boolean }) {
   if (m.role === "user") {
     return (
       <div className="flex justify-end">
@@ -56,3 +58,5 @@ export default function MessageView({ m, streaming }: { m: Message; streaming?: 
     </div>
   );
 }
+
+export default memo(MessageView);

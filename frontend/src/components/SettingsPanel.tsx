@@ -161,8 +161,9 @@ export default function SettingsPanel({
           min={256}
           step={512}
           value={settings.numCtx}
-          onChange={(e) => set("numCtx", Math.max(256, Number(e.target.value) || 4096))}
+          onChange={(e) => set("numCtx", Math.max(256, Number(e.target.value) || 32768))}
         />
+        <span className="mt-1 block">Acima de 16.384, 24 camadas ficam na GPU e 12 na RAM desde o início.</span>
       </label>
       <label className="col-span-full text-xs text-mute">
         Prompt de sistema (opcional)

@@ -1,6 +1,15 @@
 import Markdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import type { Message } from "../types";
+
+/** O Qwen às vezes usa \( \) e \[ \] em vez de $ $ e $$ $$; o remark-math só entende os cifrões. */
+function normalizeMath(text: string): string {
+  return text
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => `$$${m}$$`)
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => `$${m}$`);
+}
 
 export default function MessageView({ m, streaming }: { m: Message; streaming?: boolean }) {
   if (m.role === "user") {
@@ -27,7 +36,9 @@ export default function MessageView({ m, streaming }: { m: Message; streaming?: 
 
       {m.content ? (
         <div className="md break-words">
-          <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
+          <Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}>
+            {normalizeMath(m.content)}
+          </Markdown>
         </div>
       ) : (
         streaming && !m.thinking && <span className="text-mute">…</span>

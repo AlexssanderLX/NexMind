@@ -18,7 +18,7 @@ Desenvolvimento com hot reload: `dotnet run` em `backend/` e `npm run dev` em `f
 - `backend/Llm/` — **LLM**: comunicação com o Ollama (único lugar que conhece a API dele). O modelo é só um parâmetro.
 - `backend/Storage/` — conversas em `backend/data/conversations/*.json`.
 - `backend/Metrics/` — CPU, RAM, RAM do Ollama e GPU/VRAM (via `nvidia-smi`).
-- `frontend/` — React + TypeScript + Tailwind.
+- `frontend/` — React + TypeScript + Tailwind. Respostas renderizam markdown e fórmulas matemáticas (KaTeX; aceita `$..$`, `$$..$$`, `\(..\)` e `\[..\]`).
 - **MCPs** e **Regras/políticas**: ainda não implementados (reservados para etapas futuras).
 
 ## Modos: Conversa e Raciocínio

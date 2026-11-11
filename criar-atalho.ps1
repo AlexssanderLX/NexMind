@@ -9,7 +9,7 @@ $lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$root\iniciar-nex.p
 $lnk.WorkingDirectory = $root
 $lnk.IconLocation = "$root\assets\nex.ico"
 $lnk.WindowStyle = 1 # janela normal: mostra cada passo (limpeza, Ollama, Nex); fechar a janela para o Nex
-$lnk.Description = "Inicia o Nex (Ollama + app) e abre no navegador"
+$lnk.Description = "Inicia o Nex (Ollama + app) e o Chrome na porta 9222, com a sessão do usuário"
 $lnk.Save()
 
 Write-Host "Atalho criado: $desktop\Nex.lnk"

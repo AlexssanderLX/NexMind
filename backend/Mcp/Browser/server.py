@@ -12,6 +12,7 @@ mcp = FastMCP("nex-browser")
 _playwright: Playwright | None = None
 _browser: Browser | None = None
 _page: Page | None = None
+_cdp = False
 
 _MAX_TOKENS = 1500
 _CHARS_PER_TOKEN = 4
@@ -103,6 +104,28 @@ async def _move(page: Page, x: float, y: float) -> None:
     await page.evaluate(_MOVE_JS, {"x": x, "y": y})
 
 
+async def _ensure() -> Page:
+    """Conecta no Chrome real (porta 9222). Se a porta estiver fechada, abre um Chromium isolado."""
+    global _playwright, _browser, _page, _cdp
+    if _page is not None:
+        return _page
+    _playwright = await async_playwright().start()
+    try:
+        _browser = await _playwright.chromium.connect_over_cdp("http://127.0.0.1:9222")
+        context = _browser.contexts[0] if _browser.contexts else await _browser.new_context()
+        _cdp = True
+        existing = [p for p in context.pages if not p.url.startswith("chrome")]
+        _page = existing[-1] if existing else (context.pages[-1] if context.pages else await context.new_page())
+    except Exception:
+        _browser = await _playwright.chromium.launch(headless=False)
+        context = await _browser.new_context()
+        _page = await context.new_page()
+        _cdp = False
+    await context.add_init_script("(" + _CURSOR_JS + ")();")
+    await _inject(_page)
+    return _page
+
+
 def _clip(text: str) -> str:
     limit = _MAX_TOKENS * _CHARS_PER_TOKEN
     if len(text) <= limit:
@@ -112,17 +135,13 @@ def _clip(text: str) -> str:
 
 @mcp.tool()
 async def browser_navigate(url: str) -> str:
-    """Abre o Chromium visível, navega até a URL e mostra o cursor do Nex."""
-    global _playwright, _browser, _page
-    if _page is None:
-        _playwright = await async_playwright().start()
-        # Sempre visível: o usuário precisa ver o cursor. HEADLESS no ambiente não muda isso.
-        _browser = await _playwright.chromium.launch(headless=False)
-        _page = await _browser.new_page()
-        await _page.add_init_script("(" + _CURSOR_JS + ")();")
-    await _page.goto(url, wait_until="domcontentloaded", timeout=30000)
-    await _inject(_page)
-    return f"Aberto: {_page.url}"
+    """Abre a URL no Chrome do usuário (porta 9222) ou num Chromium isolado, com o cursor do Nex."""
+    page = await _ensure()
+    await page.bring_to_front()
+    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    await _inject(page)
+    modo = "Chrome do usuário, sessão preservada" if _cdp else "Chromium isolado: o Chrome não estava na porta 9222"
+    return f"Aberto ({modo}): {page.url}"
 
 
 @mcp.tool()
@@ -165,16 +184,19 @@ async def browser_type(element_id: int, text: str, press_enter: bool = False) ->
 
 @mcp.tool()
 async def browser_close() -> str:
-    """Fecha o Chromium."""
-    global _playwright, _browser, _page
+    """Solta o Chrome do usuário ou fecha o Chromium isolado."""
+    global _playwright, _browser, _page, _cdp
     if _browser is not None:
+        # No CDP, close() só desconecta. Não encerra a janela nem a sessão do usuário.
         await _browser.close()
     if _playwright is not None:
         await _playwright.stop()
+    era_cdp = _cdp
     _browser = None
     _playwright = None
     _page = None
-    return "Navegador fechado."
+    _cdp = False
+    return "Desconectado do Chrome. A janela continua aberta." if era_cdp else "Navegador isolado fechado."
 
 
 def main() -> None:

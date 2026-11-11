@@ -40,6 +40,7 @@ export async function streamChat(
   signal: AbortSignal,
   search = false,
   tools = false,
+  browser = false,
 ) {
   const res = await fetch(`/api/conversations/${id}/chat`, {
     method: "POST",
@@ -52,6 +53,7 @@ export async function streamChat(
       system: s.system.trim() || null,
       search,
       tools,
+      browser,
     }),
     signal,
   });

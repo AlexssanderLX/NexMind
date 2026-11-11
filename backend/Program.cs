@@ -39,11 +39,6 @@ builder.Services.AddSingleton<ApprovalBroker>();
 
 var app = builder.Build();
 var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-const string BasePrompt =
-    "Responda em português do Brasil, de forma direta e curta: vá ao ponto, sem introdução, sem repetir a pergunta e sem fechamento do tipo \"espero ter ajudado\". " +
-    "Use no máximo alguns parágrafos curtos ou uma lista enxuta. Só detalhe, explique passo a passo ou escreva longo se o usuário pedir. " +
-    "Ao analisar um arquivo anexado, comece pela conclusão principal e cite apenas o que importa.";
-
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -110,7 +105,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
     {
         var history = conv.Messages.Select(m => (m.Role, m.Content)).ToList();
         // Regra base: respostas diretas. O modelo de 4B tende a escrever muito; texto longo custa tempo (tokens na GPU/CPU).
-        var system = BasePrompt + (string.IsNullOrWhiteSpace(req.System) ? "" : "\n\n" + req.System);
+        var searchAddon = "";
         if (req.Search)
         {
             await Send(new { type = "tool", name = "pesquisa", state = "filtrando" });
@@ -128,7 +123,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                 var notes = hits.Count == 0
                     ? "A busca não devolveu trechos. Diga isso e não invente o fato."
                     : string.Join("\n", hits.Select(h => $"- {h.Title} ({h.Url}): {h.Snippet}"));
-                system = (system ?? "") + $"\n\nPesquisa autorizada para esta tarefa, consulta \"{query}\":\n{notes}\nResponda com base nesses trechos e cite a fonte. Não invente o que não estiver aí.";
+                searchAddon = $"\n\nPesquisa autorizada para esta tarefa, consulta \"{query}\":\n{notes}\nResponda com base nesses trechos e cite a fonte. Não invente o que não estiver aí.";
                 await Send(new { type = "tool", name = "pesquisa", state = "pronta" });
             }
             else await Send(new { type = "tool", name = "pesquisa", state = "pronta" });
@@ -140,24 +135,38 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
 
         // Ferramentas MCP (só quando o usuário ligou): o modelo pode pedir uma ferramenta; o backend executa e devolve o resultado.
         IReadOnlyList<NexTool> mcpTools = [];
-        if (req.Tools)
+        if (req.Tools || req.Browser)
         {
             await Send(new { type = "mcp", name = "mcp", state = "carregando" });
-            mcpTools = await mcp.GetToolsAsync(false, ct);
+            var all = await mcp.GetToolsAsync(false, ct);
+            mcpTools = all.Where(t => (req.Tools && t.Server == "arquivos") || (req.Browser && t.Server == "browser")).ToList();
         }
-        // O modelo não sabe o que o Nex faz: conta, de forma curta, o que existe agora (sem isso ele responde "não tenho acesso a arquivos").
-        system += "\n\nCapacidades do Nex nesta conversa:\n" +
-                  "- Arquivos anexados: o usuário pode anexar PDF, DOCX, planilhas, md, texto e código pelo botão de clipe. O texto do arquivo vem na própria mensagem, entre [[ARQUIVO nome]] e [[/ARQUIVO]]; leia e analise.\n";
-        if (mcpTools.Count > 0)
-            system += "- Ferramentas LIGADAS (você pode chamá-las): " + string.Join("; ", mcpTools.Select(t => (t.QualifiedName + ": " + t.Description).Split('\n')[0])) +
-                      ". Elas LEEM arquivos de qualquer pasta do computador e CRIAM ou EDITAM arquivos. Criar ou editar sempre pede aprovação do usuário, " +
-                      "e ler áreas sensíveis (chaves, credenciais, dados de navegador) ou escrever fora da pasta de trabalho do Nex também, com um aviso das consequências; se ele autorizar, você faz. " +
-                      "Seu contexto é pequeno, então gaste pouco: primeiro liste ou busque, depois leia UM arquivo por vez, e se for grande leia só o trecho necessário (início/fim). " +
-                      "Não liste árvores inteiras sem necessidade. Se faltar o caminho, pergunte.\n";
-        else
-            system += "- Ferramentas de arquivos (ler qualquer pasta do computador; criar e editar arquivos, sempre com aprovação do usuário) existem, mas estão DESLIGADAS. " +
-                      "Se o usuário quiser que você mexa em arquivos, diga para ligar \"Arquivos do Nex\" no painel de Ferramentas. " +
-                      "Você nunca acessa o computador do usuário fora disso.\n";
+        var fileTools = mcpTools.Where(t => t.Server == "arquivos").ToList();
+        var browserTools = mcpTools.Where(t => t.Server == "browser").ToList();
+        var system =
+            "Você é o Nex, um assistente de IA local e inteligente rodando no computador do usuário. " +
+            "Seu criador e usuário é o Alexssander, um Desenvolvedor e Pentester experiente. " +
+            "Comunicação: seja direto, técnico, profissional e vá direto ao ponto, sem enrolação nem fechamentos clichês como 'espero ter ajudado'. " +
+            "Quando estiver operando ferramentas, seja ultra-conciso para poupar contexto e tempo de GPU. " +
+            "Quando estiver conversando conceitualmente com o Alexssander, responda com profundidade técnica e parceria.\n\n" +
+            "Arquitetura de Ferramentas (MCP - Model Context Protocol):\n" +
+            "- Você tem acesso a servidores MCP que expandem seu poder além do chat.\n" +
+            "- REGRA DE SEGURANÇA INEGOCIÁVEL (Human-in-the-Loop): Você tem autorização para LER e inspecionar livremente (ler arquivos do sistema, ler páginas web, inspecionar telas). " +
+            "Porém, você NUNCA executa ações mutantes ou de impacto (criar/editar arquivos, rodar comandos ou clicar em botões de sites/plataformas) sem que o Alexssander autorize na tela antes.\n" +
+            "- Você NÃO tenta ler senhas, chaves de API ou cookies brutos do disco, mas pode interagir com as janelas e abas que o Alexssander já tem abertas e logadas.\n\n" +
+            "Estado Atual das Ferramentas nesta conversa:\n" +
+            "- Leitor de Anexos: ATIVO. O Alexssander pode anexar PDFs, DOCX, planilhas, códigos e textos pelo botão de clipe. O conteúdo vem na mensagem entre [[ARQUIVO]] e [[/ARQUIVO]].\n";
+        system += fileTools.Count > 0
+            ? $"- MCP Arquivos do Nex: LIGADO ({string.Join(", ", fileTools.Select(t => t.QualifiedName))}). Você pode ler arquivos do PC e criar/editar arquivos com aprovação dele. Se faltar o caminho, pergunte.\n"
+            : "- MCP Arquivos do Nex: DESLIGADO. Se o Alexssander pedir para você ler, criar ou modificar arquivos do PC, avise-o diretamente: 'Para eu mexer em arquivos, por favor ligue o interruptor \"Arquivos do Nex\" no painel lateral de Ferramentas.'\n";
+        system += browserTools.Count > 0
+            ? $"- MCP Navegador: LIGADO ({string.Join(", ", browserTools.Select(t => t.QualifiedName))}). Você controla a janela do Chrome real do Alexssander conectada via automação CDP. Suas sessões, logins e abas abertas estão preservados. Você pode navegar (browser_navigate), ler o conteúdo sem peso (browser_get_dom) e interagir visualmente com cursor animado. O clique (browser_click) sempre pedirá autorização prévia na tela.\n"
+            : "- MCP Navegador: DESLIGADO. Se o Alexssander pedir para você acessar links, ler páginas web ou automatizar sites, avise-o: 'Para eu acessar seu navegador e abas, por favor ligue o interruptor \"Navegador\" no painel lateral de Ferramentas.'\n";
+        system += req.Search
+            ? "- Pesquisa na web: LIGADA. Cite a fonte e não invente o que a busca não trouxe.\n"
+            : "- Pesquisa na web: DESLIGADA. Se ele pedir um fato da internet sem abrir o navegador, avise: 'Para eu pesquisar na web, ligue \"Pesquisa na web\" em Ferramentas.'\n";
+        if (!string.IsNullOrWhiteSpace(req.System)) system += "\n\nInstrução adicional da conversa: " + req.System;
+        system += searchAddon;
         var ollamaTools = mcpTools.Select(t => (object)new
         {
             type = "function",

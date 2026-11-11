@@ -97,6 +97,8 @@ export default function App() {
   const [searchOn, setSearchOn] = useState(() => localStorage.getItem("nexSearch") === "1");
   const [mcpOn, setMcpOn] = useState(() => localStorage.getItem("nexMcp") === "1");
   const [mcpState, setMcpState] = useState<"pronta" | "executando">("pronta");
+  const [browserOn, setBrowserOn] = useState(() => localStorage.getItem("nexBrowser") === "1");
+  const [browserState, setBrowserState] = useState<"pronta" | "executando">("pronta");
   const [approval, setApproval] = useState<{ id: string; tool: string; args: unknown; write?: boolean; warning?: string | null } | null>(null);
   const [searchState, setSearchState] = useState<"desligada" | "pronta" | "executando">("desligada");
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadVoice);
@@ -289,7 +291,11 @@ export default function App() {
           else if (ev.type === "thinking") buffer.push("thinking", ev.text);
           else if (ev.type === "tool")
             setSearchState(ev.state === "executando" || ev.state === "filtrando" ? "executando" : "pronta");
-          else if (ev.type === "mcp") setMcpState(ev.state === "carregando" || ev.state === "executando" ? "executando" : "pronta");
+          else if (ev.type === "mcp") {
+            const busy = ev.state === "carregando" || ev.state === "executando";
+            if (String(ev.name).startsWith("browser__") || (browserOn && !mcpOn)) setBrowserState(busy ? "executando" : "pronta");
+            else setMcpState(busy ? "executando" : "pronta");
+          }
           else if (ev.type === "approval") setApproval({ id: ev.id, tool: ev.tool, args: ev.args, write: ev.write, warning: ev.warning });
           else if (ev.type === "done") {
             buffer.flush();
@@ -304,6 +310,7 @@ export default function App() {
         abort.signal,
         searchOn,
         mcpOn,
+        browserOn,
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
@@ -428,6 +435,13 @@ export default function App() {
               note: !searchOn ? "desligada" : searchState === "executando" ? "pesquisando" : "ligada",
             },
             {
+              name: "browser",
+              label: "Navegador",
+              description: "Abre o Chromium na sua tela, move o cursor e pesquisa. O clique pede a sua aprovação.",
+              status: !browserOn ? "desligada" : browserState === "executando" ? "executando" : "pronta",
+              note: !browserOn ? "desligada" : browserState === "executando" ? "navegando" : "ligada",
+            },
+            {
               name: "mcp",
               label: "Arquivos do Nex",
               description: "Lê arquivos de qualquer pasta do PC e cria ou edita arquivos. Criar, editar e áreas sensíveis pedem a sua aprovação, com aviso das consequências. O tamanho das leituras é limitado pelo contexto.",
@@ -436,6 +450,15 @@ export default function App() {
             },
           ]}
           onToggleTool={(name) => {
+            if (name === "browser") {
+              setBrowserOn((on) => {
+                const next = !on;
+                localStorage.setItem("nexBrowser", next ? "1" : "0");
+                if (!next) setBrowserState("pronta");
+                return next;
+              });
+              return;
+            }
             if (name === "mcp") {
               setMcpOn((on) => {
                 localStorage.setItem("nexMcp", on ? "0" : "1");

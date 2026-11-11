@@ -59,6 +59,40 @@ if (-not (Test-Url "http://localhost:11434/api/version")) { Stop-WithError "O Ol
 Log "Ollama pronto." Green
 
 # ---------------------------------------------------------------------------------------------------------------
+# 2b. Chrome do usuário com depuração remota, para o Nex controlar a sessão já logada.
+# ---------------------------------------------------------------------------------------------------------------
+$cdpUp = (Test-NetConnection -ComputerName 127.0.0.1 -Port 9222 -WarningAction SilentlyContinue).TcpTestSucceeded
+if (-not $cdpUp) {
+    $chrome = @(
+        "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+        "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+        "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $chrome) { $chrome = (Get-Command chrome.exe -ErrorAction SilentlyContinue).Source }
+    if ($chrome) {
+        Log "Abrindo o Chrome na porta 9222 para preservar a sessão..." Cyan
+        Start-Process $chrome -ArgumentList "--remote-debugging-port=9222", "--restore-last-session"
+        for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Milliseconds 500
+            try {
+                $tcp = New-Object System.Net.Sockets.TcpClient
+                $tcp.Connect("127.0.0.1", 9222)
+                $tcp.Close()
+                break
+            } catch { }
+        }
+    }
+    $cdpUp = (Test-NetConnection -ComputerName 127.0.0.1 -Port 9222 -WarningAction SilentlyContinue).TcpTestSucceeded
+    if (-not $cdpUp) {
+        Log "Porta 9222 fechada. Feche o Chrome que já estiver aberto e rode o atalho de novo. Sem isso o Nex abre um Chromium sem os seus logins." Yellow
+    } else {
+        Log "Chrome pronto na porta 9222." Green
+    }
+} else {
+    Log "Chrome já está na porta 9222." Green
+}
+
+# ---------------------------------------------------------------------------------------------------------------
 # 3. Tela (frontend): recompila quando mudou
 # ---------------------------------------------------------------------------------------------------------------
 $index = "$root\backend\wwwroot\index.html"

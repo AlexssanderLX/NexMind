@@ -22,8 +22,15 @@ if (-not (Test-Port9222) -or $ForceRestart) {
         Start-Sleep -Seconds 1
     }
 
+    # O Chrome atual ignora a porta 9222 no perfil padrão. A junção faz o mesmo perfil
+    # logado parecer outro diretório, e aí a depuração liga sem abrir janela anônima.
+    $profile = "$env:LOCALAPPDATA\nex-chrome-profile"
+    $realProfile = "$env:LOCALAPPDATA\Google\Chrome\User Data"
+    if (-not (Test-Path $profile)) {
+        cmd /c mklink /J "$profile" "$realProfile" | Out-Null
+    }
     Write-Host "Iniciando seu Chrome na porta 9222 com suas sessões e abas..." -ForegroundColor Green
-    Start-Process $chromeExe -ArgumentList "--remote-debugging-port=9222", "--restore-last-session"
+    Start-Process $chromeExe -ArgumentList "--remote-debugging-port=9222", "--remote-allow-origins=*", "--user-data-dir=$profile", "--restore-last-session"
 
     for ($i = 0; $i -lt 15; $i++) {
         Start-Sleep -Milliseconds 500

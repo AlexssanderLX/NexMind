@@ -1,27 +1,46 @@
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Message } from "../types";
 
 export default function MessageView({ m, streaming }: { m: Message; streaming?: boolean }) {
-  const isUser = m.role === "user";
-  return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className={`max-w-[85%] rounded-lg px-3 py-2 ${isUser ? "bg-blue-600/80" : "bg-neutral-900"}`}>
-        {m.thinking && (
-          <details className="mb-2 text-xs text-neutral-400" open={streaming && !m.content}>
-            <summary className="cursor-pointer">Raciocínio</summary>
-            <div className="mt-1 whitespace-pre-wrap border-l border-neutral-700 pl-2">{m.thinking}</div>
-          </details>
-        )}
-        <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-          {m.content || (streaming && !m.thinking ? <span className="text-neutral-500">…</span> : "")}
-          {streaming && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-neutral-400 align-middle" />}
+  if (m.role === "user") {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl bg-panel px-4 py-2.5 text-[15px] leading-relaxed">
+          {m.content}
         </div>
-        {m.stats && (
-          <div className="mt-2 text-[11px] text-neutral-500">
-            {m.stats.outputTokens} tokens · {m.stats.tokensPerSec} tok/s · {m.stats.totalSeconds}s total
-            {m.stats.loadSeconds > 1 ? ` (carregar modelo: ${m.stats.loadSeconds}s)` : ""} · prompt {m.stats.promptTokens} tokens
-          </div>
-        )}
       </div>
+    );
+  }
+
+  const thinkingNow = streaming && !m.content;
+  return (
+    <div className="text-[15px] leading-7">
+      {m.thinking && (
+        <details className="mb-3 text-sm text-mute" open={thinkingNow}>
+          <summary className="cursor-pointer select-none hover:text-fg">
+            {thinkingNow ? "Pensando…" : "Raciocínio"}
+          </summary>
+          <div className="mt-2 whitespace-pre-wrap border-l-2 border-line pl-3 leading-6">{m.thinking}</div>
+        </details>
+      )}
+
+      {m.content ? (
+        <div className="md break-words">
+          <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
+        </div>
+      ) : (
+        streaming && !m.thinking && <span className="text-mute">…</span>
+      )}
+      {streaming && m.content && <span className="inline-block h-4 w-1.5 animate-pulse bg-mute align-middle" />}
+
+      {m.stats && (
+        <div className="mt-3 text-xs text-mute">
+          {m.stats.outputTokens} tokens · {m.stats.tokensPerSec} tok/s · {m.stats.totalSeconds}s
+          {m.stats.loadSeconds > 1 ? ` (carregar modelo: ${m.stats.loadSeconds}s)` : ""} · prompt{" "}
+          {m.stats.promptTokens} tokens
+        </div>
+      )}
     </div>
   );
 }

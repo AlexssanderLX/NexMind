@@ -1,15 +1,21 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using LocalAi.Api.Memory;
 
 namespace LocalAi.Api.Storage;
 
 /// <summary>
-/// Persistência simples: um arquivo JSON por conversa.
+/// Persistência: uma micropasta por conversa, backend/data/conversations/{id}/
+///   conversation.json   histórico de mensagens (gravação atômica)
+///   system_index.md, intent.md, facts.md   o que o sistema sabe e comprovou
+///   agent_index.md, scratchpad.md          o caderno do agente
 /// Um índice em memória (id, título, data) responde à listagem sem ler os arquivos; ele é montado na partida
-/// lendo só o começo de cada arquivo, e mantido em dia por Save/Delete.
+/// lendo só o começo de cada conversation.json, e mantido em dia por Save/Delete.
 /// </summary>
 public partial class ConversationStore
 {
+    public const string ConversationFile = "conversation.json";
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly string _dir;
     private readonly object _lock = new();
@@ -19,14 +25,28 @@ public partial class ConversationStore
     {
         _dir = dir;
         Directory.CreateDirectory(dir);
-        foreach (var file in Directory.EnumerateFiles(dir, "*.json"))
-            if (ReadSummary(file) is { } s) _index[s.Id] = s;
+        // só micropastas válidas entram; arquivos .json soltos do formato antigo são ignorados
+        foreach (var folder in Directory.EnumerateDirectories(dir))
+        {
+            if (!IdPattern().IsMatch(Path.GetFileName(folder))) continue;
+            var file = Path.Combine(folder, ConversationFile);
+            if (File.Exists(file) && ReadSummary(file) is { } s) _index[s.Id] = s;
+        }
     }
 
     [GeneratedRegex("^[a-f0-9]{32}$")]
     private static partial Regex IdPattern();
 
-    private string PathFor(string id) => Path.Combine(_dir, id + ".json");
+    private string FolderOf(string id) => Path.Combine(_dir, id);
+    private string PathFor(string id) => Path.Combine(FolderOf(id), ConversationFile);
+
+    /// <summary>Pasta da conversa, ou null se o id é inválido (barra qualquer caminho fora de data/conversations) ou ela não existe.</summary>
+    public string? FolderFor(string id)
+    {
+        if (!IdPattern().IsMatch(id)) return null;
+        var folder = FolderOf(id);
+        return Directory.Exists(folder) ? folder : null;
+    }
 
     public List<ConversationSummary> List()
     {
@@ -37,6 +57,7 @@ public partial class ConversationStore
     {
         var now = DateTime.UtcNow;
         var c = new Conversation { Id = Guid.NewGuid().ToString("N"), CreatedAt = now, UpdatedAt = now };
+        ConversationMemory.Seed(FolderOf(c.Id)); // cria a pasta com os índices e tópicos
         Save(c);
         return c;
     }
@@ -58,6 +79,7 @@ public partial class ConversationStore
         lock (_lock)
         {
             // escreve num temporário e troca: fechar o app no meio de um salvamento não corrompe a conversa
+            Directory.CreateDirectory(FolderOf(c.Id));
             var path = PathFor(c.Id);
             var tmp = path + ".tmp";
             File.WriteAllText(tmp, json);
@@ -71,9 +93,9 @@ public partial class ConversationStore
         if (!IdPattern().IsMatch(id)) return false;
         lock (_lock)
         {
-            var path = PathFor(id);
-            if (!File.Exists(path)) return false;
-            File.Delete(path);
+            var folder = FolderOf(id);
+            if (!Directory.Exists(folder)) return false;
+            Directory.Delete(folder, recursive: true); // a micropasta inteira: histórico, fatos e caderno
             _index.Remove(id);
             return true;
         }

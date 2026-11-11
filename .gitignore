@@ -7,3 +7,5 @@ backend/voice/models/
 frontend/node_modules/
 **/__pycache__/
 *.pyc
+tests/**/bin/
+tests/**/obj/

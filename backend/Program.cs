@@ -3,6 +3,7 @@ using System.Text.Json;
 using LocalAi.Api;
 using LocalAi.Api.Llm;
 using LocalAi.Api.Mcp;
+using LocalAi.Api.Memory;
 using LocalAi.Api.Metrics;
 using LocalAi.Api.Storage;
 using LocalAi.Api.Tools;
@@ -36,6 +37,7 @@ builder.Services.AddHttpClient("search", http =>
 builder.Services.AddSingleton<Research>();
 builder.Services.AddSingleton(new McpRegistry(Path.Combine(builder.Environment.ContentRootPath, "mcp_servers.json")));
 builder.Services.AddSingleton<ApprovalBroker>();
+builder.Services.AddSingleton(sp => new ConversationMemory(sp.GetRequiredService<ConversationStore>()));
 
 var app = builder.Build();
 var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -62,10 +64,18 @@ api.MapGet("/conversations/{id}", (string id, ConversationStore s) =>
     s.Get(id) is { } c ? Results.Ok(c) : Results.NotFound());
 api.MapDelete("/conversations/{id}", (string id, ConversationStore s) =>
     s.Delete(id) ? Results.NoContent() : Results.NotFound());
+// Caderno da conversa (índices e tópicos): leitura, para inspeção e testes
+api.MapGet("/conversations/{id}/memory", (string id, ConversationMemory m) =>
+{
+    var (systemIndex, agentIndex) = m.Indexes(id);
+    if (systemIndex.Length == 0 && agentIndex.Length == 0) return Results.NotFound();
+    var topics = ConversationMemory.Topics.ToDictionary(t => t, t => m.Read(id, t, 20_000).Text);
+    return Results.Ok(new { systemIndex, agentIndex, topics });
+});
 
 // --- Chat com streaming (NDJSON: {type: thinking|token|done|error, ...})
 api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpContext ctx,
-    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals) =>
+    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory) =>
 {
     var ct = ctx.RequestAborted;
     var conv = store.Get(id);
@@ -85,6 +95,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         var plain = System.Text.RegularExpressions.Regex.Replace(userText, @"\[\[ARQUIVO [^\]]*\]\][\s\S]*?\[\[/ARQUIVO\]\]\s*", "").Trim();
         if (plain.Length == 0) plain = "Arquivo anexado";
         conv.Title = plain.Length > 48 ? plain[..48] + "…" : plain;
+        memory.SetIntent(conv.Id, userText); // 1ª mensagem = objetivo da conversa (intent.md), sem o texto dos anexos
     }
     conv.Model = req.Model;
     store.Save(conv); // a pergunta fica salva mesmo se o Ollama falhar
@@ -175,6 +186,11 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         system += req.Search
             ? "- Pesquisa na web: LIGADA. Cite a fonte e não invente o que a busca não trouxe.\n"
             : "- Pesquisa na web: DESLIGADA. Se ele pedir um fato da internet sem abrir o navegador, avise: 'Para eu pesquisar na web, ligue \"Pesquisa na web\" em Ferramentas.'\n";
+        // Micro-RAG da conversa: só os dois índices compactos (~120 tokens). O detalhe fica em disco, atrás de topic_read.
+        var (systemIndex, agentIndex) = memory.Indexes(conv.Id);
+        system += "\n=== CONTEXTO DA CONVERSA (ÍNDICE DO SISTEMA: fatos comprovados, você só lê) ===\n" + systemIndex +
+                  "\n=== SEU CADERNO DE RACIOCÍNIO (ÍNDICE DO AGENTE: suas hipóteses e notas) ===\n" + agentIndex +
+                  "\nPara consultar detalhes ou registrar hipóteses, use as ferramentas topic_read e topic_write. Quando o Alexssander perguntar o que foi anotado, combinado ou comprovado, chame topic_read antes de responder; quando ele pedir para anotar algo, chame topic_write.\n";
         if (!string.IsNullOrWhiteSpace(req.System)) system += "\n\nInstrução adicional da conversa: " + req.System;
         system += searchAddon;
         var ollamaTools = mcpTools.Select(t => (object)new
@@ -182,6 +198,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             type = "function",
             function = new { name = t.QualifiedName, description = t.Description, parameters = t.Schema },
         }).ToList();
+        ollamaTools.AddRange(NotebookTools.Definitions()); // topic_read e topic_write: sempre disponíveis, vinculadas a esta conversa
         var extra = new List<object>();
         // Tarefas de navegador (abrir, ler, clicar, ler de novo) precisam de mais passos que ler um arquivo.
         var MaxToolRounds = browserTools.Count > 0 ? 12 : 4;
@@ -226,6 +243,16 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             });
             foreach (var call in calls)
             {
+                if (NotebookTools.IsNotebookTool(call.Name))
+                {
+                    // caderno da conversa: nativo, sem aprovação (só lê ou acrescenta notas na pasta desta conversa)
+                    await Send(new { type = "mcp", name = call.Name, state = "executando" });
+                    var (nbOk, nbText) = NotebookTools.Handle(call, memory, conv.Id, Math.Min(resultCap, Math.Max(turnBudget, 500)));
+                    turnBudget -= nbText.Length;
+                    await Send(new { type = "mcp", name = call.Name, state = nbOk ? "concluida" : "falhou" });
+                    extra.Add(new { role = "tool", tool_name = call.Name, content = nbOk ? nbText : "ERRO: " + nbText });
+                    continue;
+                }
                 var tool = mcpTools.FirstOrDefault(t => t.QualifiedName == call.Name);
                 string result;
                 if (tool is null) result = $"A ferramenta '{call.Name}' não existe.";
@@ -259,6 +286,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                         var r = await mcp.CallAsync(tool, call.Arguments, Math.Min(resultCap, turnBudget), ct);
                         turnBudget -= r.Text.Length;
                         result = r.Ok ? r.Text : "ERRO: " + r.Text;
+                        // motor de fatos: o que a ferramenta comprovou vai para facts.md (sem custo de GPU)
+                        if (r.Ok && FactExtractor.Extract(tool.Name, call.Arguments, r.Text) is { } fact) memory.AddFact(conv.Id, fact);
                         await Send(new { type = "mcp", name = tool.QualifiedName, state = r.Ok ? "concluida" : "falhou" });
                     }
                 }

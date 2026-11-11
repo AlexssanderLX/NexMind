@@ -81,17 +81,17 @@ async function withDebugger(tabId, fn) {
 const DOM_JS = `(() => {
   const nodes = [];
   let n = 0;
-  for (const el of document.querySelectorAll("a, button, input, textarea, select, [role='button'], [role='link']")) {
+  for (const el of document.querySelectorAll("a, button, input, textarea, select, summary, [role='button'], [role='link'], [role='tab'], [role='menuitem'], [role='option'], [role='checkbox'], [role='switch'], [role='radio'], [contenteditable='true'], [onclick]")) {
     const r = el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2) continue;
     if (el.getAttribute("aria-hidden") === "true") continue;
     n += 1;
     el.setAttribute("data-nex-id", String(n));
-    const label = (el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.value || "").replace(/\\s+/g, " ").trim().slice(0, 80);
+    const label = (el.innerText || el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("placeholder") || el.value || "").replace(/\\s+/g, " ").trim().slice(0, 80);
     nodes.push({ id: n, tag: el.tagName.toLowerCase(), label, x: r.x + r.width / 2, y: r.y + r.height / 2 });
-    if (n >= 40) break;
+    if (n >= 80) break;
   }
-  const text = (document.body && document.body.innerText || "").replace(/\\s+/g, " ").trim().slice(0, 2500);
+  const text = (document.body && document.body.innerText || "").replace(/\\s+/g, " ").trim().slice(0, 6000);
   return { text, items: nodes };
 })()`;
 
@@ -155,15 +155,32 @@ async function handle(msg) {
     const elementId = Number(msg.elementId);
     if (!Number.isInteger(elementId) || elementId < 1) throw new Error("Elemento inválido.");
     const tabId = await lastOwnedTabId("O grupo Nex ainda não tem aba.");
-    const expr = msg.op === "click"
-      ? `(() => { const el = document.querySelector('[data-nex-id="${elementId}"]'); if (!el) return { ok: false }; el.click(); return { ok: true }; })()`
-      : `(() => { const el = document.querySelector('[data-nex-id="${elementId}"]'); if (!el) return { ok: false }; el.focus(); el.value = ${JSON.stringify(String(msg.text || ""))}; el.dispatchEvent(new Event("input", { bubbles: true })); if (${msg.pressEnter ? "true" : "false"}) el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); return { ok: true }; })()`;
-    const value = await withDebugger(tabId, (id) => chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", {
-      expression: expr,
-      returnByValue: true
-    }));
-    if (!value.result.value || !value.result.value.ok) throw new Error("Elemento não está mais na aba do grupo Nex.");
-    return value.result.value;
+    const pick = `document.querySelector('[data-nex-id="${elementId}"]')`;
+    return withDebugger(tabId, async (id) => {
+      const send = (method, params) => chrome.debugger.sendCommand({ tabId: id }, method, params);
+      const evalJs = async (expression) => (await send("Runtime.evaluate", { expression, returnByValue: true })).result.value;
+      try { await send("Emulation.setFocusEmulationEnabled", { enabled: true }); } catch { /* opcional: aba em segundo plano */ }
+      if (msg.op === "click") {
+        const r = await evalJs(`(() => { const el = ${pick}; if (!el) return { ok: false }; el.scrollIntoView({ block: "center" }); el.click(); return { ok: true }; })()`);
+        if (!r || !r.ok) throw new Error("Elemento não está mais na aba do grupo Nex.");
+        await sleep(800);
+        await waitLoaded(id, 8000);
+        return { ok: true };
+      }
+      // Digitação de verdade (eventos confiáveis do Chrome): funciona em campos React/Angular, que ignoram el.value = ...
+      const r = await evalJs(`(() => { const el = ${pick}; if (!el) return { ok: false }; el.scrollIntoView({ block: "center" }); el.focus(); if (el.select) el.select(); return { ok: true }; })()`);
+      if (!r || !r.ok) throw new Error("Elemento não está mais na aba do grupo Nex.");
+      await send("Input.insertText", { text: String(msg.text || "") });
+      if (msg.pressEnter) {
+        for (const type of ["keyDown", "keyUp"]) {
+          await send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: type === "keyDown" ? "\r" : undefined });
+        }
+        await sleep(1200); // a página reage (tradução, busca, navegação)
+        await waitLoaded(id, 8000);
+      }
+      const now = await evalJs(`(() => { const el = ${pick}; return el ? String(el.value !== undefined ? el.value : el.innerText).slice(0, 200) : null; })()`);
+      return { ok: true, value: now };
+    });
   }
   if (msg.op === "release") {
     const tabs = await ownedTabs();

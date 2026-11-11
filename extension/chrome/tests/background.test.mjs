@@ -10,7 +10,7 @@ const SRC = fs.readFileSync(process.env.NEX_BG || path.join(path.dirname(fileURL
 
 // Chrome falso: guarda abas, grupos e debugger para conferir exatamente o que a extensao tocou.
 function boot(seed = {}) {
-  const world = { tabs: new Map(), groups: new Map(), nextTab: 100, nextGroup: 500, attached: [], detached: [], navigations: [], session: {}, replies: [], listener: null, failCommand: false, loadMs: 20, reloaded: 0, files: { "background.js": "v1", "manifest.json": "m1" }, tick: null };
+  const world = { tabs: new Map(), groups: new Map(), nextTab: 100, nextGroup: 500, attached: [], detached: [], navigations: [], session: {}, replies: [], listener: null, failCommand: false, loadMs: 20, reloaded: 0, commands: [], files: { "background.js": "v1", "manifest.json": "m1" }, tick: null };
   world.fetch = async (url) => ({ text: async () => world.files[url.split("/").pop()] });
   for (const t of seed.tabs || []) world.tabs.set(t.id, { groupId: -1, url: "about:blank", ...t });
   for (const g of seed.groups || []) world.groups.set(g.id, g);
@@ -34,8 +34,10 @@ function boot(seed = {}) {
     debugger: {
       attach: async ({ tabId }) => { world.attached.push(tabId); },
       detach: async ({ tabId }) => { world.detached.push(tabId); },
-      sendCommand: async () => {
+      sendCommand: async (_target, method, params) => {
+        world.commands.push([method, params]);
         if (world.failCommand) throw new Error("falha do CDP");
+        if (params && params.expression && params.expression.includes("String(el.value")) return { result: { value: "eco" } };
         return { result: { value: { ok: true, text: "pagina", items: [] } } };
       }
     }
@@ -204,4 +206,27 @@ test("falha ao ler o proprio arquivo nao recarrega nem derruba a extensao", asyn
   w.fetch = async () => { throw new Error("arquivo em escrita"); };
   await w.tick();
   assert.equal(w.reloaded, 0);
+});
+
+test("type usa entrada real do Chrome (insertText + Enter) e devolve o valor que ficou no campo", async () => {
+  const w = boot();
+  await w.send({ op: "navigate", url: "https://example.com/" });
+  await w.send({ op: "get_dom" });
+  w.commands.length = 0;
+  const r = await w.send({ op: "type", elementId: 22, text: "bom dia, tudo bem?", pressEnter: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.result.value, "eco", "devolve o que leu de volta do campo");
+  const methods = w.commands.map((c) => c[0]);
+  assert.ok(methods.includes("Input.insertText"));
+  assert.equal(JSON.stringify(w.commands.find((c) => c[0] === "Input.insertText")[1]), JSON.stringify({ text: "bom dia, tudo bem?" }));
+  assert.equal(methods.filter((m) => m === "Input.dispatchKeyEvent").length, 2, "Enter = keyDown + keyUp");
+  assert.deepEqual(w.attached, w.detached, "debugger solto");
+});
+
+test("type sem Enter nao dispara tecla", async () => {
+  const w = boot();
+  await w.send({ op: "navigate", url: "https://example.com/" });
+  w.commands.length = 0;
+  await w.send({ op: "type", elementId: 3, text: "abc", pressEnter: false });
+  assert.ok(!w.commands.some((c) => c[0] === "Input.dispatchKeyEvent"));
 });

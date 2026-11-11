@@ -223,15 +223,17 @@ async def browser_click(element_id: int) -> str:
     """Clica um elemento da aba do grupo Nex."""
     await _get_pacer().before_action()
     await _call("click", elementId=int(element_id))
-    return f"Clique em [{element_id}] no grupo Nex."
+    return f"Clique em [{element_id}] feito no grupo Nex. A página pode ter mudado: chame browser_get_dom para ver o que apareceu antes de relatar qualquer resultado."
 
 
 @mcp.tool()
 async def browser_type(element_id: int, text: str, press_enter: bool = False) -> str:
     """Digita num campo da aba do grupo Nex."""
     await _get_pacer().before_action()
-    await _call("type", elementId=int(element_id), text=text, pressEnter=bool(press_enter))
-    return f"Texto digitado em [{element_id}] no grupo Nex."
+    result = await _call("type", elementId=int(element_id), text=text, pressEnter=bool(press_enter))
+    now = (result or {}).get("value")
+    shown = f" Valor que ficou no campo: {now!r}." if now is not None else ""
+    return f"Texto digitado em [{element_id}] no grupo Nex.{shown} Chame browser_get_dom para ler o resultado na página antes de relatá-lo."
 
 
 @mcp.tool()

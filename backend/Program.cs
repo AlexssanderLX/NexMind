@@ -145,6 +145,17 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             await Send(new { type = "mcp", name = "mcp", state = "carregando" });
             mcpTools = await mcp.GetToolsAsync(false, ct);
         }
+        // O modelo não sabe o que o Nex faz: conta, de forma curta, o que existe agora (sem isso ele responde "não tenho acesso a arquivos").
+        system += "\n\nCapacidades do Nex nesta conversa:\n" +
+                  "- Arquivos anexados: o usuário pode anexar PDF, DOCX, planilhas, md, texto e código pelo botão de clipe. O texto do arquivo vem na própria mensagem, entre [[ARQUIVO nome]] e [[/ARQUIVO]]; leia e analise.\n";
+        if (mcpTools.Count > 0)
+            system += "- Ferramentas LIGADAS (você pode chamá-las): " + string.Join("; ", mcpTools.Select(t => (t.QualifiedName + ": " + t.Description).Split('\n')[0])) +
+                      ". Elas trabalham só dentro da pasta de trabalho do Nex. Use-as quando o usuário pedir para ler, listar, buscar ou criar arquivos. " +
+                      "Criar ou editar pede aprovação do usuário. Se faltar o caminho, pergunte.\n";
+        else
+            system += "- Ferramentas de arquivos (ler, listar e criar na pasta de trabalho do Nex) existem, mas estão DESLIGADAS. " +
+                      "Se o usuário quiser que você mexa em arquivos, diga para ligar \"Arquivos do Nex\" no painel de Ferramentas. " +
+                      "Você nunca acessa o computador do usuário fora disso.\n";
         var ollamaTools = mcpTools.Select(t => (object)new
         {
             type = "function",

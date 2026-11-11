@@ -1,4 +1,5 @@
-import { useRef, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import { ORB_SIZE } from "./Orb";
 
 export interface PanelPos {
   x: number;
@@ -16,6 +17,7 @@ const PANEL_W = 288; // w-72
 export default function FloatingPanel({
   title,
   icon,
+  orb,
   open,
   onToggle,
   pos,
@@ -29,6 +31,8 @@ export default function FloatingPanel({
 }: {
   title: string;
   icon: ReactNode;
+  /** desenho da bolinha quando o painel está recolhido */
+  orb: ReactNode;
   open: boolean;
   onToggle: () => void;
   pos: PanelPos;
@@ -42,14 +46,15 @@ export default function FloatingPanel({
   children: ReactNode;
 }) {
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   const clamp = (x: number, y: number, w: number): PanelPos => ({
     x: Math.max(0, Math.min(x, Math.max(0, bounds.w - w))),
-    y: Math.max(0, Math.min(y, Math.max(0, bounds.h - 44))),
+    y: Math.max(0, Math.min(y, Math.max(0, bounds.h - ORB_SIZE))),
   });
 
   /** Arrasto por ponteiro; um toque/clique sem movimento conta como clique (`onClick`). */
-  const dragProps = (onClick?: () => void, w = 44) => ({
+  const dragProps = (onClick?: () => void, w = ORB_SIZE) => ({
     onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -61,18 +66,21 @@ export default function FloatingPanel({
       const dx = e.clientX - d.sx;
       const dy = e.clientY - d.sy;
       if (!d.moved && Math.hypot(dx, dy) < 5) return;
+      if (!d.moved) setDragging(true);
       d.moved = true;
       onMove(clamp(d.ox + dx, d.oy + dy, w));
     },
     onPointerUp: () => {
       const d = drag.current;
       drag.current = null;
+      setDragging(false);
       if (!d) return;
       if (d.moved) onMoveEnd();
       else onClick?.();
     },
     onPointerCancel: () => {
       drag.current = null;
+      setDragging(false);
     },
   });
 
@@ -87,11 +95,13 @@ export default function FloatingPanel({
           aria-label={`Abrir ${title}`}
           title={title}
           {...dragProps(onToggle)}
-          className={`flex h-11 w-11 touch-none select-none items-center justify-center rounded-full border border-accent/40 text-accent shadow-[0_0_18px_rgba(34,211,238,0.16)] transition-colors hover:border-accent/80 hover:bg-accent/10 ${
-            glass ? "bg-[#0a1424]/60 backdrop-blur-md" : "bg-[#0a1424]/95"
-          }`}
+          style={{ width: ORB_SIZE, height: ORB_SIZE }}
+          className={`orb-btn group relative touch-none select-none rounded-full ${dragging ? "dragging" : ""}`}
         >
-          {icon}
+          {orb}
+          <span className="pointer-events-none absolute left-1/2 top-full mt-0.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/50 px-2 py-0.5 text-[10px] text-accent opacity-0 transition-opacity group-hover:opacity-100">
+            {title}
+          </span>
         </button>
       </div>
     );

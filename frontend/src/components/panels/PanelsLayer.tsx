@@ -3,6 +3,7 @@ import type { NeuralCoreHandle } from "../../core/NeuralCore";
 import type { CoreStats } from "../../core/scene";
 import type { PanelId } from "../../hooks/useNexCore";
 import FloatingPanel, { PanelRow, type PanelPos } from "./FloatingPanel";
+import Orb from "./Orb";
 
 export interface ActivityInfo {
   stateLabel: string;
@@ -238,6 +239,7 @@ export default function PanelsLayer({
     mobile,
     glass,
     icon: ICONS[id],
+    orb: <Orb kind={id} />,
   });
 
   return (

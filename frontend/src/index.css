@@ -54,3 +54,25 @@ body {
 .md table { border-collapse: collapse; margin: 0.9em 0; font-size: 0.9em; }
 .md th, .md td { border: 1px solid var(--color-line); padding: 0.4em 0.7em; }
 .md hr { border: 0; border-top: 1px solid var(--color-line); margin: 1.2em 0; }
+
+/* ---- Orbes dos painéis (tema espaço) ---- */
+@keyframes orb-spin { to { transform: rotate(360deg); } }
+@keyframes orb-pulse { 0%, 100% { transform: scale(0.88); opacity: 0.25; } 50% { transform: scale(1.06); opacity: 0.55; } }
+@keyframes orb-twinkle { 0%, 100% { transform: scale(0.82) rotate(0deg); opacity: 0.8; } 50% { transform: scale(1.08) rotate(20deg); opacity: 1; } }
+@keyframes orb-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+.orb svg { overflow: visible; }
+.orb .orb-spin, .orb .orb-pulse, .orb .orb-twinkle { transform-box: fill-box; transform-origin: center; }
+.orb .orb-spin { animation: orb-spin 9s linear infinite; }
+.orb .orb-spin-slow { animation-duration: 16s; }
+.orb .orb-spin-fast { animation-duration: 5s; }
+.orb .orb-pulse { animation: orb-pulse 3.2s ease-in-out infinite; }
+.orb .orb-twinkle { animation: orb-twinkle 2.6s ease-in-out infinite; }
+.orb-btn { animation: orb-float 5.5s ease-in-out infinite; transition: transform .25s ease, filter .25s ease; filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.35)); }
+.orb-btn:hover { transform: scale(1.14); filter: drop-shadow(0 0 16px rgba(34, 211, 238, 0.75)); }
+.orb-btn:hover .orb-spin { animation-duration: 3s; }
+.orb-btn:hover .orb-spin-fast { animation-duration: 1.6s; }
+.orb-btn:active { transform: scale(0.94); }
+.orb-btn.dragging { animation: none; transform: scale(1.1); cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) {
+  .orb .orb-spin, .orb .orb-pulse, .orb .orb-twinkle, .orb-btn { animation: none; }
+}

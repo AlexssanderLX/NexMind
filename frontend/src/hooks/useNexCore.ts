@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { startDemoAudio, startMic, type AudioSource } from "../core/audio";
+import { startDemoAudio, type AudioSource } from "../core/audio";
 import { onNexEvents, type CoreState } from "../core/events";
 import type { NeuralCoreHandle } from "../core/NeuralCore";
 import { clampPalette, PALETTES } from "../core/palettes";
@@ -7,7 +7,11 @@ import { isProfileId, type ProfileId } from "../core/profiles";
 
 export type PanelId = "activity" | "tools" | "runs";
 
-const MIC_NOTICE = "Microfone ativo — só visualização. A transcrição de voz ainda não está implementada.";
+/** O microfone de verdade é da voz (useVoice). O núcleo só mostra o estado e aciona o mesmo botão. */
+export interface MicControl {
+  active: boolean;
+  toggle: () => void;
+}
 
 const store = {
   get(key: string): string | null {
@@ -27,13 +31,17 @@ const store = {
 };
 
 /**
- * Estado do núcleo neural: qual estado visual mostrar, perfil gráfico, microfone (só visualização), modo
+ * Estado do núcleo neural: qual estado visual mostrar, perfil gráfico, cor, seguimento do cursor, modo
  * demonstrativo e painéis. Fica fora do App.tsx para não inchar o arquivo compartilhado.
  *
- * Prioridade do estado: sucesso/erro momentâneo > demonstração > microfone > resposta em andamento (pensando) >
- * estado emitido por outros módulos via `emitNexState` (voz, ferramentas) > repouso.
+ * Não captura áudio: o microfone e a fala são do módulo de voz, que comanda o núcleo emitindo `emitNexState` e
+ * `emitNexAudioLevel` (ver core/events.ts). O botão de microfone do dock só chama o mesmo `mic.toggle` do campo
+ * de texto.
+ *
+ * Prioridade do estado: sucesso/erro momentâneo > demonstração > estado emitido pela voz/ferramentas (se não for
+ * repouso) > resposta em andamento (pensando) > repouso.
  */
-export function useNexCore({ streaming, bgAnim }: { streaming: boolean; bgAnim: boolean }) {
+export function useNexCore({ streaming, bgAnim, mic }: { streaming: boolean; bgAnim: boolean; mic?: MicControl }) {
   const coreRef = useRef<NeuralCoreHandle>(null);
 
   const [profile, setProfileState] = useState<ProfileId>(() => {
@@ -54,13 +62,10 @@ export function useNexCore({ streaming, bgAnim }: { streaming: boolean; bgAnim: 
   const [fallback, setFallback] = useState(false);
   const [demo, setDemo] = useState(false);
   const [demoState, setDemoStateValue] = useState<CoreState>("idle");
-  const [micOn, setMicOn] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const [flash, setFlash] = useState<"success" | "error" | null>(null);
   const [external, setExternal] = useState<CoreState | null>(null);
   const [panels, setPanels] = useState<Record<PanelId, boolean>>({ activity: false, tools: false, runs: false });
 
-  const micRef = useRef<AudioSource | null>(null);
   const demoAudioRef = useRef<AudioSource | null>(null);
   const externalLevel = useRef(0);
   const flashTimer = useRef<number | null>(null);
@@ -85,30 +90,6 @@ export function useNexCore({ streaming, bgAnim }: { streaming: boolean; bgAnim: 
     flashTimer.current = window.setTimeout(() => setFlash(null), kind === "error" ? 1800 : 1500);
   }, []);
 
-  const stopMic = useCallback(() => {
-    micRef.current?.stop();
-    micRef.current = null;
-    setMicOn(false);
-    setNotice(null);
-  }, []);
-
-  /** Só é chamado a partir de um clique do usuário na esfera: é aí que o navegador pede permissão do microfone. */
-  const toggleMic = useCallback(async () => {
-    if (micRef.current) {
-      stopMic();
-      return;
-    }
-    try {
-      micRef.current = await startMic();
-      setMicOn(true);
-      setNotice(MIC_NOTICE);
-    } catch (e) {
-      setNotice(`Não foi possível usar o microfone: ${(e as Error).message}`);
-      triggerFlash("error");
-      window.setTimeout(() => setNotice((n) => (n?.startsWith("Não foi possível") ? null : n)), 5000);
-    }
-  }, [stopMic, triggerFlash]);
-
   const pickDemoState = useCallback(
     (s: CoreState) => {
       if (s === "success" || s === "error") triggerFlash(s);
@@ -117,14 +98,10 @@ export function useNexCore({ streaming, bgAnim }: { streaming: boolean; bgAnim: 
     [triggerFlash],
   );
 
-  const setDemoMode = useCallback(
-    (on: boolean) => {
-      if (on) stopMic();
-      setDemo(on);
-      if (!on) setDemoStateValue("idle");
-    },
-    [stopMic],
-  );
+  const setDemoMode = useCallback((on: boolean) => {
+    setDemo(on);
+    if (!on) setDemoStateValue("idle");
+  }, []);
 
   useEffect(() => {
     if (!demo) return;
@@ -149,13 +126,12 @@ export function useNexCore({ streaming, bgAnim }: { streaming: boolean; bgAnim: 
   }, [palette]);
 
   const getLevel = useCallback(() => {
-    if (micRef.current) return micRef.current.level();
     if (demoAudioRef.current && (demoStateRef.current === "listening" || demoStateRef.current === "speaking"))
       return demoAudioRef.current.level();
     return externalLevel.current;
   }, []);
 
-  // outros módulos (voz, ferramentas) comandam o núcleo só emitindo eventos
+  // a voz (e, no futuro, as ferramentas) comanda o núcleo só emitindo eventos
   useEffect(
     () =>
       onNexEvents({
@@ -167,16 +143,8 @@ export function useNexCore({ streaming, bgAnim }: { streaming: boolean; bgAnim: 
     [],
   );
 
-  // por privacidade, o microfone para quando a aba fica escondida
-  useEffect(() => {
-    const onHidden = () => document.hidden && stopMic();
-    document.addEventListener("visibilitychange", onHidden);
-    return () => document.removeEventListener("visibilitychange", onHidden);
-  }, [stopMic]);
-
   useEffect(
     () => () => {
-      micRef.current?.stop();
       if (flashTimer.current) clearTimeout(flashTimer.current);
     },
     [],
@@ -193,7 +161,13 @@ export function useNexCore({ streaming, bgAnim }: { streaming: boolean; bgAnim: 
 
   const pulse = useCallback((amount?: number) => coreRef.current?.pulse(amount), []);
 
-  const base: CoreState = demo ? demoState : micOn ? "listening" : streaming ? "thinking" : (external ?? "idle");
+  const base: CoreState = demo
+    ? demoState
+    : external && external !== "idle"
+      ? external
+      : streaming
+        ? "thinking"
+        : "idle";
   const state: CoreState = flash ?? base;
 
   return {
@@ -206,9 +180,8 @@ export function useNexCore({ streaming, bgAnim }: { streaming: boolean; bgAnim: 
     setProfile,
     showPerf,
     setShowPerf,
-    micOn,
-    toggleMic,
-    notice,
+    micOn: mic?.active ?? false,
+    toggleMic: mic?.toggle ?? (() => {}),
     palette,
     follow,
     demo,

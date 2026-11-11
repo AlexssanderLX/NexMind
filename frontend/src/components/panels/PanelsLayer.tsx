@@ -59,7 +59,7 @@ function ActivityBody({ info, coreRef }: { info: ActivityInfo; coreRef: RefObjec
       <PanelRow label="Modo" value={info.mode} />
       <PanelRow label="Modelo" value={info.model} />
       <PanelRow label="Ollama" value={info.connected ? "conectado" : "desconectado"} />
-      <PanelRow label="Microfone" value={info.micOn ? "ativo (só visualização)" : "desligado"} />
+      <PanelRow label="Microfone" value={info.micOn ? "ouvindo" : "desligado"} />
       <PanelRow label="Gráficos" value={info.profileLabel} />
       <PanelRow label="Quadros" value={stats && stats.fps > 0 ? `${stats.fps.toFixed(0)} fps` : "—"} />
     </>

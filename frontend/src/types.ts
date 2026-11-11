@@ -44,6 +44,31 @@ export type Settings = {
   system: string;
 };
 
+export type VoiceSettings = {
+  enabled: boolean;
+  mode: "auto" | "manual";
+  vadSilenceMs: number;
+  vadSensitivity: number;
+  speechRate: number;
+  sttEngine: string;
+  ttsEngine: string;
+  ttsVoice: string;
+  inputDeviceId: string;
+};
+
+export type VoiceTimings = {
+  sttMs: number | null;
+  firstTokenMs: number | null;
+  firstAudioMs: number | null;
+  totalMs: number | null;
+};
+
+export type VoiceStatus = {
+  engines: { id: string; kind: string; available: boolean; detail: string }[];
+  voices: string[];
+  whisperModel: string;
+};
+
 export type StreamEvent =
   | { type: "token"; text: string }
   | { type: "thinking"; text: string }

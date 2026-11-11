@@ -20,3 +20,5 @@ public record ConversationSummary(string Id, string Title, DateTime UpdatedAt);
 /// <param name="Think">null = padrão do modelo; true/false força o modo de raciocínio.</param>
 /// <param name="System">Prompt de sistema opcional (não é salvo na conversa; vem das configurações).</param>
 public record ChatRequest(string Content, string Model, int NumCtx, bool? Think, string? System);
+
+public record SpeakRequest(string? Text, string? Engine, string? Voice, double Rate);

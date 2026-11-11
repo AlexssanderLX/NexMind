@@ -87,7 +87,7 @@ export default function NexStage({
         <button
           aria-pressed={core.micOn}
           onClick={() => void core.toggleMic()}
-          title="Microfone: só visualização, sem transcrição. O navegador pede permissão no primeiro uso."
+          title="Falar com o Nex. Uma pausa envia a frase. O navegador pede permissão no primeiro uso."
           className={`rounded-full px-3 py-1 transition-colors ${
             core.micOn ? "bg-red-500/20 text-red-300" : "text-mute hover:text-fg"
           }`}
@@ -113,15 +113,6 @@ export default function NexStage({
           className="pointer-events-none absolute left-3 top-3 z-40 rounded-full border border-amber-400/50 bg-black/50 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-amber-300"
         >
           Demonstração · {stateLabel(core.state)}
-        </div>
-      )}
-
-      {core.notice && (
-        <div
-          data-no-core
-          className="pointer-events-none absolute bottom-2 left-1/2 z-40 max-w-[90%] -translate-x-1/2 rounded-full border border-accent/30 bg-black/60 px-3 py-1 text-center text-[11px] text-fg"
-        >
-          {core.notice}
         </div>
       )}
 

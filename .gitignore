@@ -2,4 +2,6 @@ backend/bin/
 backend/obj/
 backend/data/
 backend/wwwroot/
+backend/voice/bin/
+backend/voice/models/
 frontend/node_modules/

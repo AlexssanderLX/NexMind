@@ -8,8 +8,29 @@ import SettingsPanel from "./components/SettingsPanel";
 import Sidebar from "./components/Sidebar";
 import { useNexCore } from "./hooks/useNexCore";
 import { usePolling } from "./hooks/usePolling";
+import { useVoice } from "./hooks/useVoice";
 import { createTokenBuffer } from "./lib/tokenBuffer";
-import type { ConversationSummary, Message, Metrics, OllamaStatus, Settings } from "./types";
+import type { ConversationSummary, Message, Metrics, OllamaStatus, Settings, VoiceSettings, VoiceStatus, VoiceTimings } from "./types";
+
+const VOICE_DEFAULTS: VoiceSettings = {
+  enabled: false,
+  mode: "auto",
+  vadSilenceMs: 900,
+  vadSensitivity: 0.06,
+  speechRate: 1,
+  sttEngine: "faster-whisper",
+  ttsEngine: "piper",
+  ttsVoice: "",
+  inputDeviceId: "",
+};
+
+function loadVoice(): VoiceSettings {
+  try {
+    return { ...VOICE_DEFAULTS, ...JSON.parse(localStorage.getItem("voice-settings") ?? "{}") };
+  } catch {
+    return VOICE_DEFAULTS;
+  }
+}
 
 const DEFAULTS: Settings = {
   chatModel: "qwen3:4b-instruct",
@@ -70,9 +91,39 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [reasoning, setReasoning] = useState(false);
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadVoice);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  const [timings, setTimings] = useState<VoiceTimings | null>(null);
+  const sendRef = useRef<(text?: string, fromVoice?: boolean, heardAt?: number) => void>(() => {});
+
+  const voice = useVoice({
+    settings: voiceSettings,
+    busy: streaming,
+    onUtterance: (text, heardAt) => sendRef.current(text, true, heardAt),
+    onInterrupt: () => abortRef.current?.abort(),
+    onError: (message) => setVoiceNote(message),
+  });
+
+  useEffect(() => {
+    localStorage.setItem("voice-settings", JSON.stringify(voiceSettings));
+  }, [voiceSettings]);
+
+  useEffect(() => {
+    api.voiceStatus().then(setVoiceStatus).catch(() => setVoiceStatus(null));
+  }, [showSettings]);
   const activeModel = reasoning ? settings.reasoningModel : settings.chatModel;
   const modelMissing = !!status?.connected && !status.models.some((m) => m.name === activeModel);
-  const nex = useNexCore({ streaming, bgAnim });
+  // Um único microfone, o da voz: o botão do campo de texto e o do dock do núcleo chamam esta mesma função.
+  const onMicClick = () => {
+    if (!voiceSettings.enabled) {
+      setVoiceNote("Ative a voz em Configurações. O navegador vai pedir o microfone.");
+      setShowSettings(true);
+      return;
+    }
+    void voice.toggleMic();
+  };
+  const nex = useNexCore({ streaming, bgAnim, mic: { active: voice.phase === "listening", toggle: onMicClick } });
 
   const refreshList = useCallback(() => api.list().then(setConversations).catch(() => {}), []);
 
@@ -148,10 +199,12 @@ export default function App() {
     refreshList();
   }
 
-  async function send() {
-    const text = input.trim();
+  async function send(textOverride?: string, fromVoice = false, heardAt = performance.now()) {
+    const text = (textOverride ?? input).trim();
     if (!text || streaming) return;
     setChatError(null);
+    setVoiceNote(null);
+    voice.interrupt();
 
     let id = activeId;
     try {
@@ -164,7 +217,8 @@ export default function App() {
       return;
     }
 
-    setInput("");
+    if (!textOverride) setInput("");
+    else setInput("");
     setMessages((m) => [...m, { role: "user", content: text }, { role: "assistant", content: "" }]);
     setStreaming(true);
     const abort = new AbortController();
@@ -181,6 +235,26 @@ export default function App() {
 
     let failed = false;
     let firstEvent = true;
+    let reply = "";
+    let firstTokenMs: number | null = null;
+    const speakBack = fromVoice && voiceSettings.enabled;
+    let speechBuf = "";
+    const takeSentences = () => {
+      if (!speakBack) return;
+      for (;;) {
+        const m = speechBuf.match(/^([\s\S]*?[.!?])(?:\s+|$)/);
+        if (!m) break;
+        voice.enqueueSentence(m[1]);
+        speechBuf = speechBuf.slice(m[0].length);
+      }
+      if (speechBuf.length > 180) {
+        const cut = speechBuf.lastIndexOf(" ", 180);
+        const at = cut > 40 ? cut : 180;
+        voice.enqueueSentence(speechBuf.slice(0, at));
+        speechBuf = speechBuf.slice(at);
+      }
+    };
+    if (speakBack) voice.armSpeech();
     try {
       await streamChat(
         id,
@@ -192,7 +266,13 @@ export default function App() {
             firstEvent = false;
             refreshList(); // a conversa já está salva com título: mostra na sidebar logo
           }
-          if (ev.type === "token") buffer.push("content", ev.text);
+          if (ev.type === "token") {
+            if (firstTokenMs === null) firstTokenMs = Math.round(performance.now() - heardAt);
+            reply += ev.text;
+            speechBuf += ev.text;
+            takeSentences();
+            buffer.push("content", ev.text);
+          }
           else if (ev.type === "thinking") buffer.push("thinking", ev.text);
           else if (ev.type === "done") {
             buffer.flush();
@@ -216,11 +296,22 @@ export default function App() {
       if (failed) nex.flash("error");
       else if (!abort.signal.aborted) nex.flash("success"); // parada pelo usuário não é sucesso nem erro
       abortRef.current = null;
+      if (speakBack && reply.trim() && !abort.signal.aborted) {
+        if (speechBuf.trim()) voice.enqueueSentence(speechBuf);
+        const firstAudioMs = voice.finishSpeech();
+        setTimings({
+          sttMs: null,
+          firstTokenMs,
+          firstAudioMs,
+          totalMs: firstAudioMs === null ? null : Math.round(performance.now() - heardAt),
+        });
+      } else if (speakBack) voice.interrupt();
       // Sincroniza com o que foi salvo no servidor (inclui parciais e a pergunta mesmo em caso de erro)
       api.get(id).then((c) => setMessages(c.messages)).catch(() => {});
       refreshList();
     }
   }
+  sendRef.current = send;
 
   const connected = !!status?.connected && !backendDown;
   const banner = backendDown
@@ -303,6 +394,10 @@ export default function App() {
             bgAnim={bgAnim}
             onBgAnim={changeBgAnim}
             core={nex.settingsProps}
+            voice={voiceSettings}
+            onVoice={setVoiceSettings}
+            voiceStatus={voiceStatus}
+            devices={voice.devices}
           />
         )}
 
@@ -384,10 +479,45 @@ export default function App() {
                   {activeModel}
                 </button>
               </div>
+              <div className="flex items-center gap-2">
+              {/* microfone ao lado do botão de enviar: mostra quando está gravando */}
+              <button
+                type="button"
+                onClick={onMicClick}
+                aria-pressed={voice.phase === "listening"}
+                className={`flex h-8 items-center justify-center gap-1.5 rounded-lg border px-2 text-xs transition-colors ${
+                  voice.phase === "listening"
+                    ? "border-red-500/60 bg-red-500/15 text-red-300"
+                    : voice.phase === "transcribing"
+                      ? "border-amber-400/50 text-amber-300"
+                      : voice.phase === "speaking"
+                        ? "border-accent/60 bg-accent/15 text-accent"
+                        : voice.phase === "error"
+                          ? "border-red-800 text-red-300"
+                          : "border-line text-mute hover:bg-white/5 hover:text-fg"
+                }`}
+                title={
+                  voice.phase === "listening"
+                    ? "Parar de gravar (uma pausa também envia a frase)"
+                    : voice.phase === "speaking"
+                      ? "Interromper a fala"
+                      : "Falar com o Nex"
+                }
+              >
+                {voice.phase === "listening" && <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="3" width="6" height="11" rx="3" />
+                  <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+                </svg>
+                {voice.phase === "listening" ? "Gravando…" : voice.phase === "transcribing" ? "Transcrevendo…" : voice.phase === "speaking" ? "Interromper" : null}
+              </button>
               {streaming ? (
                 <button
                   type="button"
-                  onClick={() => abortRef.current?.abort()}
+                  onClick={() => {
+                    voice.interrupt();
+                    abortRef.current?.abort();
+                  }}
                   className="flex h-8 w-8 items-center justify-center rounded-lg bg-fg text-bg hover:opacity-90"
                   title="Parar"
                 >
@@ -403,6 +533,7 @@ export default function App() {
                   ↑
                 </button>
               )}
+              </div>
             </div>
           </form>
           {modelMissing ? (
@@ -410,7 +541,14 @@ export default function App() {
               O modelo "{activeModel}" não está instalado. Rode: ollama pull {activeModel}
             </p>
           ) : (
-            <p className="mt-2 text-center text-[11px] text-mute">Nex roda localmente no seu computador, via Ollama.</p>
+            <p className="mt-2 text-center text-[11px] text-mute">
+              Nex roda localmente no seu computador, via Ollama.
+              {voice.partial ? ` Ouvi: ${voice.partial}` : ""}
+              {voiceNote ? ` ${voiceNote}` : ""}
+              {timings
+                ? ` Voz: 1º token ${timings.firstTokenMs ?? "—"} ms, 1º áudio ${timings.firstAudioMs ?? "—"} ms, total ${timings.totalMs ?? "—"} ms.`
+                : ""}
+            </p>
           )}
         </div>
       </main>

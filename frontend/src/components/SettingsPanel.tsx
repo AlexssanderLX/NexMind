@@ -1,4 +1,4 @@
-import type { OllamaStatus, Settings } from "../types";
+import type { OllamaStatus, Settings, VoiceSettings, VoiceStatus } from "../types";
 import CoreSettings, { type CoreSettingsProps } from "./CoreSettings";
 
 const field =
@@ -11,6 +11,10 @@ export default function SettingsPanel({
   bgAnim,
   onBgAnim,
   core,
+  voice,
+  onVoice,
+  voiceStatus,
+  devices,
 }: {
   settings: Settings;
   onChange: (s: Settings) => void;
@@ -18,9 +22,15 @@ export default function SettingsPanel({
   bgAnim: boolean;
   onBgAnim: (v: boolean) => void;
   core: CoreSettingsProps;
+  voice: VoiceSettings;
+  onVoice: (v: VoiceSettings) => void;
+  voiceStatus: VoiceStatus | null;
+  devices: MediaDeviceInfo[];
 }) {
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => onChange({ ...settings, [k]: v });
   const installed = (name: string) => !status?.connected || status.models.some((m) => m.name === name);
+  const setVoice = <K extends keyof VoiceSettings>(k: K, v: VoiceSettings[K]) => onVoice({ ...voice, [k]: v });
+  const engines = (kind: string) => voiceStatus?.engines.filter((e) => e.kind === kind) ?? [];
 
   return (
     <div className="relative z-10 grid gap-3 border-y border-line bg-side/95 px-6 py-4 sm:grid-cols-3">
@@ -80,6 +90,67 @@ export default function SettingsPanel({
         Núcleo neural 3D (desligue para o mínimo de consumo)
       </label>
       <CoreSettings {...core} />
+      <label className="flex items-center gap-2 text-xs text-mute sm:col-span-3">
+        <input type="checkbox" checked={voice.enabled} onChange={(e) => setVoice("enabled", e.target.checked)} className="accent-cyan-400" />
+        Voz local (microfone e resposta falada). O áudio não é gravado.
+      </label>
+      <label className="text-xs text-mute">
+        Modo
+        <select className={field} value={voice.mode} onChange={(e) => setVoice("mode", e.target.value as VoiceSettings["mode"])}>
+          <option value="auto">Automático (pausa encerra o turno)</option>
+          <option value="manual">Manual (clique de novo para enviar)</option>
+        </select>
+      </label>
+      <label className="text-xs text-mute">
+        Microfone
+        <select className={field} value={voice.inputDeviceId} onChange={(e) => setVoice("inputDeviceId", e.target.value)}>
+          <option value="">Padrão do sistema</option>
+          {devices.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>{d.label || "Microfone"}</option>
+          ))}
+        </select>
+      </label>
+      <label className="text-xs text-mute">
+        Voz sintetizada
+        <select className={field} value={voice.ttsVoice} onChange={(e) => setVoice("ttsVoice", e.target.value)}>
+          <option value="">Padrão do Windows</option>
+          {(voiceStatus?.voices ?? []).map((name) => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+      </label>
+      <label className="text-xs text-mute">
+        Reconhecimento
+        <select className={field} value={voice.sttEngine} onChange={(e) => setVoice("sttEngine", e.target.value)}>
+          {engines("stt").map((e) => (
+            <option key={e.id} value={e.id} disabled={!e.available}>{e.id}{e.available ? "" : " (indisponível)"}</option>
+          ))}
+        </select>
+      </label>
+      <label className="text-xs text-mute">
+        Síntese
+        <select className={field} value={voice.ttsEngine} onChange={(e) => setVoice("ttsEngine", e.target.value)}>
+          {engines("tts").map((e) => (
+            <option key={e.id} value={e.id} disabled={!e.available}>{e.id}{e.available ? "" : " (indisponível)"}</option>
+          ))}
+        </select>
+      </label>
+      <label className="text-xs text-mute">
+        Velocidade da fala ({voice.speechRate.toFixed(1)})
+        <input className={field} type="range" min={0.6} max={1.6} step={0.1} value={voice.speechRate} onChange={(e) => setVoice("speechRate", Number(e.target.value))} />
+      </label>
+      <label className="text-xs text-mute">
+        Pausa para fim de turno ({voice.vadSilenceMs} ms)
+        <input className={field} type="range" min={400} max={2000} step={50} value={voice.vadSilenceMs} onChange={(e) => setVoice("vadSilenceMs", Number(e.target.value))} />
+      </label>
+      <label className="text-xs text-mute">
+        Sensibilidade do microfone ({voice.vadSensitivity.toFixed(2)})
+        <input className={field} type="range" min={0.02} max={0.2} step={0.01} value={voice.vadSensitivity} onChange={(e) => setVoice("vadSensitivity", Number(e.target.value))} />
+      </label>
+      <p className="text-[11px] text-mute sm:col-span-3">
+        A pausa maior tolera respirações no meio da frase. O reconhecimento (faster-whisper) roda na CPU; o Qwen continua na GPU.
+        Piper entra quando Voice:PiperExe e Voice:PiperModel estiverem preenchidos. Uma frase reconhecida não dispara ferramentas.
+      </p>
       <p className="text-[11px] text-mute sm:col-span-3">
         O botão "Raciocínio" no campo de texto escolhe qual modelo responde a próxima mensagem. A conversa é a mesma nos
         dois modos. Valem para as próximas mensagens; contexto maior consome mais VRAM/RAM.

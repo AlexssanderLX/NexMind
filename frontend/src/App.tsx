@@ -491,7 +491,7 @@ export default function App() {
                     ? "Parar de gravar (uma pausa também envia a frase)"
                     : voice.phase === "speaking"
                       ? "Interromper a fala"
-                      : "Falar com o Nex"
+                      : "Chat de voz"
                 }
               >
                 {voice.phase === "listening" && <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />}
@@ -499,7 +499,7 @@ export default function App() {
                   <rect x="9" y="3" width="6" height="11" rx="3" />
                   <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
                 </svg>
-                {voice.phase === "listening" ? "Gravando…" : voice.phase === "transcribing" ? "Transcrevendo…" : voice.phase === "speaking" ? "Interromper" : null}
+                {voice.phase === "listening" ? "Ouvindo…" : voice.phase === "transcribing" ? "Transcrevendo…" : voice.phase === "speaking" ? "Interromper" : "Chat de voz"}
               </button>
               {streaming ? (
                 <button

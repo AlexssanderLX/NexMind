@@ -87,12 +87,12 @@ export default function NexStage({
         <button
           aria-pressed={core.micOn}
           onClick={() => void core.toggleMic()}
-          title="Falar com o Nex. Uma pausa envia a frase. O navegador pede permissão no primeiro uso."
+          title="Chat de voz. Uma pausa envia a frase. O navegador pede permissão no primeiro uso."
           className={`rounded-full px-3 py-1 transition-colors ${
             core.micOn ? "bg-red-500/20 text-red-300" : "text-mute hover:text-fg"
           }`}
         >
-          {core.micOn ? "● Microfone" : "Microfone"}
+          {core.micOn ? "● Chat de voz" : "Chat de voz"}
         </button>
       </div>
 

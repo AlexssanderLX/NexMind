@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Speech.Synthesis;
 using System.Text.Json;
 
@@ -112,9 +113,13 @@ public sealed class VoiceEngine : IDisposable
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
+            psi.Environment["PYTHONIOENCODING"] = "utf-8";
+            psi.Environment["PYTHONUTF8"] = "1";
             psi.ArgumentList.Add(_sttScript);
             psi.ArgumentList.Add("--serve");
             psi.ArgumentList.Add(_opt.WhisperModel);

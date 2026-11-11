@@ -9,6 +9,10 @@ import json
 import sys
 import time
 
+# O Windows lê a saída do Python na página de código antiga e troca "você" por "vocÛ".
+sys.stdin.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")
+
 
 def load(model: str):
     try:
@@ -26,9 +30,13 @@ def transcribe(whisper, wav: str) -> dict:
     segments, _info = whisper.transcribe(
         wav,
         language="pt",
+        task="transcribe",
         vad_filter=True,
-        beam_size=1,
+        beam_size=5,
+        best_of=5,
+        temperature=0.0,
         condition_on_previous_text=False,
+        initial_prompt="Conversa em português do Brasil.",
     )
     text = " ".join(s.text.strip() for s in segments).strip()
     return {"text": text, "ms": int((time.perf_counter() - t0) * 1000)}
@@ -42,7 +50,7 @@ def serve(model: str) -> int:
         if not wav:
             continue
         try:
-            print(json.dumps(transcribe(whisper, wav), ensure_ascii=False), flush=True)
+            print(json.dumps(transcribe(whisper, wav), ensure_ascii=True), flush=True)
         except Exception as ex:  # noqa: BLE001
             print(json.dumps({"error": str(ex)}), flush=True)
     return 0
@@ -59,7 +67,7 @@ def main() -> int:
         print(json.dumps({"error": "uso: stt.py <wav> <modelo>"}))
         return 2
     whisper = load(args[1])
-    print(json.dumps({**transcribe(whisper, args[0]), "model": args[1]}, ensure_ascii=False))
+    print(json.dumps({**transcribe(whisper, args[0]), "model": args[1]}, ensure_ascii=True))
     return 0
 
 

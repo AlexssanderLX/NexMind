@@ -88,7 +88,7 @@ export default function CoreSettings(p: CoreSettingsProps) {
       )}
       <p className="text-[11px] text-mute">
         Clique na esfera para trocar a cor (a cor de destaque do app acompanha). O microfone fica ao lado do botão de
-        enviar e no topo (Microfone); o navegador pede a permissão no primeiro uso.
+        enviar e no topo (Chat de voz); o navegador pede a permissão no primeiro uso.
       </p>
     </div>
   );

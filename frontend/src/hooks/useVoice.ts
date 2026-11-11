@@ -310,7 +310,6 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
     if (phaseRef.current === "listening") {
       await flushUtterance();
       stopTracks();
-      if (phaseRef.current !== "transcribing") setPhaseBoth("off");
       return;
     }
     if (phaseRef.current === "transcribing") return;

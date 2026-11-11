@@ -31,20 +31,25 @@ if (-not (Test-Url "http://localhost:11434/api/version")) {
     Start-Process $ollama -ArgumentList "serve" -WindowStyle Hidden
 }
 
-# 2. Já está rodando? Só abre o navegador.
-if (Test-Url "$url/api/status") {
-    Log "O Nex já está rodando em $url"
-    if (-not $NoBrowser) { Start-Process $url }
-    exit 0
-}
-
-# 3. Frontend compilado (só na primeira vez)
-if (-not (Test-Path "$root\backend\wwwroot\index.html")) {
-    Log "Compilando o frontend (primeira vez)..."
+# 2. Frontend: recompila quando a tela mudou. O atalho antigo só fazia isso na primeira vez,
+# então a janela continuava mostrando a versão anterior.
+$index = "$root\backend\wwwroot\index.html"
+$newestUi = Get-ChildItem "$root\frontend\src","$root\frontend\index.html" -Recurse -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not (Test-Path $index) -or ($newestUi -and $newestUi.LastWriteTime -gt (Get-Item $index).LastWriteTime)) {
+    Log "Atualizando a tela..."
     Push-Location "$root\frontend"
     if (-not (Test-Path node_modules)) { npm install }
     npm run build
+    if ($LASTEXITCODE -ne 0) { Stop-WithError "Falha ao compilar a tela." }
     Pop-Location
+}
+
+# 3. Já está rodando? A tela nova já foi gravada; abre o navegador.
+if (Test-Url "$url/api/status") {
+    Log "O Nex já está rodando em $url. Se a tela não mudou, feche a janela do Nex e abra de novo, depois atualize com Ctrl+F5."
+    if (-not $NoBrowser) { Start-Process $url }
+    exit 0
 }
 
 # 4. Backend: recompila só se o código mudou desde a última compilação (evita o custo do `dotnet run`)

@@ -141,32 +141,12 @@ def _chrome_installed() -> bool:
 
 
 async def _ensure() -> Page:
-    """Usa o Chrome da porta 9222. Não abre perfil anônimo se o Chrome pessoal já estiver aberto."""
-    global _playwright, _browser, _page, _cdp
-    if _page is not None:
-        return _page
-    _playwright = await async_playwright().start()
-    try:
-        return await _attach()
-    except Exception:
-        pass
-    if _browser_running() or _chrome_installed():
-        await _playwright.stop()
-        _playwright = None
-        raise RuntimeError(
-            "O seu Chrome pessoal está aberto sem a porta 9222. "
-            "Para eu acessar suas contas logadas sem abrir janelas anônimas, "
-            "execute o script .\\iniciar-chrome-sessao.ps1 na raiz do projeto."
-            if _browser_running() else
-            "O Chrome não está na porta 9222. Execute .\\iniciar-chrome-sessao.ps1 para abrir o seu perfil logado."
-        )
-    _browser = await _playwright.chromium.launch(headless=False)
-    context = await _browser.new_context()
-    _page = await context.new_page()
-    _cdp = False
-    await context.add_init_script("(" + _CURSOR_JS + ")();")
-    await _inject(_page)
-    return _page
+    """Não conecta no Chrome. A porta 9222 faz o site tratar a sessão como robô e o Chrome derruba o perfil."""
+    raise RuntimeError(
+        "A automação interna do Chrome está desligada. "
+        "Ela entra pela porta de depuração, os sites marcam como bot e o Chrome reseta login e abas. "
+        "Não abra outro navegador, não rode iniciar-chrome-sessao.ps1 e não reinicie o Chrome do Alexssander."
+    )
 
 
 def _clip(text: str) -> str:
@@ -178,7 +158,7 @@ def _clip(text: str) -> str:
 
 @mcp.tool()
 async def browser_navigate(url: str) -> str:
-    """Abre a URL no Chrome do usuário (porta 9222) ou num Chromium isolado, com o cursor do Nex."""
+    """Não abre URL. A automação interna do Chrome está desligada."""
     page = await _ensure()
     await page.bring_to_front()
     await page.goto(url, wait_until="domcontentloaded", timeout=30000)

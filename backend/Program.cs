@@ -153,7 +153,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             "- Você tem acesso a servidores MCP que expandem seu poder além do chat.\n" +
             "Diretrizes de Ação e Leitura (Regra de Ouro):\n" +
             "- LEITURA E ANÁLISE SÃO 100% LIVRES: Você tem autorização TOTAL do Alexssander para LER e inspecionar qualquer página da web, tela, código ou documento.\n" +
-            "- NUNCA ADIVINHE NEM ALUCINE: Se o Alexssander perguntar o que tem na página aberta, qual a conta logada, ou pedir uma análise, você DEVE OBRIGATORIAMENTE acionar a ferramenta browser__browser_get_dom antes de responder. Não invente o nome da conta.\n" +
+            "- NUNCA ADIVINHE NEM ALUCINE: Se o Alexssander perguntar o que tem na página aberta, não invente o nome da conta e não chame o navegador interno. Diga que essa leitura foi desligada para não resetar o Chrome.\n" +
             "- CONTEÚDOS VISÍVEIS NÃO SÃO PROIBIDOS: Nomes de perfil, avatares, textos de páginas e dados visíveis no navegador são públicos para você ler e informar ao Alexssander.\n" +
             "- SE ENCONTRAR TOKENS OU DADOS CRÍTICOS: Leia e oriente o Alexssander com postura de segurança e pentester ('Atenção, identifiquei este dado exposto na página'), mas NUNCA trave a conversa nem se recuse a ler.\n" +
             "- APROVAÇÃO (Human-in-the-Loop) É EXCLUSIVA PARA MUTAÇÃO: Somente ações que alteram o sistema (clicar em botões com browser_click, submeter forms, editar/salvar arquivos) exigem autorização. Leitura NUNCA pede aprovação e NUNCA é bloqueada.\n\n" +
@@ -163,10 +163,10 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             ? $"- MCP Arquivos do Nex: LIGADO ({string.Join(", ", fileTools.Select(t => t.QualifiedName))}). Você pode ler arquivos do PC e criar/editar arquivos com aprovação dele. Se faltar o caminho, pergunte.\n"
             : "- MCP Arquivos do Nex: DESLIGADO. Se o Alexssander pedir para você ler, criar ou modificar arquivos do PC, avise-o diretamente: 'Para eu mexer em arquivos, por favor ligue o interruptor \"Arquivos do Nex\" no painel lateral de Ferramentas.'\n";
         system += browserTools.Count > 0
-            ? $"- MCP Navegador: LIGADO ({string.Join(", ", browserTools.Select(t => t.QualifiedName))}). Você controla a janela do Chrome real do Alexssander conectada via automação CDP. Suas sessões, logins e abas abertas estão preservados. Você pode navegar (browser_navigate), ler o conteúdo sem peso (browser_get_dom) e interagir visualmente com cursor animado. O clique (browser_click) sempre pedirá autorização prévia na tela.\n"
+            ? $"- MCP Navegador: LIGADO, mas a automação INTERNA está proibida ({string.Join(", ", browserTools.Select(t => t.QualifiedName))}). Não chame browser_navigate, browser_get_dom, browser_click nem browser_type. Essa via entra pela porta de depuração do Chrome: os sites marcam como robô e o Chrome reseta abas e logins. Não peça para rodar iniciar-chrome-sessao.ps1. Não peça para fechar, reabrir ou trocar de navegador. Diga que essa via foi desligada para não quebrar a sessão aberta.\n"
             : "- MCP Navegador: DESLIGADO. Se o Alexssander pedir para você acessar links, ler páginas web ou automatizar sites, avise-o: 'Para eu acessar seu navegador e abas, por favor ligue o interruptor \"Navegador\" no painel lateral de Ferramentas.'\n";
         system += "\nRegra de Seleção de Ferramentas:\n" +
-                  "- PÁGINAS DA WEB, SITES E ABAS (GitHub, redes sociais, formulários web): use EXCLUSIVAMENTE o MCP Navegador (browser_get_dom, browser_navigate, browser_click, browser_type).\n" +
+                  "- PÁGINAS DA WEB: não use o MCP Navegador. Ele injeta automação dentro do Chrome e isso quebra a sessão. Não invente um script nem outro navegador.\n" +
                   "- APLICATIVOS E JANELAS DO WINDOWS (Bloco de Notas, Calculadora, alternar janelas, atalhos do sistema): use o MCP Computador (desktop_list_windows, desktop_inspect_window, desktop_click_element).\n" +
                   "NUNCA use o MCP Computador para tentar ler o conteúdo interno de uma página web dentro do Chrome.\n";
         system += req.Search

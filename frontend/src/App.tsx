@@ -100,7 +100,7 @@ export default function App() {
   const voice = useVoice({
     settings: voiceSettings,
     busy: streaming,
-    onUtterance: (text, heardAt) => sendRef.current(text, true, heardAt),
+    onUtterance: (text, heardAt, spoken) => sendRef.current(text, spoken, heardAt),
     onInterrupt: () => abortRef.current?.abort(),
     onError: (message) => setVoiceNote(message),
   });
@@ -114,26 +114,11 @@ export default function App() {
   }, [showSettings]);
   const activeModel = reasoning ? settings.reasoningModel : settings.chatModel;
   const modelMissing = !!status?.connected && !status.models.some((m) => m.name === activeModel);
-  // Um único microfone, o da voz: o botão do campo de texto e o do dock do núcleo chamam esta mesma função.
-  // Com a voz desligada, o primeiro clique liga a voz sozinho (e salva) e começa a ouvir: não abre configurações.
-  const pendingMic = useRef(false);
-  const onMicClick = () => {
-    if (!voiceSettings.enabled) {
-      pendingMic.current = true;
-      setVoiceSettings((s) => ({ ...s, enabled: true }));
-      return;
-    }
-    void voice.toggleMic();
-  };
-  useEffect(() => {
-    // roda depois da voz ficar ligada: só então o toggleMic do useVoice passa a funcionar
-    if (pendingMic.current && voiceSettings.enabled) {
-      pendingMic.current = false;
-      void voice.toggleMic();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceSettings.enabled]);
-  const nex = useNexCore({ streaming, bgAnim, mic: { active: voice.phase === "listening", toggle: onMicClick } });
+  const nex = useNexCore({
+    streaming,
+    bgAnim,
+    mic: { active: voice.phase === "listening", toggle: () => {} },
+  });
 
   const refreshList = useCallback(() => api.list().then(setConversations).catch(() => {}), []);
 
@@ -470,36 +455,40 @@ export default function App() {
                 </button>
               </div>
               <div className="flex items-center gap-2">
-              {/* microfone ao lado do botão de enviar: mostra quando está gravando */}
               <button
                 type="button"
-                onClick={onMicClick}
-                aria-pressed={voice.phase === "listening"}
-                className={`flex h-8 items-center justify-center gap-1.5 rounded-lg border px-2 text-xs transition-colors ${
-                  voice.phase === "listening"
+                onClick={() => {
+                  setVoiceSettings((s) => ({ ...s, enabled: true }));
+                  void voice.dictate();
+                }}
+                aria-pressed={voice.phase === "listening" && !voice.conversation}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
+                  voice.phase === "listening" && !voice.conversation
                     ? "border-red-500/60 bg-red-500/15 text-red-300"
-                    : voice.phase === "transcribing"
-                      ? "border-amber-400/50 text-amber-300"
-                      : voice.phase === "speaking"
-                        ? "border-accent/60 bg-accent/15 text-accent"
-                        : voice.phase === "error"
-                          ? "border-red-800 text-red-300"
-                          : "border-line text-mute hover:bg-white/5 hover:text-fg"
+                    : "border-line text-mute hover:bg-white/5 hover:text-fg"
                 }`}
-                title={
-                  voice.phase === "listening"
-                    ? "Parar de gravar (uma pausa também envia a frase)"
-                    : voice.phase === "speaking"
-                      ? "Interromper a fala"
-                      : "Chat de voz"
-                }
+                title="Microfone: uma frase, enviada como texto"
               >
-                {voice.phase === "listening" && <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="9" y="3" width="6" height="11" rx="3" />
                   <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
                 </svg>
-                {voice.phase === "listening" ? "Ouvindo…" : voice.phase === "transcribing" ? "Transcrevendo…" : voice.phase === "speaking" ? "Interromper" : "Chat de voz"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setVoiceSettings((s) => ({ ...s, enabled: true }));
+                  void voice.toggleConversation();
+                }}
+                aria-pressed={voice.conversation}
+                className={`flex h-8 items-center rounded-lg border px-2.5 text-xs transition-colors ${
+                  voice.conversation
+                    ? "border-accent/60 bg-accent/15 text-accent"
+                    : "border-line text-mute hover:bg-white/5 hover:text-fg"
+                }`}
+                title={voice.conversation ? "Desligar o chat de voz" : "Ligar o chat de voz"}
+              >
+                Chat de voz
               </button>
               {streaming ? (
                 <button

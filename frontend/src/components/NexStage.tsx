@@ -83,17 +83,6 @@ export default function NexStage({
             {d.label}
           </button>
         ))}
-        <span className="mx-0.5 my-1 w-px bg-line" />
-        <button
-          aria-pressed={core.micOn}
-          onClick={() => void core.toggleMic()}
-          title="Chat de voz. Uma pausa envia a frase. O navegador pede permissão no primeiro uso."
-          className={`rounded-full px-3 py-1 transition-colors ${
-            core.micOn ? "bg-red-500/20 text-red-300" : "text-mute hover:text-fg"
-          }`}
-        >
-          {core.micOn ? "● Chat de voz" : "Chat de voz"}
-        </button>
       </div>
 
       <PanelsLayer

@@ -16,7 +16,7 @@ type Args = {
   settings: VoiceSettings;
   /** true enquanto o Ollama ainda está gerando */
   busy: boolean;
-  onUtterance: (text: string, mark: number) => void;
+  onUtterance: (text: string, mark: number, spoken: boolean) => void;
   onInterrupt: () => void;
   onError: (message: string) => void;
 };
@@ -68,6 +68,8 @@ function downsample(input: Float32Array, fromRate: number, toRate: number): Floa
 /** Captura, VAD por energia (pausa configurável) e reprodução com cancelamento. */
 export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: Args) {
   const [phase, setPhase] = useState<VoicePhase>("off");
+  const [conversation, setConversation] = useState(false);
+  const conversationRef = useRef(false);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [partial, setPartial] = useState("");
   const phaseRef = useRef<VoicePhase>("off");
@@ -181,7 +183,7 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
     let total = 0;
     for (const p of parts) total += p.length;
     if (total < rate * 0.35) {
-      if (settingsRef.current.mode === "auto" && phaseRef.current !== "off") setPhaseBoth("listening");
+      if (conversationRef.current && phaseRef.current !== "off") setPhaseBoth("listening");
       return;
     }
     const merged = new Float32Array(total);
@@ -202,12 +204,12 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
       if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as { text: string; sttMs: number };
       if (!data.text.trim()) {
-        setPhaseBoth(settingsRef.current.mode === "auto" ? "listening" : "off");
-        if (settingsRef.current.mode !== "auto") stopTracks();
+        setPhaseBoth(conversationRef.current ? "listening" : "off");
+        if (!conversationRef.current) stopTracks();
         return;
       }
       setPartial(data.text);
-      onUtterance(data.text, started - data.sttMs);
+      onUtterance(data.text, started - data.sttMs, conversationRef.current);
     } catch (e) {
       if (mine !== gen.current) return;
       setPhaseBoth("error");
@@ -236,7 +238,7 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
       silenceMsRef.current = 0;
     } else if (heardRef.current) {
       silenceMsRef.current += dt;
-      if (settingsRef.current.mode === "auto" && silenceMsRef.current >= settingsRef.current.vadSilenceMs) {
+      if (silenceMsRef.current >= settingsRef.current.vadSilenceMs) {
         void flushUtterance();
         return;
       }
@@ -292,23 +294,46 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
     rafRef.current = requestAnimationFrame(tick);
   }
 
-  async function toggleMic() {
-    if (!settings.enabled) return;
+  function markConversation(on: boolean) {
+    conversationRef.current = on;
+    setConversation(on);
+  }
+
+  /** Uma frase só: transcreve e para. Não continua a conversa falada. */
+  async function dictate() {
+    settingsRef.current = { ...settingsRef.current, enabled: true };
+    if (conversationRef.current) markConversation(false);
     if (phaseRef.current === "speaking" || busyRef.current) {
       stopPlayback();
       onInterrupt();
     }
     if (phaseRef.current === "listening") {
-      if (settingsRef.current.mode === "manual") {
-        await flushUtterance();
-        stopTracks();
-      } else {
-        gen.current++;
-        stopTracks();
-        setPhaseBoth("off");
-      }
+      await flushUtterance();
+      stopTracks();
+      if (phaseRef.current !== "transcribing") setPhaseBoth("off");
       return;
     }
+    if (phaseRef.current === "transcribing") return;
+    gen.current++;
+    await openMic();
+  }
+
+  /** Liga ou desliga a conversa contínua: ouve, responde em voz e volta a ouvir. */
+  async function toggleConversation() {
+    settingsRef.current = { ...settingsRef.current, enabled: true };
+    if (conversationRef.current) {
+      markConversation(false);
+      gen.current++;
+      turnOpen.current = false;
+      queueRef.current = [];
+      playGen.current++;
+      stopPlayback();
+      stopTracks();
+      setPhaseBoth("off");
+      onInterrupt();
+      return;
+    }
+    markConversation(true);
     if (phaseRef.current === "transcribing") return;
     gen.current++;
     await openMic();
@@ -399,7 +424,7 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
       pumping.current = false;
     }
     if (token === playGen.current && !turnOpen.current && queueRef.current.length === 0) {
-      if (settingsRef.current.mode === "auto" && settingsRef.current.enabled) await openMic();
+      if (conversationRef.current && settingsRef.current.enabled) await openMic();
       else setPhaseBoth("off");
     }
   }
@@ -407,7 +432,7 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
   function finishSpeech(): number | null {
     turnOpen.current = false;
     if (!pumping.current && queueRef.current.length === 0 && phaseRef.current === "speaking") {
-      if (settingsRef.current.mode === "auto" && settingsRef.current.enabled) void openMic();
+      if (conversationRef.current && settingsRef.current.enabled) void openMic();
       else setPhaseBoth("off");
     } else if (queueRef.current.length > 0) {
       void pump();
@@ -423,10 +448,10 @@ export function useVoice({ settings, busy, onUtterance, onInterrupt, onError }: 
     stopPlayback();
     if (phaseRef.current === "speaking") {
       emitNexState("listening");
-      if (settingsRef.current.enabled && settingsRef.current.mode === "auto") void openMic();
+      if (settingsRef.current.enabled && conversationRef.current) void openMic();
       else setPhaseBoth("off");
     }
   }
 
-  return { phase, devices, partial, toggleMic, armSpeech, enqueueSentence, finishSpeech, interrupt, refreshDevices };
+  return { phase, conversation, devices, partial, dictate, toggleConversation, armSpeech, enqueueSentence, finishSpeech, interrupt, refreshDevices };
 }

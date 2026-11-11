@@ -74,6 +74,7 @@ public class OllamaClient(HttpClient http, IOptions<OllamaOptions> options)
 
     public async IAsyncEnumerable<ChatChunk> ChatAsync(
         string model, string? system, IEnumerable<(string Role, string Content)> messages, int numCtx, bool? think,
+        int? numGpu,
         [EnumeratorCancellation] CancellationToken ct)
     {
         var msgs = new List<object>();
@@ -85,7 +86,7 @@ public class OllamaClient(HttpClient http, IOptions<OllamaOptions> options)
             ["model"] = model,
             ["stream"] = true,
             ["messages"] = msgs,
-            ["options"] = new { num_ctx = numCtx },
+            ["options"] = numGpu is null ? new { num_ctx = numCtx } : (object)new { num_ctx = numCtx, num_gpu = numGpu },
         };
         if (think is not null) body["think"] = think;
 

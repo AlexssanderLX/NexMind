@@ -30,7 +30,7 @@ public sealed class Research(IHttpClientFactory httpFactory, IWebHostEnvironment
             acao "pesquisar" = consulta é a busca curta, pergunta fica vazia.
             """;
         var sb = new StringBuilder();
-        await foreach (var chunk in ollama.ChatAsync(model, system, recent, 2048, false, ct))
+        await foreach (var chunk in ollama.ChatAsync(model, system, recent, 2048, false, null, ct))
         {
             if (!string.IsNullOrEmpty(chunk.Content)) sb.Append(chunk.Content);
         }

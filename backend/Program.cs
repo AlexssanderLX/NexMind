@@ -112,7 +112,9 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             else await Send(new { type = "tool", name = "pesquisa", state = "pronta" });
         }
         if (content.Length == 0)
-        await foreach (var chunk in ollama.ChatAsync(req.Model, system, history, req.NumCtx, req.Think, ct))
+        // Qwen3 4B tem 36 camadas. Acima de 16 mil tokens, 24 ficam na GPU e 12 na RAM desde o carregamento.
+        int? numGpu = req.NumCtx > 16384 ? 24 : null;
+        await foreach (var chunk in ollama.ChatAsync(req.Model, system, history, req.NumCtx, req.Think, numGpu, ct))
         {
             if (!string.IsNullOrEmpty(chunk.Thinking))
             {

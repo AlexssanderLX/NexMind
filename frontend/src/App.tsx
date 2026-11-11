@@ -35,7 +35,7 @@ function loadVoice(): VoiceSettings {
 const DEFAULTS: Settings = {
   chatModel: "qwen3:4b-instruct",
   reasoningModel: "qwen3:4b",
-  numCtx: 4096,
+  numCtx: 32768,
   system: "",
 };
 
@@ -46,7 +46,7 @@ function loadSettings(): Settings {
     return {
       chatModel: saved.chatModel ?? DEFAULTS.chatModel,
       reasoningModel: saved.reasoningModel ?? DEFAULTS.reasoningModel,
-      numCtx: saved.numCtx ?? DEFAULTS.numCtx,
+      numCtx: saved.numCtx && saved.numCtx !== 4096 ? saved.numCtx : DEFAULTS.numCtx,
       system: saved.system ?? DEFAULTS.system,
     };
   } catch {

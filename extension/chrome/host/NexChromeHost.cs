@@ -1,19 +1,27 @@
 using System;
 using System.IO;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
 
 sealed class NexChromeHost {
     static void Main() {
-        using (var tcp = new TcpClient()) {
-            try { tcp.Connect("127.0.0.1", 9334); }
-            catch { return; }
-            var net = tcp.GetStream();
-            var stdin = Console.OpenStandardInput();
-            var stdout = Console.OpenStandardOutput();
-            var toNet = Task.Run(() => Pump(stdin, net));
-            var toChrome = Task.Run(() => Pump(net, stdout));
-            Task.WaitAny(toNet, toChrome);
+        while (true) {
+            TcpClient tcp = null;
+            try {
+                tcp = new TcpClient();
+                tcp.Connect("127.0.0.1", 9334);
+                var net = tcp.GetStream();
+                var stdin = Console.OpenStandardInput();
+                var stdout = Console.OpenStandardOutput();
+                var toNet = Task.Run(() => Pump(stdin, net));
+                var toChrome = Task.Run(() => Pump(net, stdout));
+                if (Task.WaitAny(toNet, toChrome) == 0) return;
+            } catch {
+                Thread.Sleep(1000);
+            } finally {
+                if (tcp != null) tcp.Close();
+            }
         }
     }
 

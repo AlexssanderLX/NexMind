@@ -97,7 +97,7 @@ export default function App() {
   const [searchOn, setSearchOn] = useState(() => localStorage.getItem("nexSearch") === "1");
   const [mcpOn, setMcpOn] = useState(() => localStorage.getItem("nexMcp") === "1");
   const [mcpState, setMcpState] = useState<"pronta" | "executando">("pronta");
-  const [approval, setApproval] = useState<{ id: string; tool: string; args: unknown } | null>(null);
+  const [approval, setApproval] = useState<{ id: string; tool: string; args: unknown; write?: boolean; warning?: string | null } | null>(null);
   const [searchState, setSearchState] = useState<"desligada" | "pronta" | "executando">("desligada");
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadVoice);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
@@ -266,7 +266,7 @@ export default function App() {
     if (speakBack) voice.armSpeech();
     // Contexto sob medida: o de 32 mil joga parte do modelo na CPU (3x mais lento). Usa o menor que cabe na conversa
     // (+ espaço para a resposta) e só sobe quando o texto realmente precisa; Configurações fica como limite máximo.
-    const neededTokens = Math.ceil((messages.reduce((n, m) => n + m.content.length, 0) + text.length) / 3) + 1500;
+    const neededTokens = Math.ceil((messages.reduce((n, m) => n + m.content.length, 0) + text.length) / 3) + 1500 + (mcpOn ? 3500 : 0); // ferramentas: descrições + resultados
     const ctxNow = [4096, 8192, 16384, 32768].find((c) => c >= neededTokens && c <= settings.numCtx) ?? settings.numCtx;
     try {
       await streamChat(
@@ -290,7 +290,7 @@ export default function App() {
           else if (ev.type === "tool")
             setSearchState(ev.state === "executando" || ev.state === "filtrando" ? "executando" : "pronta");
           else if (ev.type === "mcp") setMcpState(ev.state === "carregando" || ev.state === "executando" ? "executando" : "pronta");
-          else if (ev.type === "approval") setApproval({ id: ev.id, tool: ev.tool, args: ev.args });
+          else if (ev.type === "approval") setApproval({ id: ev.id, tool: ev.tool, args: ev.args, write: ev.write, warning: ev.warning });
           else if (ev.type === "done") {
             buffer.flush();
             setApproval(null);
@@ -430,7 +430,7 @@ export default function App() {
             {
               name: "mcp",
               label: "Arquivos do Nex",
-              description: "Lê, lista e cria arquivos na pasta de trabalho do Nex. Criar ou editar pede a sua aprovação.",
+              description: "Lê arquivos de qualquer pasta do PC e cria ou edita arquivos. Criar, editar e áreas sensíveis pedem a sua aprovação, com aviso das consequências. O tamanho das leituras é limitado pelo contexto.",
               status: !mcpOn ? "desligada" : mcpState === "executando" ? "executando" : "pronta",
               note: !mcpOn ? "desligada" : mcpState === "executando" ? "executando" : "ligada",
             },
@@ -459,6 +459,16 @@ export default function App() {
             {approval && (
               <div className="rounded-xl border border-accent/50 bg-panel px-4 py-3 text-sm" data-no-core>
                 <div className="font-medium">O Nex quer executar <code>{approval.tool}</code></div>
+                <p className="mt-1 text-xs text-mute">
+                  {approval.write
+                    ? "Isto cria ou altera arquivos no seu computador. Se o arquivo já existir, o conteúdo atual é substituído."
+                    : "Isto lê um arquivo ou pasta. O conteúdo lido vai para o modelo e fica salvo no histórico desta conversa."}
+                </p>
+                {approval.warning && (
+                  <p className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-200">
+                    ⚠ {approval.warning}
+                  </p>
+                )}
                 <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-black/30 p-2 text-xs text-mute">
                   {JSON.stringify(approval.args, null, 2)}
                 </pre>

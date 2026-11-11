@@ -2,9 +2,47 @@
   "mcpServers": {
     "arquivos": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "data/workspace"],
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "C:\\",
+        "data/workspace"
+      ],
       "enabled": true,
-      "requiresApproval": ["write_file", "edit_file", "create_directory", "move_file"]
+      "requiresApproval": [
+        "write_file",
+        "edit_file",
+        "create_directory",
+        "move_file"
+      ],
+      "writableRoots": [
+        "data/workspace"
+      ],
+      "blockedPaths": [
+        "\\.ssh",
+        "\\.aws",
+        "\\.gnupg",
+        "\\.kube",
+        "\\.docker",
+        "\\.claude",
+        "\\.npmrc",
+        "\\.netrc",
+        "\\.env",
+        "id_rsa",
+        "id_ed25519",
+        ".pem",
+        ".pfx",
+        ".kdbx",
+        "AppData\\Roaming\\Microsoft\\Credentials",
+        "AppData\\Local\\Microsoft\\Credentials",
+        "AppData\\Local\\Microsoft\\Vault",
+        "Google\\Chrome\\User Data",
+        "Microsoft\\Edge\\User Data",
+        "BraveSoftware",
+        "AppData\\Roaming\\Mozilla",
+        "NTUSER.DAT",
+        "Windows\\System32\\config"
+      ]
     }
   }
 }

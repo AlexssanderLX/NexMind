@@ -74,6 +74,6 @@ export type StreamEvent =
   | { type: "thinking"; text: string }
   | { type: "tool"; name: string; state: string; query?: string }
   | { type: "mcp"; name: string; state: string }
-  | { type: "approval"; id: string; tool: string; server: string; name: string; args: unknown }
+  | { type: "approval"; id: string; tool: string; server: string; name: string; args: unknown; write?: boolean; warning?: string | null }
   | { type: "done"; stats: ChatStats | null }
   | { type: "error"; message: string };

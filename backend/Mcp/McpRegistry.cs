@@ -11,6 +11,10 @@ public sealed class McpServerEntry
     public string[] Args { get; set; } = [];
     public bool Enabled { get; set; } = true;
     public string[]? RequiresApproval { get; set; }
+    /// <summary>Pastas onde ferramentas que escrevem podem agir (relativas à pasta do backend ou absolutas). Leitura não é limitada por aqui.</summary>
+    public string[]? WritableRoots { get; set; }
+    /// <summary>Trechos de caminho que nunca podem ser lidos nem escritos (chaves, credenciais, perfis de navegador...).</summary>
+    public string[]? BlockedPaths { get; set; }
 }
 
 public sealed class McpServersFile
@@ -19,7 +23,7 @@ public sealed class McpServersFile
 }
 
 /// <summary>Ferramenta descoberta num servidor MCP, no formato que o Nex usa (e envia ao Ollama).</summary>
-public sealed record NexTool(string Server, string Name, string Description, JsonElement Schema, bool RequiresApproval)
+public sealed record NexTool(string Server, string Name, string Description, JsonElement Schema, bool RequiresApproval, bool IsWrite)
 {
     /// <summary>Nome exposto ao modelo: servidor__ferramenta (evita colisão entre servidores).</summary>
     public string QualifiedName => $"{Server}__{Name}";
@@ -34,7 +38,6 @@ public sealed record ToolResult(bool Ok, string Text);
 public sealed class McpRegistry : IAsyncDisposable
 {
     public static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(30);
-    private const int MaxResultChars = 6000; // saída longa estoura o contexto do modelo
 
     private readonly string _configPath;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -98,7 +101,7 @@ public sealed class McpRegistry : IAsyncDisposable
                         // aprova se está na lista do arquivo, se o servidor marca como destrutiva, ou se o arquivo não definiu lista
                         var needs = cfg.RequiresApproval is null || Matches(cfg.RequiresApproval, t.Name)
                                     || p.Annotations?.DestructiveHint == true;
-                        found.Add(new NexTool(name, t.Name, t.Description ?? "", p.InputSchema, needs));
+                        found.Add(new NexTool(name, t.Name, t.Description ?? "", p.InputSchema, needs, IsWrite: needs));
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -111,7 +114,59 @@ public sealed class McpRegistry : IAsyncDisposable
         finally { _gate.Release(); }
     }
 
-    public async Task<ToolResult> CallAsync(NexTool tool, JsonElement arguments, CancellationToken ct)
+    private static readonly HashSet<string> PathArgNames = new(StringComparer.OrdinalIgnoreCase)
+        { "path", "paths", "source", "destination", "directory", "dir", "file", "files", "filepath", "root" };
+
+    private static void CollectPaths(JsonElement args, List<string> into)
+    {
+        if (args.ValueKind != JsonValueKind.Object) return;
+        foreach (var prop in args.EnumerateObject())
+        {
+            if (!PathArgNames.Contains(prop.Name)) continue;
+            if (prop.Value.ValueKind == JsonValueKind.String && prop.Value.GetString() is { } one) into.Add(one);
+            else if (prop.Value.ValueKind == JsonValueKind.Array)
+                foreach (var item in prop.Value.EnumerateArray())
+                    if (item.ValueKind == JsonValueKind.String && item.GetString() is { } s) into.Add(s);
+        }
+    }
+
+    private string Resolve(string raw) =>
+        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(_configPath)!, raw.Replace('/', '\\')));
+
+    private static bool IsUnder(string path, string root) =>
+        (path.TrimEnd('\\') + "\\").StartsWith(root.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Avalia o risco de uma chamada ANTES de pedir aprovação. Nada é proibido: caminho sensível ou escrita fora da pasta de
+    /// trabalho viram um AVISO com as consequências, mostrado no card de aprovação (e a chamada passa a exigir aprovação).
+    /// Devolve null quando não há nada de especial a avisar.
+    /// </summary>
+    public string? Assess(NexTool tool, JsonElement arguments)
+    {
+        if (!LoadConfig().McpServers.TryGetValue(tool.Server, out var cfg)) return null;
+        var paths = new List<string>();
+        CollectPaths(arguments, paths);
+        var notes = new List<string>();
+        foreach (var raw in paths)
+        {
+            string full;
+            try { full = Resolve(raw); } catch (Exception ex) when (ex is ArgumentException or NotSupportedException) { continue; }
+            foreach (var b in cfg.BlockedPaths ?? [])
+                if (full.Contains(b.Replace('/', '\\'), StringComparison.OrdinalIgnoreCase))
+                {
+                    notes.Add($"Área sensível ({b}): pode conter chaves, senhas ou dados pessoais. " +
+                              (tool.IsWrite ? "Alterar isso pode quebrar acessos ou apagar credenciais, sem como desfazer."
+                                            : "O conteúdo lido vai para o modelo e fica salvo no histórico desta conversa."));
+                    break;
+                }
+            if (tool.IsWrite && cfg.WritableRoots is { Length: > 0 } roots && !roots.Any(r => IsUnder(full, Resolve(r))))
+                notes.Add($"Fica FORA da pasta de trabalho do Nex ({roots[0]}): se o arquivo já existir, o conteúdo atual será substituído e não dá para desfazer.");
+        }
+        return notes.Count == 0 ? null : string.Join(" ", notes.Distinct());
+    }
+
+    /// <param name="maxChars">Teto da saída devolvida ao modelo: saída longa estoura o contexto.</param>
+    public async Task<ToolResult> CallAsync(NexTool tool, JsonElement arguments, int maxChars, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
         try
@@ -128,7 +183,7 @@ public sealed class McpRegistry : IAsyncDisposable
                     foreach (var prop in arguments.EnumerateObject()) args[prop.Name] = prop.Value.Clone();
                 var res = await client.CallToolAsync(tool.Name, args, cancellationToken: cts.Token);
                 var text = string.Concat(res.Content.OfType<TextContentBlock>().Select(b => b.Text));
-                if (text.Length > MaxResultChars) text = text[..MaxResultChars] + "\n[…saída cortada]";
+                if (text.Length > maxChars) text = text[..maxChars] + "\n[…saída cortada para caber no contexto: peça só um trecho (head/tail) ou busque antes]";
                 return new(res.IsError != true, text.Length > 0 ? text : "(sem saída)");
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)

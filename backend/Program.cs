@@ -150,10 +150,12 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                   "- Arquivos anexados: o usuário pode anexar PDF, DOCX, planilhas, md, texto e código pelo botão de clipe. O texto do arquivo vem na própria mensagem, entre [[ARQUIVO nome]] e [[/ARQUIVO]]; leia e analise.\n";
         if (mcpTools.Count > 0)
             system += "- Ferramentas LIGADAS (você pode chamá-las): " + string.Join("; ", mcpTools.Select(t => (t.QualifiedName + ": " + t.Description).Split('\n')[0])) +
-                      ". Elas trabalham só dentro da pasta de trabalho do Nex. Use-as quando o usuário pedir para ler, listar, buscar ou criar arquivos. " +
-                      "Criar ou editar pede aprovação do usuário. Se faltar o caminho, pergunte.\n";
+                      ". Elas LEEM arquivos de qualquer pasta do computador e CRIAM ou EDITAM arquivos. Criar ou editar sempre pede aprovação do usuário, " +
+                      "e ler áreas sensíveis (chaves, credenciais, dados de navegador) ou escrever fora da pasta de trabalho do Nex também, com um aviso das consequências; se ele autorizar, você faz. " +
+                      "Seu contexto é pequeno, então gaste pouco: primeiro liste ou busque, depois leia UM arquivo por vez, e se for grande leia só o trecho necessário (início/fim). " +
+                      "Não liste árvores inteiras sem necessidade. Se faltar o caminho, pergunte.\n";
         else
-            system += "- Ferramentas de arquivos (ler, listar e criar na pasta de trabalho do Nex) existem, mas estão DESLIGADAS. " +
+            system += "- Ferramentas de arquivos (ler qualquer pasta do computador; criar e editar arquivos, sempre com aprovação do usuário) existem, mas estão DESLIGADAS. " +
                       "Se o usuário quiser que você mexa em arquivos, diga para ligar \"Arquivos do Nex\" no painel de Ferramentas. " +
                       "Você nunca acessa o computador do usuário fora disso.\n";
         var ollamaTools = mcpTools.Select(t => (object)new
@@ -163,6 +165,10 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         }).ToList();
         var extra = new List<object>();
         const int MaxToolRounds = 4;
+        // Custo de contexto: cada leitura é cortada em ~metade do contexto (em caracteres, 1500..8000) e a rodada inteira
+        // não passa de ~1 caractere por token de contexto; acabou o orçamento, o modelo responde com o que já leu.
+        var resultCap = Math.Clamp(req.NumCtx / 2, 1500, 8000);
+        var turnBudget = req.NumCtx;
 
         for (var round = 0; round <= MaxToolRounds; round++)
         {
@@ -201,11 +207,18 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                 else
                 {
                     var allowed = true;
-                    if (tool.RequiresApproval)
+                    // Nada é proibido: caminho sensível ou escrita fora da pasta de trabalho exigem aprovação COM aviso das consequências
+                    var warning = mcp.Assess(tool, call.Arguments);
+                    if (turnBudget < 500)
+                    {
+                        extra.Add(new { role = "tool", tool_name = call.Name, content = "Orçamento de leitura desta resposta esgotado. Responda com o que já leu e diga o que faltou." });
+                        continue;
+                    }
+                    if (tool.RequiresApproval || warning is not null)
                     {
                         // Human-in-the-loop: pausa e espera o clique de Autorizar/Rejeitar na interface
                         var approvalId = approvals.Open(out var decision);
-                        await Send(new { type = "approval", id = approvalId, tool = tool.QualifiedName, server = tool.Server, name = tool.Name, args = call.Arguments });
+                        await Send(new { type = "approval", id = approvalId, tool = tool.QualifiedName, server = tool.Server, name = tool.Name, args = call.Arguments, write = tool.IsWrite, warning });
                         try { allowed = await decision.WaitAsync(ApprovalBroker.Timeout, ct); }
                         catch (TimeoutException) { allowed = false; }
                         finally { approvals.Close(approvalId); }
@@ -218,7 +231,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                     else
                     {
                         await Send(new { type = "mcp", name = tool.QualifiedName, state = "executando" });
-                        var r = await mcp.CallAsync(tool, call.Arguments, ct);
+                        var r = await mcp.CallAsync(tool, call.Arguments, Math.Min(resultCap, turnBudget), ct);
+                        turnBudget -= r.Text.Length;
                         result = r.Ok ? r.Text : "ERRO: " + r.Text;
                         await Send(new { type = "mcp", name = tool.QualifiedName, state = r.Ok ? "concluida" : "falhou" });
                     }

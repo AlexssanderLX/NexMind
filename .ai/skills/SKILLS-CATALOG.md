@@ -15,6 +15,7 @@
 | 2026-11-11 | `implement-mcp-server` | `.ai/skills/implement-mcp-server/` | Antigravity | Padrão arquitetural para expansão de tools locais via protocolo MCP (Stdio JSON-RPC em C# e Python) | Ativa |
 | 2026-11-11 | `micro-rag-memory` | `.ai/skills/micro-rag-memory/` | Cursor / Antigravity | Governança de memória local isolada por conversa (`INDEX.md`, fatos comprovados e scratchpad de hipóteses) | Ativa |
 | 2026-11-11 | `auto-tools-routing` | `.ai/skills/auto-tools-routing/` | Cursor / Antigravity | Ativação automática de ferramentas por análise de intenção e exibição colapsável de raciocínio/atividades | Ativa |
+| 2026-11-11 | `security-workbench` | `.ai/skills/security-workbench/` | Antigravity | Metodologia sistemática de investigação para testes de segurança autorizados e bug bounty baseada no OWASP WSTG v4.2, Top 10 Web, API Security Top 10 e ASVS | Ativa |
 
 ---
 

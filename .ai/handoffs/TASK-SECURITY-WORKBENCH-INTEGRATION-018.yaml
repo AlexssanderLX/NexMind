@@ -1,0 +1,29 @@
+task_id: TASK-SECURITY-WORKBENCH-INTEGRATION-018
+title: Integracao do OWASP Pentest Workbench no Frontend e Routing do Nex
+assigned_by: Antigravity
+assigned_to: Cursor / Claude
+status: READY
+created_at: "2026-11-11T19:25:00Z"
+context:
+  goal: Disponibilizar a visualizacao e acesso direto ao OWASP Pentest Workbench (atlas visual offline) dentro da interface do Nex e orientar o agente com a metodologia WSTG v4.2.
+  worktree: .worktrees/develop
+  reference_files:
+    - frontend/public/workbench.html
+    - backend/wwwroot/workbench.html
+    - .ai/skills/security-workbench/SKILL.md
+    - .ai/knowledge/security/BRIEF_OWASP_PENTEST_WORKBENCH.md
+
+requirements:
+  - id: REQ-01
+    description: O arquivo `workbench.html` ja esta em `frontend/public/` e eh copiado pelo Vite para `backend/wwwroot/workbench.html`. Assegurar que ao navegar em `http://localhost:5080/workbench.html` o arquivo renderize 100% offline.
+  - id: REQ-02
+    description: Adicionar um botao/link acessivel na interface do Nex (no header proximo a Ferramentas ou dentro do painel lateral) rotulado como "OWASP Workbench" com icone de seguranca (escudo/chave), que abre `/workbench.html` em nova aba (`target="_blank"`).
+  - id: REQ-03
+    description: Nao alterar os estilos ou quebrar o CSP estrito do `workbench.html` (ele opera com `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'`).
+  - id: REQ-04
+    description: Garantir que `npm --prefix frontend run build` e `dotnet build backend -c Release` finalizem com 0 erros.
+
+acceptance_criteria:
+  - test: Acessar `http://localhost:5080/workbench.html` exibe o atlas completo com 31+ tecnicas e comparativo HackerOne/Bugcrowd.
+  - test: Clicar no atalho na interface principal do Nex abre o Workbench perfeitamente.
+  - test: Build do frontend e do backend sem erros e sem warnings que quebrem a esteira.

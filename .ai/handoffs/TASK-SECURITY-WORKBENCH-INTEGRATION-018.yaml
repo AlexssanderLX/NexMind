@@ -27,3 +27,4 @@ acceptance_criteria:
   - test: Acessar `http://localhost:5080/workbench.html` exibe o atlas completo com 31+ tecnicas e comparativo HackerOne/Bugcrowd.
   - test: Clicar no atalho na interface principal do Nex abre o Workbench perfeitamente.
   - test: Build do frontend e do backend sem erros e sem warnings que quebrem a esteira.
+

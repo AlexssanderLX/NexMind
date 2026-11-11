@@ -86,3 +86,4 @@ Toda investigação de segurança conduzida pelo Nex deve seguir obrigatoriament
    - Oriente o usuário a executar no terminal dele ou através das ferramentas com supervisão.
 3. **Consulte a Workbench Offline:**
    - A biblioteca completa de 31+ técnicas está disponível no próprio Nex em `http://localhost:5080/workbench.html`.
+

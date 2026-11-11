@@ -1,0 +1,31 @@
+task_id: TASK-MICRO-APP-SECURITY-UI-019
+title: Criacao do Seletor de Micro Apps na Sidebar e Modo Security no Nex
+assigned_by: Antigravity
+assigned_to: Cursor / Claude
+status: READY
+created_at: "2026-11-11T19:31:30Z"
+context:
+  goal: Introduzir o seletor de Micro Apps na barra lateral (Sidebar) permitindo alternar entre modo Geral e modo Security, com painel visual de tarefas e atalho para o OWASP Workbench.
+  worktree: .worktrees/develop
+  reference_files:
+    - frontend/src/components/Sidebar.tsx
+    - frontend/src/App.tsx
+    - frontend/src/types.ts
+    - frontend/public/workbench.html
+
+requirements:
+  - id: REQ-01
+    description: Adicionar no `types.ts` o tipo `export type MicroAppMode = 'general' | 'security';`.
+  - id: REQ-02
+    description: Na `Sidebar.tsx`, adicionar bloco de navegacao 'Micro Apps' com os botoes 'Geral' e 'Security' (com icone de escudo/seguranca). Ao clicar, atualiza o modo selecionado.
+  - id: REQ-03
+    description: Quando o modo 'Security' estiver ativo, exibir na barra de ferramentas ou no topo um botao de acesso direto para '/workbench.html' (abrir atlas OWASP em nova aba) e um indicador visual de sessao de seguranca.
+  - id: REQ-04
+    description: Criar componente stub inicial `SecurityTaskPanel.tsx` preparado para exibir o pipeline dos 6 estagios e a fila de tarefas de multi-agentes.
+  - id: REQ-05
+    description: Manter compilacao limpa (`npm --prefix frontend run build`) com 0 erros.
+
+acceptance_criteria:
+  - test: Clicar no seletor de Micro Apps alterna perfeitamente entre Geral e Security na UI.
+  - test: No modo Security, o atalho para o OWASP Workbench abre `http://localhost:5080/workbench.html`.
+  - test: Build limpo do frontend sem quebrar o layout existente.

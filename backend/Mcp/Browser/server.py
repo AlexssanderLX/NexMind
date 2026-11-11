@@ -257,6 +257,7 @@ async def browser_get_dom(tab_id: int = 0) -> str:
     SE VIER VAZIO: espere um instante e chame de novo uma vez.
     """
     await _get_pacer().before_action()
+    # A extensão espera a SPA estabilizar (até 3 s) antes de extrair o DOM. Não há page Playwright aqui.
     payload = await _call("get_dom", tabId=int(tab_id) or None)
     items = payload.get("items") or []
     lines = [f"[{item['id']}] {item['tag']} {item['label']}".strip() for item in items]

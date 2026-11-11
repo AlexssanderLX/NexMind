@@ -159,10 +159,30 @@ async function handle(msg) {
     const tab = await resolveTab(msg.tabId, "O grupo Nex não tem abas. Peça para abrir uma URL ou abra uma página dentro do grupo Nex.");
     await setCurrent(tab.id);
     await waitLoaded(tab.id, 10000);
-    const read = () => withDebugger(tab.id, (id) => chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", {
-      expression: DOM_JS,
-      returnByValue: true
-    }));
+    const read = () => withDebugger(tab.id, async (id) => {
+      // SPA (Gmail, GitHub, painéis): "complete" chega antes do conteúdo. Espera o texto estabilizar, no máximo 3 s.
+      await chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", {
+        expression: `(() => new Promise((resolve) => {
+          const start = performance.now();
+          let last = "", stableSince = 0;
+          const tick = () => {
+            const text = (document.body && document.body.innerText || "").replace(/\\s+/g, " ").trim();
+            const now = performance.now();
+            if (text && text === last) { if (!stableSince) stableSince = now; if (now - stableSince >= 800 && text.length > 80) return resolve("stable"); }
+            else { last = text; stableSince = 0; }
+            if (now - start >= 3000) return resolve("timeout");
+            setTimeout(tick, 300);
+          };
+          tick();
+        }))()`,
+        awaitPromise: true,
+        returnByValue: true
+      });
+      return chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", {
+        expression: DOM_JS,
+        returnByValue: true
+      });
+    });
     let value = await read();
     if (!value.result.value.text && !value.result.value.items.length) {
       await sleep(1500); // página ainda montando: uma segunda leitura antes de dizer que está vazia

@@ -143,7 +143,9 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         }
         var fileTools = mcpTools.Where(t => t.Server == "arquivos").ToList();
         var browserTools = mcpTools.Where(t => t.Server == "browser").ToList();
+        var agora = DateTime.Now.ToString("dddd, dd 'de' MMMM 'de' yyyy, HH:mm:ss", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
         var system =
+            $"Data e hora atual do sistema: {agora} (Horário local do Alexssander).\n" +
             "Você é o Nex, um assistente de IA local e inteligente rodando no computador do usuário. " +
             "Seu criador e usuário é o Alexssander, um Desenvolvedor e Pentester experiente. " +
             "Comunicação: seja direto, técnico, profissional e vá direto ao ponto, sem enrolação nem fechamentos clichês como 'espero ter ajudado'. " +

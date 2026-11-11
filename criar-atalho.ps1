@@ -8,7 +8,7 @@ $lnk.TargetPath = "powershell.exe"
 $lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$root\iniciar-nex.ps1`""
 $lnk.WorkingDirectory = $root
 $lnk.IconLocation = "$root\assets\nex.ico"
-$lnk.WindowStyle = 7 # minimizada: não atrapalha, e fechar a janela pela barra de tarefas para o Nex
+$lnk.WindowStyle = 1 # janela normal: mostra cada passo (limpeza, Ollama, Nex); fechar a janela para o Nex
 $lnk.Description = "Inicia o Nex (Ollama + app) e abre no navegador"
 $lnk.Save()
 

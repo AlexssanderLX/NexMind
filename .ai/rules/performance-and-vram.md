@@ -27,3 +27,4 @@ Os limites práticos de offload e taxa de geração (tok/s) observados em benchm
    - `OLLAMA_KV_CACHE_TYPE=q8_0`
    - `OLLAMA_MAX_LOADED_MODELS=1`
    - `OLLAMA_NUM_PARALLEL=1` (evita multiplicar o cache de contexto na VRAM).
+

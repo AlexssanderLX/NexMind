@@ -1,0 +1,44 @@
+# Handoff: MCP Working Directory, Path Resolution & Single-Click Launcher
+
+task_id: "TASK-MCP-LAUNCHER-RUNTIME-002"
+author: "antigravity-auditor"
+timestamp: "2026-11-11T12:02:00Z"
+
+git:
+  work_branch: "fix/mcp-launcher-runtime"
+  target_branch: "develop"
+  head_commit: "pending"
+  worktree_dir: ".worktrees/launcher"
+
+scope:
+  module: "Backend / Mcp / Scripts"
+  description: "Resolver caminhos relativos de comandos e setar WorkingDirectory na raiz da solução no McpRegistry.cs, repassar variáveis de ambiente (env) do JSON, e garantir que o atalho único (iniciar-nex.ps1) inicie a aplicação com suporte total aos MCPs de Arquivos e Navegador."
+  files_allowed:
+    - "backend/Mcp/McpRegistry.cs"
+    - "backend/mcp_servers.json"
+    - "iniciar-nex.ps1"
+    - "start.ps1"
+
+contracts_and_boundaries:
+  invariants_to_protect:
+    - "O atalho da Área de Trabalho (porta 5080) DEVE ser o ponto de entrada único para o usuário testar tudo."
+    - "Não quebrar a lista de AllowedTools e BlockedPaths já blindadas em McpRegistry.cs."
+    - "Manter a autoridade do backend e o timeout de 30 segundos nas chamadas MCP."
+    - "Caminhos relativos em mcp_servers.json devem funcionar independentemente do diretório onde o processo dotnet foi disparado."
+  relevant_rules:
+    - ".ai/rules/nex-core.md"
+    - ".ai/rules/architecture.md"
+    - ".ai/rules/git-workflow.md"
+    - ".ai/rules/mcp-protocol.md"
+    - ".ai/rules/agent-efficiency.md"
+
+definition_of_done:
+  expected_behavior:
+    - "1. Em backend/Mcp/McpRegistry.cs, resolver o caminho de `cfg.Command` relativo à raiz da solução (ou ContentRootPath) se ele não for um executável global do PATH (ex: npx vs python relativo)."
+    - "2. Setar `WorkingDirectory` de `StdioClientTransportOptions` para a raiz da solução (onde está o backend/ e backend/data/), para que `-m backend.Mcp.Browser.server` encontre o módulo Python corretamente."
+    - "3. Mesclar as variáveis de `cfg.Env` (do JSON) com as variáveis padrão (ex: `PYTHONUTF8=1`)."
+    - "4. Garantir que executar `.\\iniciar-nex.ps1` abra a interface em http://localhost:5080 com os dois servidores ativos: `arquivos` e `browser`."
+  validation_criteria:
+    build: "PASS (dotnet build com 0 erros)"
+    manual_smoke: "Abrir o app pelo atalho/iniciar-nex.ps1, ver as ferramentas de arquivos e navegador listadas no frontend e testar um comando de navegação visual."
+

@@ -1,0 +1,43 @@
+# Handoff: Inicialização do Chrome com Sessão Real (Porta 9222) e Bloqueio de Janelas Deslogadas
+
+task_id: "TASK-CHROME-PERSISTENT-SESSION-LAUNCHER-011"
+author: "antigravity-auditor"
+timestamp: "2026-11-11T13:53:00Z"
+
+git:
+  work_branch: "fix/chrome-persistent-session"
+  target_branch: "develop"
+  head_commit: "pending"
+  worktree_dir: ".worktrees/chrome-session"
+
+scope:
+  module: "Scripts / Mcp / Browser"
+  description: "Criar script dedicado para reiniciar o Chrome do usuário com a porta 9222 preservando todas as abas e sessões logadas, atualizar iniciar-nex.ps1 e criar atalho na Área de Trabalho para o Chrome oficial com depuração, garantindo que o Nex nunca abra navegadores anônimos paralelos."
+  files_allowed:
+    - "iniciar-chrome-sessao.ps1"
+    - "iniciar-nex.ps1"
+    - "criar-atalho.ps1"
+    - "backend/Mcp/Browser/server.py"
+
+contracts_and_boundaries:
+  invariants_to_protect:
+    - "NUNCA abrir janela anônima/deslogada em fallback silencioso se o usuário estiver com o Chrome pessoal aberto."
+    - "Preservar todas as abas e logins do usuário (--restore-last-session)."
+    - "Manter a autoridade de governança (.ai/rules/git-workflow.md) sem tocar direto em develop."
+  relevant_rules:
+    - ".ai/rules/nex-core.md"
+    - ".ai/rules/architecture.md"
+    - ".ai/rules/git-workflow.md"
+    - ".ai/rules/mcp-protocol.md"
+    - ".ai/rules/agent-efficiency.md"
+
+definition_of_done:
+  expected_behavior:
+    - "1. Script `iniciar-chrome-sessao.ps1`: verifica se 127.0.0.1:9222 responde. Se não responder e houver chrome.exe rodando, fecha os processos chrome.exe de forma segura e reabre com `--remote-debugging-port=9222 --restore-last-session`, restaurando todas as abas e sessões ativas do Alexssander."
+    - "2. `iniciar-nex.ps1`: chama a rotina de garantia do Chrome antes de subir o backend."
+    - "3. `criar-atalho.ps1`: atualizado para criar na Área de Trabalho o atalho oficial 'Google Chrome (Nex Sessão)' para o usuário abrir o Chrome já preparado para a IA sempre que quiser."
+    - "4. `backend/Mcp/Browser/server.py`: se a porta 9222 não responder mas o Chrome estiver rodando no sistema, NUNCA abrir janela anônima com launch(). Deve devolver erro explicativo orientando a rodar `.\\iniciar-chrome-sessao.ps1`."
+  validation_criteria:
+    build: "PASS (scripts executam limpos)"
+    manual_smoke: "Fechar o Chrome, rodar o script, abrir o GitHub na sessão logada e confirmar com `curl.exe http://127.0.0.1:9222/json/version` que a porta está respondendo."
+

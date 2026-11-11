@@ -27,6 +27,11 @@ Desenvolvimento com hot reload: `dotnet run` em `backend/` e `npm run dev` em `f
 - `frontend/` — React + TypeScript + Tailwind. Respostas renderizam markdown e fórmulas matemáticas (KaTeX; aceita `$..$`, `$$..$$`, `\(..\)` e `\[..\]`).
 - **MCPs** e **Regras/políticas**: ainda não implementados (reservados para etapas futuras).
 
+## Desenvolvimento e governança
+Regras de branches, fluxo de integração, retorno à versão funcional, papéis dos agentes e contratos entre módulos:
+[`docs/GOVERNANCA.md`](docs/GOVERNANCA.md), [`docs/AGENTES.md`](docs/AGENTES.md) e
+[`docs/ARQUITETURA.md`](docs/ARQUITETURA.md). Nada entra na `main` sem autorização do dono do projeto.
+
 ## Desempenho
 Medido nesta máquina (RTX 3050 6 GB, 16 GB RAM), antes → depois:
 - **Streaming na tela**: tokens em lotes de 150–700 ms. Uma resposta de 3000 caracteres custava ~72% de um núcleo só

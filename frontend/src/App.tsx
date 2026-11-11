@@ -6,11 +6,23 @@ import SettingsPanel from "./components/SettingsPanel";
 import Sidebar from "./components/Sidebar";
 import type { ConversationSummary, Message, Metrics, OllamaStatus, Settings } from "./types";
 
-const DEFAULTS: Settings = { model: "qwen3:4b", numCtx: 4096, think: "auto", system: "" };
+const DEFAULTS: Settings = {
+  chatModel: "qwen3:4b-instruct",
+  reasoningModel: "qwen3:4b",
+  numCtx: 4096,
+  system: "",
+};
 
 function loadSettings(): Settings {
   try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem("settings") ?? "{}") };
+    const saved = JSON.parse(localStorage.getItem("settings") ?? "{}");
+    // só as chaves atuais: configurações antigas (model/think) são ignoradas
+    return {
+      chatModel: saved.chatModel ?? DEFAULTS.chatModel,
+      reasoningModel: saved.reasoningModel ?? DEFAULTS.reasoningModel,
+      numCtx: saved.numCtx ?? DEFAULTS.numCtx,
+      system: saved.system ?? DEFAULTS.system,
+    };
   } catch {
     return DEFAULTS;
   }
@@ -30,7 +42,9 @@ export default function App() {
   const [chatError, setChatError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const modelChecked = useRef(false);
+  const [reasoning, setReasoning] = useState(false);
+  const activeModel = reasoning ? settings.reasoningModel : settings.chatModel;
+  const modelMissing = !!status?.connected && !status.models.some((m) => m.name === activeModel);
 
   const refreshList = useCallback(() => api.list().then(setConversations).catch(() => {}), []);
 
@@ -59,14 +73,6 @@ export default function App() {
     const t = setInterval(poll, 2000);
     return () => clearInterval(t);
   }, []);
-
-  // Na primeira conexão: se o modelo salvo não está instalado, usa o primeiro instalado.
-  useEffect(() => {
-    if (modelChecked.current || !status?.connected || status.models.length === 0) return;
-    modelChecked.current = true;
-    if (!status.models.some((m) => m.name === settings.model))
-      setSettings((s) => ({ ...s, model: status.models[0].name }));
-  }, [status, settings.model]);
 
   useEffect(() => {
     refreshList();
@@ -141,6 +147,7 @@ export default function App() {
       await streamChat(
         id,
         text,
+        activeModel,
         settings,
         (ev) => {
           if (firstEvent) {
@@ -192,7 +199,7 @@ export default function App() {
           <div className="flex min-w-0 items-baseline gap-3">
             <h1 className="truncate text-sm font-medium">{title}</h1>
             <span className="shrink-0 text-xs text-mute">
-              {settings.model} · ctx {settings.numCtx}
+              {activeModel} · ctx {settings.numCtx}
             </span>
           </div>
           <button
@@ -215,7 +222,7 @@ export default function App() {
                 <h2 className="mt-4 text-2xl font-medium">Como posso ajudar?</h2>
                 <p className="mt-2 text-sm text-mute">
                   {status?.connected && status.models.length === 0
-                    ? `Nenhum modelo instalado. Rode: ollama pull ${settings.model}`
+                    ? `Nenhum modelo instalado. Rode: ollama pull ${activeModel}`
                     : "Escreva uma pergunta abaixo para começar."}
                 </p>
               </div>
@@ -254,14 +261,29 @@ export default function App() {
               }}
             />
             <div className="mt-1 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setShowSettings(true)}
-                className="rounded-lg px-2 py-1 text-xs text-mute hover:bg-white/5 hover:text-fg"
-                title="Abrir configurações"
-              >
-                {settings.model}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-pressed={reasoning}
+                  onClick={() => setReasoning((r) => !r)}
+                  className={`rounded-lg border px-2.5 py-1 text-xs transition-colors ${
+                    reasoning
+                      ? "border-accent/60 bg-accent/15 text-accent"
+                      : "border-line text-mute hover:bg-white/5 hover:text-fg"
+                  }`}
+                  title={reasoning ? "Raciocínio ligado: usa o modelo que pensa (mais lento)" : "Ligar raciocínio"}
+                >
+                  ✦ Raciocínio
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSettings(true)}
+                  className="rounded-lg px-2 py-1 text-xs text-mute hover:bg-white/5 hover:text-fg"
+                  title="Abrir configurações"
+                >
+                  {activeModel}
+                </button>
+              </div>
               {streaming ? (
                 <button
                   type="button"
@@ -283,7 +305,13 @@ export default function App() {
               )}
             </div>
           </form>
-          <p className="mt-2 text-center text-[11px] text-mute">Nex roda localmente no seu computador, via Ollama.</p>
+          {modelMissing ? (
+            <p className="mt-2 text-center text-[11px] text-red-400">
+              O modelo "{activeModel}" não está instalado. Rode: ollama pull {activeModel}
+            </p>
+          ) : (
+            <p className="mt-2 text-center text-[11px] text-mute">Nex roda localmente no seu computador, via Ollama.</p>
+          )}
         </div>
       </main>
     </div>

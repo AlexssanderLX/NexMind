@@ -103,7 +103,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
 
     if (content.Length > 0 || thinking.Length > 0)
         conv.Messages.Add(new Message("assistant", content.ToString(),
-            thinking.Length > 0 ? thinking.ToString() : null, DateTime.UtcNow, stats));
+            thinking.Length > 0 ? thinking.ToString() : null, DateTime.UtcNow, stats, req.Model));
     store.Save(conv);
 
     if (ct.IsCancellationRequested) return;

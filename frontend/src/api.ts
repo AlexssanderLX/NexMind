@@ -19,6 +19,7 @@ export const api = {
 export async function streamChat(
   id: string,
   content: string,
+  model: string,
   s: Settings,
   onEvent: (e: StreamEvent) => void,
   signal: AbortSignal,
@@ -28,9 +29,9 @@ export async function streamChat(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       content,
-      model: s.model,
+      model,
       numCtx: s.numCtx,
-      think: s.think === "auto" ? null : s.think === "on",
+      think: null, // quem decide é o modelo escolhido (instruct não pensa; o de raciocínio sempre pensa)
       system: s.system.trim() || null,
     }),
     signal,

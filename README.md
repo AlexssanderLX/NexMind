@@ -21,9 +21,17 @@ Desenvolvimento com hot reload: `dotnet run` em `backend/` e `npm run dev` em `f
 - `frontend/` — React + TypeScript + Tailwind.
 - **MCPs** e **Regras/políticas**: ainda não implementados (reservados para etapas futuras).
 
+## Modos: Conversa e Raciocínio
+O botão **✦ Raciocínio** no campo de texto escolhe qual modelo responde a próxima mensagem:
+- **Conversa** (padrão): `qwen3:4b-instruct`, rápido e direto (`ollama pull qwen3:4b-instruct`).
+- **Raciocínio** (botão ligado): `qwen3:4b`, que pensa antes de responder. O raciocínio aparece separado da resposta.
+
+A conversa é a mesma nos dois modos, e cada resposta mostra qual modelo a gerou. Quem decide o modo é você; o Nex ainda
+não escolhe sozinho.
+
 ## Configurações (painel no app)
-Modelo (qualquer um do Ollama), contexto (`num_ctx`), raciocínio (thinking) e prompt de sistema. Ficam salvas no navegador.
-Se o modelo salvo não estiver instalado, o app usa o primeiro instalado. A URL do Ollama está em `backend/appsettings.json`.
+Modelo de conversa, modelo de raciocínio (quaisquer do Ollama), contexto (`num_ctx`) e prompt de sistema. Ficam salvas
+no navegador. O app avisa quando o modelo do modo atual não está instalado. A URL do Ollama está em `backend/appsettings.json`.
 
 ## Barra de consumo
 CPU, RAM, GPU e VRAM da máquina, RAM usada pelo Ollama e quanto do modelo carregado está na GPU
@@ -32,4 +40,4 @@ CPU, RAM, GPU e VRAM da máquina, RAM usada pelo Ollama e quanto do modelo carre
 ## Observação sobre o `qwen3:4b`
 A versão atual do `qwen3:4b` no Ollama é a variante que **sempre raciocina**. Ela responde certo, mas gasta muitos
 tokens pensando (uma pergunta simples levou ~1.900 tokens, ~50 s a ~41 tok/s). "Raciocínio: Desligado" não a impede de
-pensar e mistura o raciocínio na resposta; deixe em "Padrão". Para respostas diretas, teste uma variante instruct.
+pensar. Por isso o app usa um modelo instruct separado para o modo Conversa.

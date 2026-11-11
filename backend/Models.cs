@@ -2,7 +2,8 @@ namespace LocalAi.Api;
 
 public record ChatStats(int PromptTokens, int OutputTokens, double TokensPerSec, double TotalSeconds, double LoadSeconds);
 
-public record Message(string Role, string Content, string? Thinking, DateTime At, ChatStats? Stats);
+/// <param name="Model">Modelo que gerou a resposta (null em mensagens do usuário e em conversas antigas).</param>
+public record Message(string Role, string Content, string? Thinking, DateTime At, ChatStats? Stats, string? Model = null);
 
 public class Conversation
 {

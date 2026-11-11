@@ -31,10 +31,26 @@ Dois agentes não podem usar a mesma pasta de trabalho em branches diferentes ao
 `git worktree` próprio, criado a partir da `main`:
 
 ```powershell
-git worktree add ..\NexMind-wt\voice-integration -b feature/voice-integration main
+git worktree add .worktrees\voice-integration -b feature/voice-integration main
 ```
 
 Ao terminar, o agente entrega a branch (commits + relatório). O worktree é removido pela coordenação depois.
+
+## Versão de uso (o atalho) separada do desenvolvimento
+
+O atalho **Nex** da Área de Trabalho abre sempre a **pasta de uso**, `Programação\NexMind`: um worktree fixo na `main`
+(ponto estável atual: tag `stable/2026-11-10-otimizacao`). Isso garante que o trabalho em andamento de qualquer agente
+nunca chega ao app que o dono abre, e que um agente não sobrescreve o outro.
+
+- **Ninguém edita arquivos em `NexMind`.** Ela só muda quando o dono autoriza uma integração, e a integração é feita
+  nela (`git -C NexMind merge --no-ff <branch>`, depois recompilar e testar, como em "Integração e retorno").
+- **Desenvolvimento** acontece em `ia-local\.worktrees\<nome>`, um por branch. O checkout principal `ia-local` não é
+  usado para desenvolver.
+- **Dados de uso** (as conversas) ficam em `NexMind\backend\data\`: são do usuário, não são versionados e não são
+  tocados pelo desenvolvimento. Cada worktree de desenvolvimento tem a sua própria pasta `backend/data/` de teste.
+- **Porta:** a `5080` é reservada à versão de uso. Para testar uma branch sem afetar o uso, rode em outra porta:
+  `dotnet run --project backend --urls http://localhost:5081`. O Ollama (`11434`) é compartilhado.
+- Se mover a pasta de uso, rode `criar-atalho.ps1` de novo para recriar o atalho.
 
 ## Fluxo de uma tarefa
 

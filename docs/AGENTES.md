@@ -46,6 +46,9 @@ reduzir o conflito de vez é fazer antes dois refactors pequenos (abaixo).
 4. **Persistência de conversas** (`backend/Storage/ConversationStore.cs`): formato JSON por conversa, com índice em
    memória. Memória de longo prazo usa pasta/arquivos próprios. Mudar o formato das conversas exige migração.
 5. **Eventos e rotas novas** entram por módulo (`Endpoints/`), não crescendo o `Program.cs`.
+6. **Versão de uso:** o atalho do dono roda a pasta `Programação\NexMind` (worktree na `main`). Nenhum agente edita
+   essa pasta nem usa a porta `5080`; testes de desenvolvimento rodam em `.worktrees\<nome>`, em outra porta (ex.:
+   `--urls http://localhost:5081`). Ver `GOVERNANCA.md`.
 
 ## Regra contra duplicação
 

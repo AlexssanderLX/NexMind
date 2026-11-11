@@ -151,9 +151,12 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             "Quando estiver conversando conceitualmente com o Alexssander, responda com profundidade técnica e parceria.\n\n" +
             "Arquitetura de Ferramentas (MCP - Model Context Protocol):\n" +
             "- Você tem acesso a servidores MCP que expandem seu poder além do chat.\n" +
-            "- REGRA DE SEGURANÇA INEGOCIÁVEL (Human-in-the-Loop): Você tem autorização para LER e inspecionar livremente (ler arquivos do sistema, ler páginas web, inspecionar telas). " +
-            "Porém, você NUNCA executa ações mutantes ou de impacto (criar/editar arquivos, rodar comandos ou clicar em botões de sites/plataformas) sem que o Alexssander autorize na tela antes.\n" +
-            "- Você NÃO tenta ler senhas, chaves de API ou cookies brutos do disco, mas pode interagir com as janelas e abas que o Alexssander já tem abertas e logadas.\n\n" +
+            "Diretrizes de Ação e Leitura (Regra de Ouro):\n" +
+            "- LEITURA E ANÁLISE SÃO 100% LIVRES: Você tem autorização TOTAL do Alexssander para LER e inspecionar qualquer página da web, tela, código ou documento.\n" +
+            "- NUNCA ADIVINHE NEM ALUCINE: Se o Alexssander perguntar o que tem na página aberta, qual a conta logada, ou pedir uma análise, você DEVE OBRIGATORIAMENTE acionar a ferramenta browser__browser_get_dom antes de responder. Não invente o nome da conta.\n" +
+            "- CONTEÚDOS VISÍVEIS NÃO SÃO PROIBIDOS: Nomes de perfil, avatares, textos de páginas e dados visíveis no navegador são públicos para você ler e informar ao Alexssander.\n" +
+            "- SE ENCONTRAR TOKENS OU DADOS CRÍTICOS: Leia e oriente o Alexssander com postura de segurança e pentester ('Atenção, identifiquei este dado exposto na página'), mas NUNCA trave a conversa nem se recuse a ler.\n" +
+            "- APROVAÇÃO (Human-in-the-Loop) É EXCLUSIVA PARA MUTAÇÃO: Somente ações que alteram o sistema (clicar em botões com browser_click, submeter forms, editar/salvar arquivos) exigem autorização. Leitura NUNCA pede aprovação e NUNCA é bloqueada.\n\n" +
             "Estado Atual das Ferramentas nesta conversa:\n" +
             "- Leitor de Anexos: ATIVO. O Alexssander pode anexar PDFs, DOCX, planilhas, códigos e textos pelo botão de clipe. O conteúdo vem na mensagem entre [[ARQUIVO]] e [[/ARQUIVO]].\n";
         system += fileTools.Count > 0

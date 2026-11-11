@@ -1,0 +1,38 @@
+# Template Canônico de Handoff: Auditor (Antigravity) -> Executor (Cursor / Claude)
+
+task_id: "TASK-NEX-000"
+author: "antigravity-auditor"
+timestamp: "2026-11-11T00:00:00Z"
+
+git:
+  work_branch: "feature/nome-da-tarefa"
+  target_branch: "develop"
+  head_commit: "pending"
+
+scope:
+  module: "Backend / Mcp / Tools / Frontend / Storage"
+  description: "Descrição concisa do objetivo funcional e de negócio da tarefa."
+  files_allowed:
+    - "backend/..."
+    - "frontend/..."
+
+contracts_and_boundaries:
+  invariants_to_protect:
+    - "Não alterar o isolamento do OllamaClient."
+    - "Garantir persistência atômica das conversas."
+    - "Zero regressão no tempo de inicialização e no streaming de tokens."
+  relevant_rules:
+    - ".ai/rules/nex-core.md"
+    - ".ai/rules/architecture.md"
+  relevant_skills:
+    - ".ai/skills/..."
+
+definition_of_done:
+  expected_behavior:
+    - "Critério funcional 1."
+    - "Critério funcional 2."
+  validation_criteria:
+    build: "PASS (0 erros)"
+    tests: "PASS (100% verde)"
+    manual_smoke: "Verificação manual do fluxo feliz executada."
+

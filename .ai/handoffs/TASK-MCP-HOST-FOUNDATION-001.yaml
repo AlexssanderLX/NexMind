@@ -1,0 +1,45 @@
+# Handoff: MCP Host Foundation & Human-in-the-Loop Approval
+
+task_id: "TASK-MCP-HOST-FOUNDATION-001"
+author: "antigravity-auditor"
+timestamp: "2026-11-11T10:57:00Z"
+
+git:
+  work_branch: "feature/mcp-host-foundation"
+  target_branch: "develop"
+  head_commit: "4233a01"
+  status: "ENTREGUE"
+
+scope:
+  module: "Backend / Mcp / Llm / Frontend"
+  description: "Implementar o subsistema host de MCP via JSON-RPC stdio para servidores open-source externos com intercepção de aprovação do usuário (Human-in-the-Loop) para ferramentas de impacto."
+  files_allowed:
+    - "backend/Mcp/**"
+    - "backend/Llm/OllamaClient.cs"
+    - "backend/Program.cs"
+    - "backend/mcp_servers.json"
+    - "frontend/src/**"
+
+contracts_and_boundaries:
+  invariants_to_protect:
+    - "Não quebrar a comunicação streaming existente no OllamaClient."
+    - "Manter a autoridade no backend ASP.NET Core."
+    - "NUNCA executar ferramenta mutante/destrutiva (escrita, remoção, execução de comandos) sem confirmação prévia do usuário."
+    - "Comunicação com servidores MCP deve usar estritamente JSON-RPC 2.0 sobre stdio com timeout obrigatório."
+  relevant_rules:
+    - ".ai/rules/nex-core.md"
+    - ".ai/rules/architecture.md"
+    - ".ai/rules/mcp-protocol.md"
+    - ".ai/rules/agent-efficiency.md"
+
+definition_of_done:
+  expected_behavior:
+    - "1. Carregamento de configuração em mcp_servers.json apontando comandos/argumentos de servidores MCP locais (ex: node, python, npx)."
+    - "2. Ciclo de vida stdio implementado: initialize -> notifications/initialized -> tools/list."
+    - "3. Mapeamento das tools descobertas para o formato aceito pelo Ollama no /api/chat."
+    - "4. Interceptor Human-in-the-Loop: ferramentas classificadas como mutantes pausam e exigem confirmação do frontend antes do tools/call."
+    - "5. Fallback seguro: se o processo do MCP cair ou der timeout, retornar erro estruturado ao modelo sem crashar o backend."
+  validation_criteria:
+    build: "PASS (dotnet build com 0 erros; npm run build com 0 erros)"
+    tests: "Compilação 100% limpa e fluxo de aprovação testado manualmente."
+

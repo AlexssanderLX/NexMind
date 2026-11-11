@@ -422,11 +422,15 @@ export default function App() {
           tools={[
             {
               name: "pesquisa",
+              label: "Pesquisa na web",
+              description: "Busca na internet quando a pergunta precisa de fatos atuais, com um filtro antes da busca.",
               status: !searchOn ? "desligada" : searchState === "executando" ? "executando" : "pronta",
               note: !searchOn ? "desligada" : searchState === "executando" ? "pesquisando" : "ligada",
             },
             {
               name: "mcp",
+              label: "Arquivos do Nex",
+              description: "Lê, lista e cria arquivos na pasta de trabalho do Nex. Criar ou editar pede a sua aprovação.",
               status: !mcpOn ? "desligada" : mcpState === "executando" ? "executando" : "pronta",
               note: !mcpOn ? "desligada" : mcpState === "executando" ? "executando" : "ligada",
             },

@@ -24,6 +24,9 @@ export interface RunItem {
 /** Contrato para o futuro painel de ferramentas (MCPs, skills): hoje nenhuma ferramenta está conectada. */
 export interface ToolItem {
   name: string;
+  /** Nome legível da ferramenta e o que ela faz (o `name` é só a chave). */
+  label?: string;
+  description?: string;
   status: "desligada" | "pronta" | "executando" | "erro";
   note?: string;
 }
@@ -107,16 +110,30 @@ export default function PanelsLayer({
           <Empty>Nenhuma ferramenta conectada ainda. MCPs e skills aparecerão aqui quando forem integrados.</Empty>
         ) : (
           shownTools.map((t) => (
-            <button
-              key={t.name}
-              type="button"
-              onClick={() => onToggleTool?.(t.name)}
-              className="flex w-full items-center gap-2 py-1 text-left"
-            >
-              <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_COLOR[t.status]}`} />
-              <span className="flex-1 truncate text-fg">{t.name}</span>
-              <span className="text-mute">{t.note ?? t.status}</span>
-            </button>
+            <div key={t.name} className="flex items-start gap-2 border-b border-line/60 py-2 last:border-0">
+              <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATUS_COLOR[t.status]}`} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-fg">{t.label ?? t.name}</div>
+                {t.description && <div className="text-xs leading-snug text-mute">{t.description}</div>}
+                {t.status === "executando" && <div className="text-xs text-accent">{t.note ?? "executando"}</div>}
+              </div>
+              {onToggleTool && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={t.status !== "desligada"}
+                  aria-label={`${t.status === "desligada" ? "Ligar" : "Desligar"} ${t.label ?? t.name}`}
+                  onClick={() => onToggleTool(t.name)}
+                  className={`shrink-0 rounded-lg border px-2.5 py-1 text-xs transition-colors ${
+                    t.status === "desligada"
+                      ? "border-line text-mute hover:bg-white/5 hover:text-fg"
+                      : "border-accent/60 bg-accent/15 text-accent"
+                  }`}
+                >
+                  {t.status === "desligada" ? "Ligar" : "Ligada"}
+                </button>
+              )}
+            </div>
           ))
         )}
       </FloatingPanel>

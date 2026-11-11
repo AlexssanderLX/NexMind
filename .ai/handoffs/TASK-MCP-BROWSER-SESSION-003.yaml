@@ -1,0 +1,45 @@
+# Handoff: Navegador Real do Usuário via CDP com Sessão e Cursor Animado
+
+task_id: "TASK-MCP-BROWSER-SESSION-003"
+author: "antigravity-auditor"
+timestamp: "2026-11-11T12:43:00Z"
+
+git:
+  work_branch: "feature/browser-cdp-session"
+  target_branch: "develop"
+  head_commit: "pending"
+  worktree_dir: ".worktrees/browser-session"
+
+scope:
+  module: "Backend / Mcp / Browser / Scripts / Program"
+  description: "Conectar o MCP de navegador ao Chrome/Edge real do usuário via Chrome DevTools Protocol (CDP porta 9222) para reaproveitar sessões e logins ativos com cursor visual animado, mantendo fallback gracioso para Chromium isolado e aprovação HITL de clique."
+  files_allowed:
+    - "backend/Mcp/Browser/server.py"
+    - "backend/Program.cs"
+    - "backend/mcp_servers.json"
+    - "iniciar-nex.ps1"
+    - "criar-atalho.ps1"
+
+contracts_and_boundaries:
+  invariants_to_protect:
+    - "Nunca ler senhas, cookies crus ou arquivos de perfil de disco via MCP de arquivos (blockedPaths mantido intacto)."
+    - "Ação de clique (browser_click) DEVE permanecer em requiresApproval."
+    - "Não alterar OllamaClient.cs nem configurações de GPU/VRAM."
+    - "Se a porta 9222 não estiver acessível, o MCP não crasha: faz fallback para Chromium isolado e informa o usuário."
+  relevant_rules:
+    - ".ai/rules/nex-core.md"
+    - ".ai/rules/architecture.md"
+    - ".ai/rules/git-workflow.md"
+    - ".ai/rules/mcp-protocol.md"
+    - ".ai/rules/performance-and-vram.md"
+    - ".ai/rules/agent-efficiency.md"
+
+definition_of_done:
+  expected_behavior:
+    - "1. Em backend/Mcp/Browser/server.py: tentar conectar via `playwright.chromium.connect_over_cdp('http://localhost:9222')`. Se falhar, fallback para `launch(headless=False)`. O cursor #nex-virtual-mouse funciona em ambos."
+    - "2. Em iniciar-nex.ps1: iniciar o Chrome do usuário com `--remote-debugging-port=9222` se não estiver rodando com a porta ativa."
+    - "3. Em backend/Program.cs: prompt dinâmico conciso que não nega a ferramenta quando o navegador estiver ligado."
+  validation_criteria:
+    build: "PASS (dotnet build com 0 erros)"
+    manual_smoke: "Com o Chrome aberto logado no Gmail/GitHub, o Nex abre a aba, mantém a sessão ativa e mostra o mouse virtual clicando com aprovação."
+

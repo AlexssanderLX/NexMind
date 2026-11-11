@@ -1,0 +1,43 @@
+# Handoff: Correção Unificada dos MCPs Browser & Desktop + Inicialização 9222
+
+task_id: "TASK-MCP-UNIFIED-BROWSER-DESKTOP-FIX-006"
+author: "antigravity-auditor"
+timestamp: "2026-11-11T13:13:00Z"
+
+git:
+  work_branch: "fix/browser-desktop-unified"
+  target_branch: "develop"
+  head_commit: "pending"
+  worktree_dir: ".worktrees/unified-fix"
+
+scope:
+  module: "Backend / Mcp / Browser / Desktop / Program / Scripts"
+  description: "Eliminar bloqueios de concorrência e exceções no MCP Browser, definir papéis claros no System Prompt (Browser para páginas Web vs Desktop para o Windows OS), e garantir que iniciar-nex.ps1 suba o Chrome com --remote-debugging-port=9222."
+  files_allowed:
+    - "backend/Mcp/Browser/server.py"
+    - "backend/Program.cs"
+    - "iniciar-nex.ps1"
+
+contracts_and_boundaries:
+  invariants_to_protect:
+    - "NUNCA jogar RuntimeError mandando o usuário fechar o Chrome. Se a 9222 falhar, abrir Chromium com launch(headless=False) automaticamente."
+    - "browser_get_dom deve auto-inicializar o browser chamando _ensure() se _page for None."
+    - "Ações mutantes (browser_click, desktop_mouse_click, desktop_click_element, desktop_type) MANTIDAS em requiresApproval."
+    - "Não alterar OllamaClient.cs nem regras de VRAM/GPU."
+  relevant_rules:
+    - ".ai/rules/nex-core.md"
+    - ".ai/rules/architecture.md"
+    - ".ai/rules/git-workflow.md"
+    - ".ai/rules/mcp-protocol.md"
+    - ".ai/rules/performance-and-vram.md"
+    - ".ai/rules/agent-efficiency.md"
+
+definition_of_done:
+  expected_behavior:
+    - "1. Em backend/Mcp/Browser/server.py: remover o bloqueio `if _browser_running(): raise RuntimeError(...)`. Se attach falhar, faz launch(headless=False) imediato. Em `browser_get_dom()`, chamar `await _ensure()` garantindo que nunca lance 'Chame browser_navigate primeiro'."
+    - "2. Em iniciar-nex.ps1: checar se 127.0.0.1:9222 responde; se não, iniciar chrome.exe com `--remote-debugging-port=9222`."
+    - "3. Em backend/Program.cs: Prompt delimita expressamente: 'Para ler e interagir com páginas da WEB (como GitHub, sistemas web, sites), use EXCLUSIVAMENTE as ferramentas do Navegador (browser_*). O MCP Desktop (desktop_*) é reservado para gerenciar janelas e programas nativos do Windows OS'."
+  validation_criteria:
+    build: "PASS (dotnet build com 0 erros)"
+    manual_smoke: "Dizer 'Vê o que tem na página do GitHub' com a janela aberta e o Nex acionar o browser_get_dom sem erros, respondendo o conteúdo visível."
+

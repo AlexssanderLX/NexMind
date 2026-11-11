@@ -1,0 +1,49 @@
+# Handoff: MCP Computer Use (Windows Desktop Automation Híbrido)
+
+task_id: "TASK-MCP-COMPUTER-USE-001"
+author: "antigravity-auditor"
+timestamp: "2026-11-11T12:32:00Z"
+
+git:
+  work_branch: "feature/computer-use"
+  target_branch: "develop"
+  head_commit: "pending"
+  worktree_dir: ".worktrees/computer"
+
+scope:
+  module: "Backend / Mcp / Desktop"
+  description: "Criar servidor MCP open-source para automação da Área de Trabalho do Windows (Computer Use) utilizando modelo híbrido: inspeção leve de janelas/botões via UIAutomation/pywinauto + controle físico real de mouse e teclado via PyAutoGUI com Fail-Safe."
+  files_allowed:
+    - "backend/Mcp/Desktop/**"
+    - "backend/Mcp/requirements-desktop.txt"
+    - "backend/mcp_servers.json"
+    - "scripts/setup-desktop-mcp.ps1"
+
+contracts_and_boundaries:
+  invariants_to_protect:
+    - "Não saturar a VRAM com prints contínuos: priorizar detecção de janelas e botões via API de acessibilidade do Windows (Win32)."
+    - "Ativação OBRIGATÓRIA do Fail-Safe do PyAutoGUI (arrastar mouse para o canto aborta imediatamente)."
+    - "Ações mutantes no sistema (cliques, atalhos de teclado, digitação) DEVEM estar listadas em `requiresApproval`."
+    - "O ambiente Python deve ficar isolado em backend/data/mcp/desktop/venv (fora do git)."
+    - "Zero regressão no build do backend .NET."
+  relevant_rules:
+    - ".ai/rules/nex-core.md"
+    - ".ai/rules/architecture.md"
+    - ".ai/rules/git-workflow.md"
+    - ".ai/rules/mcp-protocol.md"
+    - ".ai/rules/performance-and-vram.md"
+    - ".ai/rules/agent-efficiency.md"
+  relevant_skills:
+    - ".ai/skills/implement-mcp-server/SKILL.md"
+
+definition_of_done:
+  expected_behavior:
+    - "1. Servidor MCP em Python (FastMCP/mcp) em backend/Mcp/Desktop/server.py."
+    - "2. Script scripts/setup-desktop-mcp.ps1 que provisiona o venv em backend/data/mcp/desktop/venv com pyautogui, pywinauto/uiautomation e pillow."
+    - "3. Ferramentas expostas: desktop_list_windows(), desktop_inspect_window(title), desktop_click_element(window_title, element_name), desktop_mouse_click(x, y), desktop_type(text), desktop_press_hotkey(keys), desktop_take_screenshot()."
+    - "4. Cadastro no backend/mcp_servers.json como servidor `desktop` com requiresApproval configurado para cliques e digitação."
+    - "5. Teste de fumaça: listar janelas abertas do Windows e interagir com um aplicativo nativo simples (ex: Calculadora ou Bloco de Notas) com aprovação do usuário."
+  validation_criteria:
+    build: "PASS (scripts instalam limpo e o servidor inicializa stdio com sucesso)"
+    manual_smoke: "Ver janelas abertas listadas e um clique real de mouse com o Fail-Safe funcionando."
+

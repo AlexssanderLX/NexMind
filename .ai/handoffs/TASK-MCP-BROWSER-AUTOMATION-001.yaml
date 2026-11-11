@@ -1,0 +1,50 @@
+# Handoff: MCP Browser Automation (Playwright Headed + Mouse Animado)
+
+task_id: "TASK-MCP-BROWSER-AUTOMATION-001"
+author: "antigravity-auditor"
+timestamp: "2026-11-11T11:42:00Z"
+
+git:
+  work_branch: "feature/browser-automation"
+  target_branch: "develop"
+  head_commit: "pending"
+  worktree_dir: ".worktrees/browser"
+
+scope:
+  module: "Backend / Mcp / Browser"
+  description: "Criar servidor MCP open-source baseado em Playwright com navegador Chromium visível (headed), cursor de mouse virtual animado e ferramentas atômicas para navegação pelo Qwen local com Human-in-the-Loop."
+  files_allowed:
+    - "backend/Mcp/Browser/**"
+    - "backend/Mcp/requirements-browser.txt"
+    - "backend/mcp_servers.json"
+    - "scripts/setup-browser-mcp.ps1"
+
+contracts_and_boundaries:
+  invariants_to_protect:
+    - "Não alterar o código do OllamaClient nem a lógica central de chat."
+    - "A comunicação deve usar estritamente o protocolo oficial MCP sobre stdio (JSON-RPC 2.0)."
+    - "Navegador DEVE abrir em modo visível (headless: false) com cursor virtual injetado."
+    - "Truncamento mandatório de DOM: nunca devolver mais de 1.500 tokens de texto de página para não esgotar o contexto do modelo local."
+    - "O ambiente Python/Playwright deve ficar isolado em backend/data/mcp/browser/venv (fora do git)."
+    - "Ações mutantes (como browser_click em submits ou links externos) devem exigir aprovação prévia em mcp_servers.json."
+  relevant_rules:
+    - ".ai/rules/nex-core.md"
+    - ".ai/rules/architecture.md"
+    - ".ai/rules/git-workflow.md"
+    - ".ai/rules/mcp-protocol.md"
+    - ".ai/rules/performance-and-vram.md"
+    - ".ai/rules/agent-efficiency.md"
+  relevant_skills:
+    - ".ai/skills/implement-mcp-server/SKILL.md"
+
+definition_of_done:
+  expected_behavior:
+    - "1. Servidor MCP em Python (utilizando o pacote oficial `mcp` e `playwright`) em backend/Mcp/Browser/."
+    - "2. Script de setup automatizado em scripts/setup-browser-mcp.ps1 que cria o venv em backend/data/mcp/browser/venv e roda playwright install chromium."
+    - "3. Injeção de cursor visual no Chromium que se move suavemente (curva de Bézier) até o elemento antes de clicar."
+    - "4. Ferramentas expostas: browser_navigate(url), browser_get_dom(), browser_click(element_id), browser_type(element_id, text, press_enter), browser_close()."
+    - "5. Cadastro em backend/mcp_servers.json apontando para o Python do venv, com requiresApproval configurado para ações críticas."
+  validation_criteria:
+    build: "PASS (scripts rodam sem erro e o servidor inicializa stdio com sucesso)"
+    manual_smoke: "Testar abertura do Chromium, navegação em um site (ex: duckduckgo.com), busca de texto e clique visível do mouse."
+

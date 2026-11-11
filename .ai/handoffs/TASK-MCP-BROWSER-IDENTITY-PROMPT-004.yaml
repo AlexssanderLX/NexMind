@@ -1,0 +1,45 @@
+# Handoff: Navegador Real do Usuário (CDP), Identidade do Nex e System Prompt Consciente de Ferramentas
+
+task_id: "TASK-MCP-BROWSER-IDENTITY-PROMPT-004"
+author: "antigravity-auditor"
+timestamp: "2026-11-11T12:48:00Z"
+
+git:
+  work_branch: "feature/browser-session-and-identity"
+  target_branch: "develop"
+  head_commit: "pending"
+  worktree_dir: ".worktrees/browser-identity"
+
+scope:
+  module: "Backend / Mcp / Browser / Scripts / Program"
+  description: "Conectar o MCP de navegador ao Chrome/Edge real do usuário via CDP (porta 9222) com sessão ativa, e reestruturar o System Prompt dinâmico no backend: identidade (usuário Alexssander, Dev & Pentester, criador do Nex), consciência profunda do protocolo MCP e explicação clara de ferramentas ligadas/desligadas com regra inegociável de HITL (leitura livre, execução sob aprovação)."
+  files_allowed:
+    - "backend/Mcp/Browser/server.py"
+    - "backend/Program.cs"
+    - "iniciar-nex.ps1"
+    - "criar-atalho.ps1"
+
+contracts_and_boundaries:
+  invariants_to_protect:
+    - "Não ler arquivos sensíveis de disco via MCP de arquivos (chaves, senhas, blockedPaths mantido)."
+    - "Ações mutantes (como browser_click, escrita/edição de arquivos) DEVEM pedir aprovação do usuário."
+    - "Respostas operacionais com ferramentas continuam diretas e curtas para economizar tokens e tempo de GPU."
+    - "Se a porta 9222 do Chrome não responder, o server.py não crasha: fallback limpo com aviso explicativo."
+    - "Não alterar OllamaClient.cs nem regras de VRAM/GPU."
+  relevant_rules:
+    - ".ai/rules/nex-core.md"
+    - ".ai/rules/architecture.md"
+    - ".ai/rules/git-workflow.md"
+    - ".ai/rules/mcp-protocol.md"
+    - ".ai/rules/performance-and-vram.md"
+    - ".ai/rules/agent-efficiency.md"
+
+definition_of_done:
+  expected_behavior:
+    - "1. Em backend/Mcp/Browser/server.py: conectar via `connect_over_cdp('http://localhost:9222')`, controlando a janela do Chrome com as contas logadas do usuário e cursor animado visível."
+    - "2. Em iniciar-nex.ps1: abrir o Chrome real com `--remote-debugging-port=9222` ao iniciar o atalho do Nex."
+    - "3. Em backend/Program.cs: reescrever a injeção do System Prompt para estabelecer a identidade do Nex, conhecimento sobre seu criador Alexssander (Dev & Pentester), explicação didática do que é MCP, quais ferramentas estão LIGADAS e quais estão DESLIGADAS, orientando o usuário como ligá-las no painel caso ele peça algo desativado."
+  validation_criteria:
+    build: "PASS (dotnet build com 0 erros)"
+    manual_smoke: "Perguntar 'Quem sou eu e o que você pode fazer?' e o Nex responder com sua identidade e ferramentas exatas, orientando sobre as ferramentas ligadas e desligadas."
+

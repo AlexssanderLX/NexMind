@@ -1,0 +1,46 @@
+# Handoff: Micropasta por Conversa, Dual-Index Micro-RAG e Reset de Conversas Antigas
+
+task_id: "TASK-CONVERSATION-MICRO-RAG-DUAL-INDEX-014"
+author: "antigravity-auditor"
+timestamp: "2026-11-11T17:19:00Z"
+
+git:
+  work_branch: "feature/conversation-micro-rag"
+  target_branch: "develop"
+  head_commit: "pending"
+  worktree_dir: ".worktrees/micro-rag"
+
+scope:
+  module: "Backend / Storage / Memory / Program"
+  description: "Migrar armazenamento de conversas para micropasta por conversa (backend/data/conversations/{id}/), implementar o Dual-Index (system_index.md com facts/intent via backend vs agent_index.md com scratchpad via ferramentas), injetar índices no System Prompt e resetar conversas antigas de teste."
+  files_allowed:
+    - "backend/Storage/ConversationStore.cs"
+    - "backend/Memory/**"
+    - "backend/Program.cs"
+    - "backend/Models.cs"
+
+contracts_and_boundaries:
+  invariants_to_protect:
+    - "Persistência atômica das mensagens preservada (File.Replace com arquivo temporário)."
+    - "Separação estrita de autoridade: o agente NÃO altera o system_index.md (fatos confirmados); o agente só anota em agent_index.md e scratchpad.md."
+    - "Zero overhead de GPU no motor do sistema: a extração de fatos é orientada a eventos de tools em C#."
+    - "Limpeza segura dos arquivos soltos de conversas antigas em backend/data/conversations/."
+  relevant_rules:
+    - ".ai/rules/nex-core.md"
+    - ".ai/rules/architecture.md"
+    - ".ai/rules/git-workflow.md"
+    - ".ai/rules/mcp-protocol.md"
+    - ".ai/rules/performance-and-vram.md"
+    - ".ai/rules/agent-efficiency.md"
+
+definition_of_done:
+  expected_behavior:
+    - "1. Ao criar uma conversa, o ConversationStore cria a pasta `backend/data/conversations/{id}/` contendo conversation.json, system_index.md, intent.md, facts.md, agent_index.md e scratchpad.md."
+    - "2. Todas as conversas antigas de teste (*.json soltos) são removidas da pasta."
+    - "3. Ferramentas expostas ao modelo: `topic_read(name)` e `topic_write(name, content)` para o agente manipular seu próprio scratchpad."
+    - "4. Injeção dinâmica no System Prompt: carregar apenas os dois índices compactos (~120 tokens no total)."
+    - "5. O motor C# atualiza facts.md automaticamente a partir de sucessos das tools."
+  validation_criteria:
+    build: "PASS (dotnet build com 0 erros)"
+    manual_smoke: "Criar uma conversa nova, ver a pasta criada com os arquivos, e testar o agente anotando uma hipótese no scratchpad e lembrando no turno seguinte sem perda de contexto."
+

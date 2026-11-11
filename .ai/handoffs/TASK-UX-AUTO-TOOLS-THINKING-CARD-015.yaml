@@ -1,0 +1,45 @@
+# Handoff: Auto-Tools por Intenção, Card de Raciocínio (Thinking), Accordion de Tools e Limpeza do Banner Vermelho
+
+task_id: "TASK-UX-AUTO-TOOLS-THINKING-CARD-015"
+author: "antigravity-auditor"
+timestamp: "2026-11-11T17:49:00Z"
+
+git:
+  work_branch: "feature/ux-auto-tools-and-thinking-card"
+  target_branch: "develop"
+  head_commit: "pending"
+  worktree_dir: ".worktrees/ux-activity"
+
+scope:
+  module: "Frontend / Backend / UI / Program"
+  description: "Implementar seleção dinâmica de ferramentas por intenção no backend (auto-tool routing), adicionar Card Flutuante de Raciocínio (thinking) com scroll em tempo real, Accordion de atividades de tools executadas e remover a faixa vermelha invasiva de erro do Ollama, substituindo por indicador sutil descartável."
+  files_allowed:
+    - "frontend/src/App.tsx"
+    - "frontend/src/components/**"
+    - "frontend/src/types.ts"
+    - "backend/Program.cs"
+
+contracts_and_boundaries:
+  invariants_to_protect:
+    - "Preservar a fidelidade do streaming NDJSON no backend e frontend."
+    - "Não quebrar os perfis de renderização 3D/2D nem a performance de VRAM."
+    - "Ações mutantes continuam exigindo aprovação HITL via modal."
+    - "Compilação sem erros no backend (dotnet) e frontend (npm run build)."
+  relevant_rules:
+    - ".ai/rules/nex-core.md"
+    - ".ai/rules/architecture.md"
+    - ".ai/rules/git-workflow.md"
+    - ".ai/rules/mcp-protocol.md"
+    - ".ai/rules/performance-and-vram.md"
+    - ".ai/rules/agent-efficiency.md"
+
+definition_of_done:
+  expected_behavior:
+    - "1. No Backend (Program.cs): auto-ativar as ferramentas por intenção na mensagem do usuário (se contiver termos de navegação/links, ativa browser; se for busca/data, ativa search; se for arquivo/código, ativa arquivos), mesmo se o switch manual não tiver sido clicado."
+    - "2. No Frontend (App.tsx / Components): criar Card de Raciocínio flutuante ou sanfona ('Pensando...') onde o streaming de chunks do tipo `thinking` aparece rolando em tempo real e colapsa com uma setinha ao terminar."
+    - "3. No Frontend: Accordion colapsável para cada tool call, mostrando nome da ferramenta e payload expandível com setinha [ ˅ ]."
+    - "4. No Frontend: remover a barra vermelha estática invasiva do topo; o aviso de conexão vira um badge/alerta sutil na sidebar ou com botão [x] para fechar."
+  validation_criteria:
+    build: "PASS (dotnet build com 0 erros; npm run build com 0 erros)"
+    manual_smoke: "Fazer uma pergunta com raciocínio e ver o Card de Pensamento rolando, ferramenta auto-ativada e a tela limpa sem tarja vermelha."
+

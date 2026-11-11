@@ -169,7 +169,15 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         r, w, t = await fake_host()
         await asyncio.sleep(0.2)
         self.assertIn("aba [101]", await server.browser_navigate("https://example.com/a"))
-        self.assertIn("aba [6]", await server.browser_navigate("https://example.com/b", tab_id=6))
+        self.assertIn("aba [6]", await server.browser_reuse_tab(6, "https://example.com/b"))
+        w.close()
+        t.cancel()
+
+    async def test_reuse_tab_exige_tab_id(self):
+        r, w, t = await fake_host()
+        await asyncio.sleep(0.2)
+        with self.assertRaises(RuntimeError):
+            await server.browser_reuse_tab(0, "https://example.com/")
         w.close()
         t.cancel()
 

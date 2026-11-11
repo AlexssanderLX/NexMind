@@ -198,9 +198,7 @@ async def browser_tabs() -> str:
     return "Abas do grupo Nex:\n" + "\n".join(lines)
 
 
-@mcp.tool()
-async def browser_navigate(url: str, tab_id: int = 0) -> str:
-    """Abre a URL em uma aba NOVA do grupo Nex (padrão). Com tab_id, troca o endereço dessa aba do grupo. Só http e https. Respeita o escopo e o ritmo definidos."""
+async def _open(url: str, tab_id: int) -> str:
     pacer = _get_pacer()
     try:
         host = check_url(url, pacer.cfg)
@@ -211,6 +209,20 @@ async def browser_navigate(url: str, tab_id: int = 0) -> str:
     note = f" (aguardei {waited:.1f} s para não acelerar o site)" if waited >= 0.5 else ""
     pending = "" if result.get("loaded", True) else " A página ainda estava carregando: chame browser_get_dom de novo em instantes."
     return f"Aberto na aba [{result.get('tabId')}] do grupo Nex, sem fechar o Chrome: {result.get('url')}{note}{pending}"
+
+
+@mcp.tool()
+async def browser_navigate(url: str) -> str:
+    """Abre a URL em uma aba NOVA do grupo Nex (as outras abas ficam como estão). Só http e https. Respeita o escopo e o ritmo definidos."""
+    return await _open(url, 0)
+
+
+@mcp.tool()
+async def browser_reuse_tab(tab_id: int, url: str) -> str:
+    """Troca o endereço de uma aba que JÁ está no grupo Nex (o conteúdo atual dela é substituído). Para abrir uma página sem perder as outras, use browser_navigate."""
+    if not int(tab_id):
+        raise RuntimeError("Informe o tab_id de uma aba do grupo (veja browser_tabs).")
+    return await _open(url, tab_id)
 
 
 @mcp.tool()

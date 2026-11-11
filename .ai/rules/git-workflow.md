@@ -51,7 +51,7 @@ Branch `main` / Push para o GitHub
 2. **A branch de integração é `develop`:** O agente entrega sua branch exclusivamente em `develop` após o build limpo e testes verdes.
 3. **Limpeza Imediata:** Branches mescladas devem ser deletadas com `git branch -d` para não acumular branches órfãs.
 4. **Nenhum merge em `main` e nenhum `git push` sem autorização explícita do usuário:** A esteira de produção para `main` e para o repositório remoto depende do crivo humano.
-5. **Portas de Desenvolvimento:** Testes de desenvolvimento isolados em worktrees utilizam portas `5081+`. A porta `5080` é de uso exclusivo da versão oficial rodando pelo atalho.
+5. **Porta Única Oficial (5080):** O Nex roda **exclusivamente na porta 5080** (`http://localhost:5080`). É expressamente proibido espalhar execuções em portas paralelas (`5081`, `5082`, etc.). Toda validação, atalho e integração convergem para a porta 5080 no `develop`.
 6. **Develop é somente leitura e integração:** É proibido desenvolver ou editar arquivos direto em `.worktrees/develop`. Essa pasta só recebe `git merge` vindo da branch de um agente.
 7. **Check pré-merge obrigatório:** Antes de qualquer entrega, o executor roda `git -C .worktrees/develop status --short`. Se houver arquivo modificado, a entrega é abortada na hora.
 8. **Proibição de build sujo:** Nunca rodar `npm run build` ou `dotnet build` em `develop` com a working tree suja.

@@ -45,6 +45,8 @@ try
     var store2 = new ConversationStore(convDir);
     Check("Reinício: reindexa as micropastas", store2.List().Any(s => s.Id == c.Id));
     Check("Reinício: .json solto do formato antigo é ignorado", !store2.List().Any(s => s.Title == "antiga") && store2.Get("0123456789abcdef0123456789abcdef") is null);
+    Check("Reinício: o .json antigo foi ARQUIVADO em _legado (nada apagado)", File.Exists(Path.Combine(convDir, "_legado", "0123456789abcdef0123456789abcdef.json")) && !File.Exists(Path.Combine(convDir, "0123456789abcdef0123456789abcdef.json")));
+    Check("a pasta _legado não vira conversa", store2.List().All(s => s.Id.Length == 32 && s.Id != "_legado"));
 
     // ---------- segurança de caminho
     var sentinel = Path.Combine(root, "nao-apague");

@@ -25,12 +25,30 @@ public partial class ConversationStore
     {
         _dir = dir;
         Directory.CreateDirectory(dir);
-        // só micropastas válidas entram; arquivos .json soltos do formato antigo são ignorados
+        ArchiveLegacyFiles(dir);
+        // só micropastas válidas entram
         foreach (var folder in Directory.EnumerateDirectories(dir))
         {
             if (!IdPattern().IsMatch(Path.GetFileName(folder))) continue;
             var file = Path.Combine(folder, ConversationFile);
             if (File.Exists(file) && ReadSummary(file) is { } s) _index[s.Id] = s;
+        }
+    }
+
+    /// <summary>
+    /// Os .json soltos do formato antigo (um arquivo por conversa) vão para conversations/_legado/. Nada é apagado:
+    /// o novo formato assume sozinho e quem quiser olhar o histórico antigo encontra os arquivos lá.
+    /// </summary>
+    private static void ArchiveLegacyFiles(string dir)
+    {
+        var legacy = Directory.EnumerateFiles(dir, "*.json").ToList();
+        if (legacy.Count == 0) return;
+        var target = Path.Combine(dir, "_legado");
+        Directory.CreateDirectory(target);
+        foreach (var file in legacy)
+        {
+            try { File.Move(file, Path.Combine(target, Path.GetFileName(file)), overwrite: true); }
+            catch (IOException) { /* arquivo em uso por outro processo: tenta na próxima partida */ }
         }
     }
 

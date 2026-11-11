@@ -189,7 +189,14 @@ async def _call(op: str, **args):
 
 @mcp.tool()
 async def browser_tabs() -> str:
-    """Lista as abas do grupo Nex (id, título, site e qual é a atual). Use para saber o que já está aberto, inclusive o que o Alexssander abriu."""
+    """
+    O QUE FAZ: lista as abas do grupo Nex (número, título, site e qual é a atual).
+    QUANDO USAR: no começo de qualquer tarefa no navegador, e sempre que o Alexssander disser que abriu algo ou pedir para trabalhar nas abas dele.
+    COMO USAR: sem argumentos.
+    NÃO FAÇA: não chame de novo sem necessidade; não procure abas fora do grupo (para você elas não existem).
+    RETORNA: uma linha por aba, no formato [número] título - endereço. Esse número é o tab_id das outras ferramentas.
+    SE O GRUPO ESTIVER VAZIO: abra uma página com browser_navigate.
+    """
     payload = await _call("tabs")
     tabs = payload.get("tabs") or []
     if not tabs:
@@ -213,13 +220,27 @@ async def _open(url: str, tab_id: int) -> str:
 
 @mcp.tool()
 async def browser_navigate(url: str) -> str:
-    """Abre a URL em uma aba NOVA do grupo Nex (as outras abas ficam como estão). Só http e https. Respeita o escopo e o ritmo definidos."""
+    """
+    O QUE FAZ: abre um endereço numa aba NOVA do grupo Nex. As outras abas não mudam.
+    QUANDO USAR: para ir a um site que ainda não está aberto (exemplo: "abre o Gmail").
+    COMO USAR: url completa com https:// (exemplo: https://mail.google.com/). Se o Alexssander só disse o nome do site, use o endereço principal dele.
+    NÃO FAÇA: não abra várias páginas seguidas sem ler a anterior; não abra de novo um site que já está nas abas (veja browser_tabs); não use para trocar uma aba existente (use browser_reuse_tab); só aceita http e https.
+    RETORNA: o número da aba aberta. Depois SEMPRE leia a página com browser_get_dom.
+    SE DER ERRO: "ritmo alto", "fora do escopo" ou "bloqueado" = avise o Alexssander em uma frase e pare; "limite de abas" = peça para ele fechar abas do grupo.
+    """
     return await _open(url, 0)
 
 
 @mcp.tool()
 async def browser_reuse_tab(tab_id: int, url: str) -> str:
-    """Troca o endereço de uma aba que JÁ está no grupo Nex (o conteúdo atual dela é substituído). Para abrir uma página sem perder as outras, use browser_navigate."""
+    """
+    O QUE FAZ: troca o endereço de uma aba que JÁ está no grupo Nex. O conteúdo atual dela é perdido.
+    QUANDO USAR: só quando o Alexssander pedir para reaproveitar ou trocar uma aba, ou quando o grupo estiver cheio.
+    COMO USAR: tab_id = número da aba (de browser_tabs); url completa com https://.
+    NÃO FAÇA: não use para abrir um site novo (use browser_navigate); não use em aba em que o Alexssander está trabalhando sem ele pedir.
+    RETORNA: o número da aba. Depois SEMPRE leia com browser_get_dom.
+    SE DER ERRO: "não está no grupo Nex" = chame browser_tabs e use um número da lista.
+    """
     if not int(tab_id):
         raise RuntimeError("Informe o tab_id de uma aba do grupo (veja browser_tabs).")
     return await _open(url, tab_id)
@@ -227,7 +248,14 @@ async def browser_reuse_tab(tab_id: int, url: str) -> str:
 
 @mcp.tool()
 async def browser_get_dom(tab_id: int = 0) -> str:
-    """Lê o texto visível e os itens clicáveis de uma aba do grupo Nex (a atual, ou a indicada em tab_id). Não mexe nas abas fora do grupo."""
+    """
+    O QUE FAZ: lê o texto visível e a lista de itens clicáveis ([número] tipo nome) de uma aba do grupo Nex.
+    QUANDO USAR: depois de abrir, trocar, clicar ou digitar, e SEMPRE antes de dizer qualquer coisa sobre uma página. Nunca responda sobre uma página sem ter lido.
+    COMO USAR: sem argumentos lê a aba atual. Para outra aba, passe tab_id (de browser_tabs).
+    NÃO FAÇA: não invente o que não apareceu; não reuse números de itens de uma leitura antiga ou de outra aba.
+    RETORNA: "Aba [número] endereço", o texto visível (até 6000 caracteres) e "Interativos" com os números para clicar ou digitar. Página longa vem cortada: diga isso se faltar parte.
+    SE VIER VAZIO: espere um instante e chame de novo uma vez.
+    """
     await _get_pacer().before_action()
     payload = await _call("get_dom", tabId=int(tab_id) or None)
     items = payload.get("items") or []
@@ -244,7 +272,14 @@ async def browser_get_dom(tab_id: int = 0) -> str:
 
 @mcp.tool()
 async def browser_click(element_id: int, tab_id: int = 0) -> str:
-    """Clica um elemento de uma aba do grupo Nex (a atual, ou a indicada em tab_id). O número vem de browser_get_dom da mesma aba."""
+    """
+    O QUE FAZ: clica num item da página (botão, link, aba ou menu do site). Pede autorização do Alexssander.
+    QUANDO USAR: para abrir um link, apertar um botão, trocar de aba ou menu do site.
+    COMO USAR: element_id = o número entre colchetes do item, na lista Interativos da ÚLTIMA leitura DA MESMA ABA. Em outra aba, passe também tab_id.
+    NÃO FAÇA: não clique para digitar num campo (use browser_type); não adivinhe número; se o item não está na lista, diga que não achou; não clique em enviar, comprar, apagar ou confirmar se o Alexssander não pediu isso.
+    RETORNA: só a confirmação do clique, não o resultado. Depois SEMPRE chame browser_get_dom e relate o que apareceu.
+    SE DER ERRO "não está mais na aba": leia a página de novo e use o número novo.
+    """
     await _get_pacer().before_action()
     await _call("click", elementId=int(element_id), tabId=int(tab_id) or None)
     return f"Clique em [{element_id}] feito no grupo Nex. A página pode ter mudado: chame browser_get_dom para ver o que apareceu antes de relatar qualquer resultado."
@@ -252,7 +287,13 @@ async def browser_click(element_id: int, tab_id: int = 0) -> str:
 
 @mcp.tool()
 async def browser_type(element_id: int, text: str, press_enter: bool = False, tab_id: int = 0) -> str:
-    """Digita num campo de uma aba do grupo Nex (a atual, ou a indicada em tab_id). O número vem de browser_get_dom da mesma aba."""
+    """
+    O QUE FAZ: digita um texto num campo da página (busca, caixa de texto, formulário). Pede autorização do Alexssander.
+    QUANDO USAR: para escrever num campo. Ele já foca o campo e troca o conteúdo: NÃO clique no campo antes.
+    COMO USAR: element_id = número do campo na lista Interativos da última leitura da mesma aba; text = exatamente o texto; press_enter=true só para executar uma busca. Em outra aba, passe também tab_id.
+    NÃO FAÇA: não digite senha, código ou dado financeiro sem perguntar antes ao Alexssander; não aperte Enter em formulário de envio sem ele pedir; não digite em campo que não está na lista.
+    RETORNA: o valor que ficou no campo. Depois chame browser_get_dom para ver a reação da página (tradução, resultados) e só então relate.
+    """
     await _get_pacer().before_action()
     result = await _call("type", elementId=int(element_id), text=text, pressEnter=bool(press_enter), tabId=int(tab_id) or None)
     now = (result or {}).get("value")
@@ -262,7 +303,13 @@ async def browser_type(element_id: int, text: str, press_enter: bool = False, ta
 
 @mcp.tool()
 async def browser_close() -> str:
-    """Solta o controle das abas do grupo Nex. Não fecha abas nem o Chrome."""
+    """
+    O QUE FAZ: solta o controle das abas do grupo Nex (some o aviso de depuração do Chrome). Não fecha abas nem o Chrome.
+    QUANDO USAR: só quando terminar o trabalho no navegador ou quando o Alexssander pedir.
+    COMO USAR: sem argumentos.
+    NÃO FAÇA: não use para "fechar a aba": você não fecha abas.
+    RETORNA: confirmação.
+    """
     try:
         await _call("release")
     except RuntimeError:

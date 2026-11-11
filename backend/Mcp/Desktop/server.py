@@ -119,7 +119,13 @@ def _controls(win):
 
 @mcp.tool()
 def desktop_list_windows() -> str:
-    """Lista os títulos das janelas abertas e visíveis no Windows (texto simples, sem imagem)."""
+    """
+    O QUE FAZ: lista os títulos das janelas abertas e visíveis no Windows (texto, sem imagem).
+    QUANDO USAR: antes de qualquer ação num aplicativo do Windows, para saber o título exato da janela.
+    COMO USAR: sem argumentos.
+    NÃO FAÇA: não use para ler páginas da web (para isso são as ferramentas browser_*); não chute títulos.
+    RETORNA: até 40 títulos, um por linha.
+    """
     try:
         titles = _visible_titles()
         if not titles:
@@ -131,7 +137,14 @@ def desktop_list_windows() -> str:
 
 @mcp.tool()
 def desktop_inspect_window(title: str) -> str:
-    """Traz a janela para o foco e lista seus principais botões e controles (tipo e nome), em texto."""
+    """
+    O QUE FAZ: traz uma janela para o foco e lista os botões e controles dela (tipo e nome).
+    QUANDO USAR: antes de clicar em algo num aplicativo, para descobrir os nomes dos controles.
+    COMO USAR: title = parte do título da janela, como apareceu em desktop_list_windows.
+    NÃO FAÇA: não use em navegador para ler página (use browser_*); não repita sem necessidade.
+    RETORNA: até 60 linhas no formato tipo + nome.
+    SE DER ERRO "janela não encontrada": chame desktop_list_windows e use o título certo.
+    """
     try:
         win = _find_window(title)
         try:
@@ -152,7 +165,13 @@ def desktop_inspect_window(title: str) -> str:
 
 @mcp.tool()
 def desktop_click_element(window_title: str, element_name: str) -> str:
-    """Acha um botão/elemento pelo nome dentro da janela, move o mouse até o centro dele e clica."""
+    """
+    O QUE FAZ: acha um controle pelo nome dentro de uma janela, move o mouse até ele e clica. Pede autorização do Alexssander.
+    QUANDO USAR: para apertar um botão ou item de um aplicativo do Windows.
+    COMO USAR: window_title = parte do título da janela; element_name = nome do controle EXATAMENTE como apareceu em desktop_inspect_window.
+    NÃO FAÇA: não adivinhe nomes; não use em sites dentro do navegador; não clique em fechar, apagar ou enviar sem o Alexssander pedir.
+    RETORNA: confirmação do clique. Depois inspecione a janela de novo para conferir o resultado.
+    """
     try:
         pag = _pag()
         win = _find_window(window_title)
@@ -185,7 +204,13 @@ def desktop_click_element(window_title: str, element_name: str) -> str:
 
 @mcp.tool()
 def desktop_mouse_click(x: int, y: int, button: str = "left", clicks: int = 1) -> str:
-    """Move o mouse para (x, y) da tela e clica. button: left, right ou middle. clicks: 1 a 3."""
+    """
+    O QUE FAZ: move o mouse para uma posição da tela (x, y) e clica. Pede autorização do Alexssander.
+    QUANDO USAR: só como último recurso, quando o controle não tem nome em desktop_inspect_window.
+    COMO USAR: x e y em pixels da tela; button = left, right ou middle; clicks = 1 a 3.
+    NÃO FAÇA: não chute coordenadas; não use se desktop_click_element resolve.
+    RETORNA: confirmação, ou aviso de que a posição está fora da tela.
+    """
     try:
         pag = _pag()
         if button not in ("left", "right", "middle"):
@@ -203,7 +228,13 @@ def desktop_mouse_click(x: int, y: int, button: str = "left", clicks: int = 1) -
 
 @mcp.tool()
 def desktop_type(text: str) -> str:
-    """Digita o texto na janela/campo que está em foco (aceita acentos). \\n vira Enter."""
+    """
+    O QUE FAZ: digita um texto na janela ou campo que está em foco (aceita acentos; quebra de linha vira Enter). Pede autorização do Alexssander.
+    QUANDO USAR: para escrever num aplicativo do Windows (Bloco de Notas, por exemplo).
+    COMO USAR: antes, garanta o foco com desktop_inspect_window ou desktop_click_element. Máximo de 2000 caracteres por chamada.
+    NÃO FAÇA: não use para sites no navegador (use browser_type); não digite sem ter certeza de qual janela está em foco.
+    RETORNA: quantos caracteres foram digitados.
+    """
     try:
         _pag()  # garante o fail-safe ligado
         from pywinauto import keyboard
@@ -220,7 +251,13 @@ def desktop_type(text: str) -> str:
 
 @mcp.tool()
 def desktop_press_hotkey(keys: list[str]) -> str:
-    """Pressiona uma tecla ou combinação, ex.: ["ctrl","s"], ["alt","tab"], ["enter"], ["win"]."""
+    """
+    O QUE FAZ: aperta uma tecla ou combinação de teclas. Pede autorização do Alexssander.
+    QUANDO USAR: para atalhos (salvar, copiar, trocar de janela) ou teclas como Enter e Esc.
+    COMO USAR: keys = lista de teclas em minúsculas, por exemplo ["ctrl","s"], ["alt","tab"], ["enter"].
+    NÃO FAÇA: não use combinações destrutivas (alt+f4, ctrl+w, win+l, ctrl+alt+del) sem o Alexssander pedir; não invente nomes de teclas.
+    RETORNA: confirmação, ou a lista de teclas desconhecidas.
+    """
     try:
         pag = _pag()
         norm = [k.strip().lower() for k in keys if k.strip()]
@@ -237,7 +274,13 @@ def desktop_press_hotkey(keys: list[str]) -> str:
 
 @mcp.tool()
 def desktop_take_screenshot(filename: str = "") -> str:
-    """Captura a tela inteira sob demanda e salva em arquivo; devolve só o caminho e o tamanho (o Nex não lê imagens)."""
+    """
+    O QUE FAZ: captura a tela inteira e salva num arquivo PNG.
+    QUANDO USAR: só quando o Alexssander pedir uma captura.
+    COMO USAR: filename opcional.
+    NÃO FAÇA: não use para "ver" a tela: você não lê imagens (use desktop_list_windows e desktop_inspect_window).
+    RETORNA: só o caminho do arquivo e o tamanho da imagem.
+    """
     try:
         pag = _pag()
         SHOTS_DIR.mkdir(parents=True, exist_ok=True)

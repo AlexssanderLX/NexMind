@@ -17,6 +17,8 @@ public sealed class McpServerEntry
     public string[]? AllowedTools { get; set; }
     /// <summary>Trechos de caminho que nunca podem ser lidos nem escritos (chaves, credenciais, perfis de navegador...).</summary>
     public string[]? BlockedPaths { get; set; }
+    /// <summary>Descrição exata de cada ferramenta (nome -> texto) que substitui a do servidor: o que faz, quando usar, como usar, o que não fazer. O modelo pequeno segue o que está aqui.</summary>
+    public Dictionary<string, string>? Descriptions { get; set; }
     public Dictionary<string, string>? Env { get; set; }
 }
 
@@ -124,7 +126,8 @@ public sealed class McpRegistry : IAsyncDisposable
                         // aprova se está na lista do arquivo, se o servidor marca como destrutiva, ou se o arquivo não definiu lista
                         var needs = cfg.RequiresApproval is null || Matches(cfg.RequiresApproval, t.Name)
                                     || p.Annotations?.DestructiveHint == true;
-                        found.Add(new NexTool(name, t.Name, t.Description ?? "", p.InputSchema, needs, IsWrite: needs));
+                        var description = cfg.Descriptions is not null && cfg.Descriptions.TryGetValue(t.Name, out var custom) && !string.IsNullOrWhiteSpace(custom) ? custom : t.Description ?? "";
+                        found.Add(new NexTool(name, t.Name, description, p.InputSchema, needs, IsWrite: needs));
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)

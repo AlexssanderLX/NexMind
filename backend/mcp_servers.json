@@ -50,7 +50,15 @@
         "get_file_info",
         "write_file",
         "edit_file"
-      ]
+      ],
+      "descriptions": {
+        "read_text_file": "O QUE FAZ: lê um arquivo de texto (código, .md, .txt, .json, .csv...) de qualquer pasta do PC.\nQUANDO USAR: quando o Alexssander pedir para ler, resumir ou analisar um arquivo.\nCOMO USAR: path = caminho completo do Windows. Em arquivo grande, use head (primeiras N linhas) ou tail (últimas N linhas).\nNÃO FAÇA: não leia PDF, DOCX, planilha ou imagem por aqui (o Alexssander anexa esses pelo clipe do chat); não leia arquivo inteiro se ele for gigante; não invente caminho (use list_directory ou search_files).\nRETORNA: o texto do arquivo. Caminhos de chaves e credenciais são recusados.",
+        "list_directory": "O QUE FAZ: lista os arquivos e pastas de uma pasta, marcando [FILE] ou [DIR].\nQUANDO USAR: para descobrir o que existe numa pasta antes de ler ou editar.\nCOMO USAR: path = caminho completo da pasta.\nNÃO FAÇA: não use para ler conteúdo (use read_text_file); não liste a pasta raiz inteira do disco sem necessidade.\nRETORNA: uma linha por item.",
+        "search_files": "O QUE FAZ: procura arquivos pelo nome dentro de uma pasta e das subpastas.\nQUANDO USAR: quando o Alexssander disser o nome (ou parte) de um arquivo e você não souber onde está.\nCOMO USAR: path = pasta onde começar; pattern = parte do nome (exemplo: relatorio). excludePatterns é opcional.\nNÃO FAÇA: não procure pelo conteúdo do arquivo (só pelo nome); não comece de uma pasta enorme sem necessidade.\nRETORNA: a lista de caminhos encontrados.",
+        "get_file_info": "O QUE FAZ: mostra tamanho, datas e tipo de um arquivo ou pasta, sem ler o conteúdo.\nQUANDO USAR: para saber se um arquivo existe e o tamanho dele antes de ler.\nCOMO USAR: path = caminho completo.\nNÃO FAÇA: não use para ler o conteúdo (use read_text_file).\nRETORNA: tamanho, datas e permissões.",
+        "write_file": "O QUE FAZ: cria um arquivo ou SUBSTITUI POR COMPLETO o conteúdo de um existente. Pede autorização do Alexssander, com aviso das consequências.\nQUANDO USAR: para criar um arquivo novo ou reescrever um arquivo inteiro a pedido do Alexssander.\nCOMO USAR: path = caminho completo (a pasta segura é backend/data/workspace); content = o texto completo do arquivo.\nNÃO FAÇA: não use para mudar só um trecho (use edit_file); não sobrescreva um arquivo que você não leu antes; não escreva fora da pasta de trabalho sem o Alexssander pedir.\nRETORNA: confirmação.",
+        "edit_file": "O QUE FAZ: troca trechos exatos de texto dentro de um arquivo existente. Pede autorização do Alexssander, com aviso das consequências.\nQUANDO USAR: para corrigir ou alterar parte de um arquivo, sem reescrever tudo.\nCOMO USAR: edits = lista de {oldText, newText}; oldText deve ser IGUAL ao trecho do arquivo (leia antes com read_text_file). dryRun=true só mostra a mudança, sem gravar.\nNÃO FAÇA: não edite sem ler o arquivo antes; não use oldText aproximado; não use para criar arquivo (use write_file).\nRETORNA: o diff (o que mudou)."
+      }
     },
     "browser": {
       "command": "backend/data/mcp/browser/venv/Scripts/python.exe",

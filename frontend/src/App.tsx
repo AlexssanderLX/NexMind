@@ -6,7 +6,7 @@ import SettingsPanel from "./components/SettingsPanel";
 import Sidebar from "./components/Sidebar";
 import type { ConversationSummary, Message, Metrics, OllamaStatus, Settings } from "./types";
 
-const DEFAULTS: Settings = { model: "qwen3:8b", numCtx: 4096, think: "auto", system: "" };
+const DEFAULTS: Settings = { model: "qwen3:4b", numCtx: 4096, think: "auto", system: "" };
 
 function loadSettings(): Settings {
   try {
@@ -30,6 +30,7 @@ export default function App() {
   const [chatError, setChatError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const modelChecked = useRef(false);
 
   const refreshList = useCallback(() => api.list().then(setConversations).catch(() => {}), []);
 
@@ -58,6 +59,14 @@ export default function App() {
     const t = setInterval(poll, 2000);
     return () => clearInterval(t);
   }, []);
+
+  // Na primeira conexão: se o modelo salvo não está instalado, usa o primeiro instalado.
+  useEffect(() => {
+    if (modelChecked.current || !status?.connected || status.models.length === 0) return;
+    modelChecked.current = true;
+    if (!status.models.some((m) => m.name === settings.model))
+      setSettings((s) => ({ ...s, model: status.models[0].name }));
+  }, [status, settings.model]);
 
   useEffect(() => {
     refreshList();
@@ -127,12 +136,17 @@ export default function App() {
     const patchLast = (fn: (m: Message) => Message) =>
       setMessages((all) => all.map((m, i) => (i === all.length - 1 ? fn(m) : m)));
 
+    let firstEvent = true;
     try {
       await streamChat(
         id,
         text,
         settings,
         (ev) => {
+          if (firstEvent) {
+            firstEvent = false;
+            refreshList(); // a conversa já está salva com título: mostra na sidebar logo
+          }
           if (ev.type === "token") patchLast((m) => ({ ...m, content: m.content + ev.text }));
           else if (ev.type === "thinking") patchLast((m) => ({ ...m, thinking: (m.thinking ?? "") + ev.text }));
           else if (ev.type === "done") patchLast((m) => ({ ...m, stats: ev.stats }));
@@ -151,90 +165,126 @@ export default function App() {
     }
   }
 
-  const connected = status?.connected && !backendDown;
+  const connected = !!status?.connected && !backendDown;
   const banner = backendDown
-    ? "Backend não está respondendo (http://localhost:5080). Inicie com start.ps1."
+    ? "O backend não está respondendo (http://localhost:5080). Inicie com start.ps1."
     : status && !status.connected
       ? status.error
       : null;
+  const title = conversations.find((c) => c.id === activeId)?.title ?? "Nova conversa";
 
   return (
-    <div className="flex h-screen">
-      <Sidebar items={conversations} activeId={activeId} onNew={newConversation} onSelect={select} onDelete={remove} />
+    <div className="flex h-full">
+      <Sidebar
+        items={conversations}
+        activeId={activeId}
+        connected={connected}
+        connectionLabel={
+          backendDown ? "Backend desconectado" : connected ? `Ollama ${status?.version} conectado` : "Ollama desconectado"
+        }
+        onNew={newConversation}
+        onSelect={select}
+        onDelete={remove}
+      />
 
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-2">
-          <div className="flex items-center gap-2 text-sm">
-            <span className={`h-2.5 w-2.5 rounded-full ${connected ? "bg-emerald-500" : "bg-red-500"}`} />
-            <span className="text-neutral-300">
-              {connected ? `Ollama ${status?.version} conectado` : "Ollama desconectado"}
+      <main className="flex min-w-0 flex-1 flex-col bg-bg">
+        <header className="flex items-center justify-between px-6 py-3">
+          <div className="flex min-w-0 items-baseline gap-3">
+            <h1 className="truncate text-sm font-medium">{title}</h1>
+            <span className="shrink-0 text-xs text-mute">
+              {settings.model} · ctx {settings.numCtx}
             </span>
-            <span className="text-neutral-600">· {settings.model} · ctx {settings.numCtx}</span>
           </div>
           <button
             onClick={() => setShowSettings((s) => !s)}
-            className="rounded border border-neutral-700 px-2 py-1 text-xs hover:bg-neutral-800"
+            className="rounded-lg px-3 py-1.5 text-xs text-mute hover:bg-white/5 hover:text-fg"
           >
             {showSettings ? "Fechar configurações" : "Configurações"}
           </button>
         </header>
 
-        {banner && <div className="border-b border-red-900 bg-red-950/60 px-4 py-2 text-sm text-red-300">{banner}</div>}
+        {banner && <div className="border-y border-red-900/60 bg-red-950/50 px-6 py-2 text-sm text-red-300">{banner}</div>}
         {showSettings && <SettingsPanel settings={settings} onChange={setSettings} status={status} />}
         <ResourceBar metrics={metrics} />
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-          {messages.length === 0 && (
-            <p className="mt-20 text-center text-sm text-neutral-600">
-              {status?.connected && status.models.length === 0
-                ? `Nenhum modelo instalado. Rode: ollama pull ${settings.model}`
-                : "Escreva uma pergunta para começar."}
-            </p>
-          )}
-          {messages.map((m, i) => (
-            <MessageView key={i} m={m} streaming={streaming && i === messages.length - 1 && m.role === "assistant"} />
-          ))}
-          {chatError && (
-            <div className="rounded border border-red-900 bg-red-950/60 px-3 py-2 text-sm text-red-300">
-              {chatError}
-            </div>
-          )}
-          <div ref={bottomRef} />
+        <div className="flex-1 overflow-y-auto px-6 py-6">
+          <div className="mx-auto max-w-3xl space-y-6">
+            {messages.length === 0 && (
+              <div className="mt-24 text-center">
+                <div className="text-4xl text-accent">✦</div>
+                <h2 className="mt-4 text-2xl font-medium">Como posso ajudar?</h2>
+                <p className="mt-2 text-sm text-mute">
+                  {status?.connected && status.models.length === 0
+                    ? `Nenhum modelo instalado. Rode: ollama pull ${settings.model}`
+                    : "Escreva uma pergunta abaixo para começar."}
+                </p>
+              </div>
+            )}
+            {messages.map((m, i) => (
+              <MessageView key={i} m={m} streaming={streaming && i === messages.length - 1 && m.role === "assistant"} />
+            ))}
+            {chatError && (
+              <div className="rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-300">
+                {chatError}
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
         </div>
 
-        <form
-          className="flex gap-2 border-t border-neutral-800 p-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            send();
-          }}
-        >
-          <textarea
-            className="max-h-40 min-h-[44px] flex-1 resize-none rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-500"
-            placeholder="Pergunte algo… (Enter envia, Shift+Enter quebra linha)"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
+        <div className="px-6 pb-4">
+          <form
+            className="mx-auto max-w-3xl rounded-2xl border border-line bg-panel p-3 shadow-lg shadow-black/20"
+            onSubmit={(e) => {
+              e.preventDefault();
+              send();
             }}
-          />
-          {streaming ? (
-            <button
-              type="button"
-              onClick={() => abortRef.current?.abort()}
-              className="rounded bg-red-700 px-4 text-sm hover:bg-red-600"
-            >
-              Parar
-            </button>
-          ) : (
-            <button type="submit" disabled={!input.trim()} className="rounded bg-blue-600 px-4 text-sm hover:bg-blue-500 disabled:opacity-40">
-              Enviar
-            </button>
-          )}
-        </form>
+          >
+            <textarea
+              className="block max-h-48 min-h-[48px] w-full resize-none bg-transparent px-2 py-1 text-[15px] outline-none placeholder:text-mute"
+              placeholder="Converse com o Nex…"
+              rows={2}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+            />
+            <div className="mt-1 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setShowSettings(true)}
+                className="rounded-lg px-2 py-1 text-xs text-mute hover:bg-white/5 hover:text-fg"
+                title="Abrir configurações"
+              >
+                {settings.model}
+              </button>
+              {streaming ? (
+                <button
+                  type="button"
+                  onClick={() => abortRef.current?.abort()}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-fg text-bg hover:opacity-90"
+                  title="Parar"
+                >
+                  ■
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!input.trim()}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-lg font-semibold text-white hover:opacity-90 disabled:opacity-30"
+                  title="Enviar"
+                >
+                  ↑
+                </button>
+              )}
+            </div>
+          </form>
+          <p className="mt-2 text-center text-[11px] text-mute">Nex roda localmente no seu computador, via Ollama.</p>
+        </div>
       </main>
     </div>
   );

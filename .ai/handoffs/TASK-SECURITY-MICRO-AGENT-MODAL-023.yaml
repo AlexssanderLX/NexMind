@@ -29,3 +29,4 @@ acceptance_criteria:
   - test: Perguntar "Quero saber o que esse app faz" no modo Security faz o Nex explicar com maestria o Security Workbench e metodologia WSTG.
   - test: A barra de 6 etapas ocupa a largura total da janela com visual polido.
   - test: O botao arrastavel do robo permite abrir o micro-chat de um subagente (ex: Recon) em modal flutuante na mesma tela e trocar mensagens sobre aquele contexto.
+

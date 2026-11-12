@@ -46,6 +46,7 @@ builder.Services.AddSingleton(new McpRegistry(Path.Combine(builder.Environment.C
 builder.Services.AddSingleton<ApprovalBroker>();
 builder.Services.AddSingleton(sp => new ConversationMemory(sp.GetRequiredService<ConversationStore>()));
 builder.Services.AddSingleton(sp => new SecurityNotes(sp.GetRequiredService<ConversationStore>()));
+builder.Services.AddSingleton<LocalAi.Api.Services.BackgroundTaskManager>();
 builder.Services.AddTransient<SubagentRunner>();
 
 var app = builder.Build();
@@ -57,6 +58,10 @@ var api = app.MapGroup("/api");
 
 // --- Conexão com o Ollama + modelos instalados
 api.MapGet("/status", (OllamaClient ollama, CancellationToken ct) => ollama.GetStatusAsync(ct));
+
+// --- Tarefas em background ativas (para resiliência a F5 e navegação)
+api.MapGet("/tasks/active", (LocalAi.Api.Services.BackgroundTaskManager tm) => tm.ListActive());
+api.MapPost("/tasks/{id}/cancel", (string id, LocalAi.Api.Services.BackgroundTaskManager tm) => { tm.CancelTask(id); return Results.Ok(); });
 
 // --- Consumo de recursos (máquina + modelo carregado)
 api.MapGet("/metrics", async (SystemMetrics sys, OllamaClient ollama, CancellationToken ct) =>
@@ -153,9 +158,8 @@ api.MapPost("/conversations/{id}/security/{agent}/chat", async (string id, strin
 
 // --- Chat com streaming (NDJSON: {type: thinking|token|done|error, ...})
 api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpContext ctx,
-    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes, RagEngine rag) =>
+    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes, RagEngine rag, LocalAi.Api.Services.BackgroundTaskManager taskManager) =>
 {
-    var ct = ctx.RequestAborted;
     var conv = store.Get(id);
     if (conv is null) { ctx.Response.StatusCode = 404; return; }
     if (string.IsNullOrWhiteSpace(req.Content) || string.IsNullOrWhiteSpace(req.Model) || req.NumCtx < 256)
@@ -178,11 +182,23 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
     conv.Model = req.Model;
     store.Save(conv); // a pergunta fica salva mesmo se o Ollama falhar
 
+    var history = conv.Messages.Select(m => (m.Role, m.Content)).ToList();
+    var osintTarget = OsintEngine.ResolveTarget(userText, history);
+    var taskTitle = osintTarget is not null ? $"OSINT: {osintTarget}" : userText.Length > 28 ? userText[..28] + "…" : userText;
+    // Tarefa desacoplada em background: F5 ou troca de aba não abortam o processamento
+    var activeTask = taskManager.StartTask(id, conv.Mode, taskTitle, out var taskCt);
+    var ct = taskCt;
+
     ctx.Response.ContentType = "application/x-ndjson";
     async Task Send(object o)
     {
-        await ctx.Response.WriteAsync(JsonSerializer.Serialize(o, json) + "\n", ct);
-        await ctx.Response.Body.FlushAsync(ct);
+        if (ctx.RequestAborted.IsCancellationRequested) return;
+        try
+        {
+            await ctx.Response.WriteAsync(JsonSerializer.Serialize(o, json) + "\n", ctx.RequestAborted);
+            await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+        }
+        catch { /* Se o usuário deu F5 ou navegou, a conexão HTTP encerra mas a tarefa de background continua gerando */ }
     }
 
     var content = new StringBuilder();
@@ -192,11 +208,9 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
 
     try
     {
-        var history = conv.Messages.Select(m => (m.Role, m.Content)).ToList();
         // Regra base: respostas diretas. O modelo de 4B tende a escrever muito; texto longo custa tempo (tokens na GPU/CPU).
         var textLower = userText.ToLowerInvariant();
         // pesquisa na web liga pela frase ("pesquise na internet…", "busque no google…"), sem interruptor; o filtro antes da busca continua
-        var osintTarget = OsintEngine.ResolveTarget(userText, history);
         var wantsOsint = OsintEngine.WantsInvestigation(userText);
         var autoSearch = req.Search || IntentRouter.WantsSearch(userText) || textLower.Contains("pesquisa na web") || textLower.Contains("pesquise na internet") || wantsOsint;
         var searchAddon = "";
@@ -217,7 +231,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                     await Send(new { type = "thinking", text = msg });
                 }
                 await Progress($"💭 [Investigação OSINT]\n• Alvo: {osintTarget}\n• Escopo: Reconhecimento Passivo Multi-Vetores\n");
-                var result = await research.InvestigateTargetAsync(osintTarget, Progress, ct);
+                var result = await research.InvestigateTargetAsync(osintTarget, Progress, taskCt);
                 foreach (var fact in result.Facts)
                     memory.AddFact(conv.Id, fact);
                 investigationTarget = osintTarget;
@@ -227,7 +241,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                 searchAddon = "\n\nREGRA DE OURO DA INTELIGÊNCIA:\n" +
                     "1. É terminantemente PROIBIDO gerar links ou citar redes sociais que NÃO constem na lista abaixo.\n" +
                     "2. Se um vetor veio vazio, escreva \"Nenhum registro encontrado\" ou omita. Jamais invente handle ou link no formato site.com/@usuario.\n" +
-                    "3. Saída: só o Sumário Executivo dos Fatos Confirmados. Sem próximos passos, sem repetir o nome das ferramentas. No máximo 150 tokens.\n\n" +
+                    "3. Saída: Apresente o Sumário Executivo de Inteligência com os fatos confirmados de forma direta e concisa. Se a busca não retornou dados nesta consulta, diga claramente que não foram encontrados registros públicos indexados nesta consulta.\n\n" +
                     $"Alvo: {osintTarget}\nResultados brutos desta rodada:\n{notes}\n";
             }
         }
@@ -391,9 +405,9 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             }
             List<ToolCall>? calls = null;
             var roundText = new StringBuilder();
-            var replyCap = investigationTarget is null ? (int?)null : 150;
+            var replyCap = investigationTarget is null ? (int?)null : 1024;
             await foreach (var chunk in ollama.ChatAsync(req.Model, system, history, numCtx, investigationTarget is null ? req.Think : false, numGpu,
-                               extra, investigationTarget is null && round < MaxToolRounds && ollamaTools.Count > 0 ? ollamaTools : null, replyCap, ct))
+                               extra, investigationTarget is null && round < MaxToolRounds && ollamaTools.Count > 0 ? ollamaTools : null, replyCap, taskCt))
             {
                 if (!string.IsNullOrEmpty(chunk.Thinking))
                 {
@@ -473,7 +487,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                         turnBudget -= r.Text.Length;
                         result = r.Ok ? r.Text : "ERRO: " + r.Text;
                         // motor de fatos: o que a ferramenta comprovou vai para facts.md (sem custo de GPU)
-                        if (r.Ok && FactExtractor.Extract(tool.Name, call.Arguments, r.Text) is { } fact) memory.AddFact(conv.Id, fact);
+                        var extractedFact = FactExtractor.Extract(tool.Name, call.Arguments, r.Text);
+                        if (r.Ok && extractedFact is not null) memory.AddFact(conv.Id, extractedFact);
                         var shown = result.Length > 800 ? result[..800] : result;
                         await Send(new { type = "mcp", name = tool.QualifiedName, state = r.Ok ? "concluida" : "falhou", detail = shown });
                     }
@@ -497,7 +512,9 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
     if (store.Get(id) is { TitleEdited: true } renamed) { conv.Title = renamed.Title; conv.TitleEdited = true; }
     store.Save(conv);
 
-    if (ct.IsCancellationRequested) return;
+    taskManager.FinishTask(activeTask.Id);
+
+    if (ctx.RequestAborted.IsCancellationRequested) return;
     await Send(error is null ? new { type = "done", stats } : new { type = "error", message = error });
 });
 

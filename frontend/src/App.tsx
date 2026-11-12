@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, streamChat } from "./api";
+import { api, streamChat, type ActiveTask } from "./api";
 import Background from "./components/Background";
 import MessageView from "./components/MessageView";
 import MetricsModal, { loadColor, loadPercent } from "./components/MetricsModal";
@@ -167,6 +167,23 @@ export default function App() {
     localStorage.setItem("settings", JSON.stringify(settings));
   }, [settings]);
 
+  const [activeTasks, setActiveTasks] = useState<ActiveTask[]>([]);
+
+  // Monitor de tarefas em background (resiliência a F5 e troca de modo)
+  usePolling(async () => {
+    try {
+      const list = await api.activeTasks();
+      setActiveTasks(list);
+      // Se há tarefa ativa na conversa e ela terminou enquanto o usuário estava fora ou após F5
+      if (activeId) {
+        const c = await api.get(activeId);
+        if (c.messages.length > messages.length) {
+          setMessages(c.messages);
+        }
+      }
+    } catch {}
+  }, 2000);
+
   // Conexão com o Ollama (a cada 10 s) e consumo (10 s só para a cor da bolinha; 1,5 s com o modal aberto).
   // As consultas pausam com a aba escondida.
   usePolling(async () => {
@@ -187,7 +204,7 @@ export default function App() {
 
   /** Troca de workspace: cada modo tem as suas conversas; ao trocar, abre uma tela limpa do modo novo. */
   function changeMode(next: MicroAppMode) {
-    if (streaming || next === microApp) return;
+    if (next === microApp) return;
     setMicroApp(next);
     setActiveId(null);
     setMessages([]);
@@ -491,13 +508,36 @@ export default function App() {
       <main className="relative flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 px-6 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <WorkspaceSwitcher mode={microApp} onChange={changeMode} disabled={streaming} />
+            <WorkspaceSwitcher mode={microApp} onChange={changeMode} />
             <h1 className="truncate text-sm font-medium">{title}</h1>
             <span className="shrink-0 text-xs text-mute max-sm:hidden" title="O contexto é escolhido por mensagem (4096 na GPU, sobe só quando precisa). O valor das Configurações é o máximo.">
               {activeModel} · ctx adaptativo (máx. {settings.numCtx})
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {activeTasks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const t = activeTasks[0];
+                  if (t && t.conversationId) {
+                    if (t.mode && t.mode !== microApp) setMicroApp(t.mode as MicroAppMode);
+                    select(t.conversationId);
+                  }
+                }}
+                className="flex items-center gap-2 rounded-full border border-cyan-400/40 bg-cyan-950/70 px-3 py-1 text-xs text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.3)] transition-all hover:bg-cyan-900/60"
+                title="Clique para ir até a conversa desta tarefa ativa"
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75"></span>
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-500"></span>
+                </span>
+                <span className="max-w-[170px] truncate font-medium">{activeTasks[0].title}</span>
+                {activeTasks.length > 1 && (
+                  <span className="rounded-full bg-cyan-800/80 px-1.5 text-[10px]">+{activeTasks.length - 1}</span>
+                )}
+              </button>
+            )}
             {microApp === "security" && (
               <>
                 <span className="rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-accent" title="Modo Security ativo">

@@ -11,7 +11,17 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 
 export type DevNode = { name: string; path: string; directory: boolean; children: DevNode[] };
 
+export type ActiveTask = {
+  id: string;
+  conversationId: string;
+  mode: string;
+  title: string;
+  startedAt: string;
+};
+
 export const api = {
+  activeTasks: () => req<ActiveTask[]>("/api/tasks/active"),
+  cancelTask: (id: string) => req<void>(`/api/tasks/${id}/cancel`, { method: "POST" }),
   status: () => req<OllamaStatus>("/api/status"),
   metrics: () => req<Metrics>("/api/metrics"),
   /** Só as conversas do modo (workspace) informado; sem modo, todas. */

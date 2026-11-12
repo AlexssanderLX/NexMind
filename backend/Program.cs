@@ -9,6 +9,7 @@ using LocalAi.Api.Planning;
 using LocalAi.Api.Security;
 using LocalAi.Api.Storage;
 using LocalAi.Api.Tools;
+using LocalAi.Api.Dev;
 using LocalAi.Api.Rag;
 using LocalAi.Api.Voice;
 
@@ -23,6 +24,7 @@ builder.Services.AddHttpClient<OllamaClient>((sp, http) =>
 });
 builder.Services.AddSingleton(new ConversationStore(Path.Combine(builder.Environment.ContentRootPath, "data", "conversations")));
 builder.Services.AddSingleton(new RagEngine(Path.Combine(builder.Environment.ContentRootPath, "data", "conversations")));
+builder.Services.AddSingleton<WorkspaceManager>();
 builder.Services.AddSingleton<SystemMetrics>();
 builder.Services.AddSingleton<VoiceEngine>();
 builder.Services.AddSingleton(sp =>
@@ -455,6 +457,37 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
 
     if (ct.IsCancellationRequested) return;
     await Send(error is null ? new { type = "done", stats } : new { type = "error", message = error });
+});
+
+// --- Dev Workbench: uma pasta por sessão, sempre presa à raiz aberta
+api.MapPost("/dev/workspace/open", (WorkspaceOpen body, WorkspaceManager ws) =>
+{
+    try { return Results.Ok(new { path = ws.Open(body.Path) }); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+});
+api.MapGet("/dev/workspace/tree", (WorkspaceManager ws) =>
+{
+    try { return Results.Ok(new { root = ws.Root, nodes = ws.Tree() }); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+});
+api.MapGet("/dev/workspace/file", (string path, WorkspaceManager ws) =>
+{
+    try { return Results.Ok(new { path, content = ws.Read(path) }); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+});
+api.MapPost("/dev/workspace/file", (WorkspaceFile body, WorkspaceManager ws) =>
+{
+    try { return Results.Ok(new { path = body.Path, bytes = ws.Write(body.Path, body.Content ?? "") }); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+});
+api.MapPost("/dev/workspace/command", async (WorkspaceCommand body, WorkspaceManager ws, CancellationToken ct) =>
+{
+    try
+    {
+        var (exit, output) = await ws.RunAsync(body.Command, ct);
+        return Results.Ok(new { command = body.Command, exitCode = exit, output });
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
 });
 
 // --- Anexos: lê o arquivo (PDF, DOCX, md, texto, código...) e devolve o texto para ir junto da mensagem

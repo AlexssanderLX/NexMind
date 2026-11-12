@@ -34,3 +34,6 @@ public record ApprovalDecision(bool Approve);
 /// <param name="NumCtx">Teto de contexto (Configurações); o contexto real é adaptativo, como no chat principal.</param>
 public record SubagentRequest(string Content, string Model, int NumCtx);
 public record VaultWrite(string? Text);
+public record WorkspaceOpen(string Path);
+public record WorkspaceFile(string Path, string? Content);
+public record WorkspaceCommand(string Command);

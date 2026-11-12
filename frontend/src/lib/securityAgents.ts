@@ -1,5 +1,6 @@
 // Nex Security: os subagentes especialistas e o prompt do modo. Funções puras, com testes em frontend/tests.
 import type { MicroAppMode } from "../types";
+import { DEV_DOMAIN_PROMPT } from "./devPrompt.ts";
 import { clampWindow } from "./geometry.ts";
 
 export type AgentId = "recon" | "auth" | "input" | "logic" | "verify";
@@ -40,8 +41,9 @@ export const SECURITY_KNOWLEDGE = [
 /** O `system` enviado ao backend: o das Configurações, mais o do modo Security quando ele está ativo. */
 export function composeSystem(base: string, mode: MicroAppMode): string {
   const clean = base.trim();
-  if (mode !== "security") return clean;
-  return [clean, SECURITY_DOMAIN_PROMPT, SECURITY_KNOWLEDGE].filter(Boolean).join("\n\n");
+  if (mode === "security") return [clean, SECURITY_DOMAIN_PROMPT, SECURITY_KNOWLEDGE].filter(Boolean).join("\n\n");
+  if (mode === "dev") return [clean, DEV_DOMAIN_PROMPT].filter(Boolean).join("\n\n");
+  return clean;
 }
 
 /** Separa os anexos ([[ARQUIVO nome]] … [[/ARQUIVO]]) do texto digitado, para mostrar só um chip por arquivo. */

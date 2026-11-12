@@ -15,7 +15,7 @@ export type ToolRun = {
 };
 
 /** Micro App ativo na barra lateral: conversa geral ou o modo de segurança (OWASP Workbench). */
-export type MicroAppMode = "general" | "security";
+export type MicroAppMode = "general" | "security" | "dev";
 
 export type Message = {
   role: "user" | "assistant";

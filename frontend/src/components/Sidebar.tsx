@@ -9,6 +9,12 @@ const ShieldIcon = () => (
   </svg>
 );
 
+const CodeIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M8 8l-4 4 4 4" />
+    <path d="M16 8l4 4-4 4" />
+  </svg>
+);
 const PanelIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
     <rect x="3" y="4" width="18" height="16" rx="3" />
@@ -97,8 +103,16 @@ export default function Sidebar({
             +
           </button>
           <button
+            onClick={() => onMicroApp(microApp === "dev" ? "general" : "dev")}
+            title={microApp === "dev" ? "Micro App: Dev (clique para voltar ao Geral)" : "Micro App: Dev"}
+            aria-pressed={microApp === "dev"}
+            className={`mt-2 rounded-lg p-2 hover:bg-white/5 ${microApp === "dev" ? "text-accent" : "text-mute hover:text-accent"}`}
+          >
+            <CodeIcon />
+          </button>
+          <button
             onClick={() => onMicroApp(microApp === "security" ? "general" : "security")}
-            title={microApp === "security" ? "Micro App: Security (clique para voltar ao Geral)" : "Micro App: Geral (clique para o modo Security)"}
+            title={microApp === "security" ? "Micro App: Security (clique para voltar ao Geral)" : "Micro App: Security"}
             aria-pressed={microApp === "security"}
             className={`mt-2 rounded-lg p-2 hover:bg-white/5 ${microApp === "security" ? "text-accent" : "text-mute hover:text-accent"}`}
           >
@@ -134,11 +148,12 @@ export default function Sidebar({
 
           <div className="px-5 pb-1 pt-2 text-xs font-medium text-mute">Micro Apps</div>
           <div className="px-3 pb-1">
-            <div role="radiogroup" aria-label="Micro Apps" className="grid grid-cols-2 gap-1 rounded-lg border border-accent/15 p-1">
+            <div role="radiogroup" aria-label="Micro Apps" className="grid grid-cols-3 gap-1 rounded-lg border border-accent/15 p-1">
               {(
                 [
                   ["general", "Geral", null],
                   ["security", "Security", <ShieldIcon key="shield" />],
+                  ["dev", "Dev", <CodeIcon key="code" />],
                 ] as const
               ).map(([mode, label, icon]) => (
                 <button

@@ -2,9 +2,14 @@ import type { Conversation, ConversationSummary, Metrics, OllamaStatus, Settings
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  if (!r.ok) {
+    const detail = await r.text().catch(() => "");
+    throw new Error(detail || `${r.status} ${r.statusText}`);
+  }
   return r.status === 204 ? (undefined as T) : r.json();
 }
+
+export type DevNode = { name: string; path: string; directory: boolean; children: DevNode[] };
 
 export const api = {
   status: () => req<OllamaStatus>("/api/status"),
@@ -49,6 +54,22 @@ export const api = {
     }
     return (await r.json()) as { name: string; text: string; chars: number; truncated: boolean };
   },
+  devOpen: (path: string) =>
+    req<{ path: string }>("/api/dev/workspace/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) }),
+  devTree: () => req<{ root: string; nodes: DevNode[] }>("/api/dev/workspace/tree"),
+  devRead: (path: string) => req<{ path: string; content: string }>(`/api/dev/workspace/file?path=${encodeURIComponent(path)}`),
+  devWrite: (path: string, content: string) =>
+    req<{ path: string; bytes: number }>("/api/dev/workspace/file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, content }),
+    }),
+  devCommand: (command: string) =>
+    req<{ command: string; exitCode: number; output: string }>("/api/dev/workspace/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command }),
+    }),
 };
 
 /** Envia a mensagem e entrega os eventos NDJSON conforme chegam. */

@@ -11,6 +11,7 @@ import SecurityVaultModal from "./components/SecurityVaultModal";
 import type { VaultKey } from "./lib/vaults";
 import SettingsModal from "./components/SettingsModal";
 import Sidebar from "./components/Sidebar";
+import DevWorkspace from "./components/dev/DevWorkspace";
 import { useNexCore } from "./hooks/useNexCore";
 import { usePolling } from "./hooks/usePolling";
 import { useVoice } from "./hooks/useVoice";
@@ -104,7 +105,10 @@ export default function App() {
   // O painel "Ferramentas" é um monitor das tasks em andamento, atualizado pelos eventos do stream.
   const [toolTasks, setToolTasks] = useState<Record<ToolKey, ToolTask>>(IDLE_TASKS);
   const lastPathRef = useRef("");
-  const [microApp, setMicroApp] = useState<MicroAppMode>(() => (localStorage.getItem("nexMicroApp") === "security" ? "security" : "general"));
+  const [microApp, setMicroApp] = useState<MicroAppMode>(() => {
+    const saved = localStorage.getItem("nexMicroApp");
+    return saved === "security" || saved === "dev" ? saved : "general";
+  });
   const [approval, setApproval] = useState<{ id: string; tool: string; args: unknown; write?: boolean; warning?: string | null } | null>(null);
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadVoice);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
@@ -468,6 +472,11 @@ export default function App() {
 
       {/* sem z-index aqui: um z-index criaria um contexto de empilhamento isolado e o canvas do núcleo (mix-blend-mode: screen) não conseguiria se misturar com o fundo da página */}
       <main className="relative flex min-w-0 flex-1 flex-col">
+        {microApp === "dev" && (
+          <div className="absolute inset-0 z-20 flex min-h-0 flex-col bg-[#070d1a]">
+            <DevWorkspace settings={settings} />
+          </div>
+        )}
         <header className="flex items-center justify-between gap-3 px-6 py-3">
           <div className="flex min-w-0 items-baseline gap-3">
             <h1 className="truncate text-sm font-medium">{title}</h1>

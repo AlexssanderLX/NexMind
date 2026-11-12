@@ -9,6 +9,7 @@ using LocalAi.Api.Planning;
 using LocalAi.Api.Security;
 using LocalAi.Api.Storage;
 using LocalAi.Api.Tools;
+using LocalAi.Api.Rag;
 using LocalAi.Api.Voice;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,6 +22,7 @@ builder.Services.AddHttpClient<OllamaClient>((sp, http) =>
     http.Timeout = Timeout.InfiniteTimeSpan; // streaming longo; cancelamento vem do cliente
 });
 builder.Services.AddSingleton(new ConversationStore(Path.Combine(builder.Environment.ContentRootPath, "data", "conversations")));
+builder.Services.AddSingleton(new RagEngine(Path.Combine(builder.Environment.ContentRootPath, "data", "conversations")));
 builder.Services.AddSingleton<SystemMetrics>();
 builder.Services.AddSingleton<VoiceEngine>();
 builder.Services.AddSingleton(sp =>
@@ -74,6 +76,22 @@ api.MapPatch("/conversations/{id}", (string id, RenameRequest body, Conversation
     if (string.IsNullOrWhiteSpace(body.Title)) return Results.BadRequest("O nome não pode ficar vazio.");
     return s.Rename(id, body.Title) is { } title ? Results.Ok(new { id, title }) : Results.NotFound();
 });
+// Micro-RAG: ingestão em background e listagem dos arquivos já fatiados
+api.MapPost("/conversations/{id}/rag/upload", async (string id, HttpRequest req, ConversationStore store, RagEngine rag, CancellationToken ct) =>
+{
+    if (store.FolderFor(id) is null) return Results.NotFound();
+    if (!req.HasFormContentType) return Results.BadRequest("Envie o arquivo como multipart.");
+    var form = await req.ReadFormAsync(ct);
+    var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+    if (file is null || file.Length == 0) return Results.BadRequest("Arquivo vazio.");
+    await using var buffer = new MemoryStream();
+    await file.CopyToAsync(buffer, ct);
+    var fileId = rag.StartIngest(id, buffer.ToArray(), file.FileName);
+    return Results.Accepted($"/api/conversations/{id}/rag/files", new { fileId });
+});
+api.MapGet("/conversations/{id}/rag/files", (string id, ConversationStore store, RagEngine rag) =>
+    store.FolderFor(id) is null ? Results.NotFound() : Results.Ok(rag.GetFiles(id)));
+
 // Caderno da conversa (índices e tópicos): leitura, para inspeção e testes
 api.MapGet("/conversations/{id}/memory", (string id, ConversationMemory m) =>
 {

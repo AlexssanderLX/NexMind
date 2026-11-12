@@ -57,6 +57,7 @@ export default function DevCopilotPanel({
         settings.system.trim(),
         DEV_DOMAIN_PROMPT,
         workspace ? `Pasta aberta: ${workspace}` : "Nenhuma pasta aberta ainda.",
+        "O arquivo aberto já está no disco e no editor. Responda sobre esse código. Não repita o arquivo inteiro. Não chame o navegador, não use browser_get_dom e não escreva JSON de ferramenta.",
         notes ? `Gavetas do projeto:\n${notes}` : "",
         ram > 0.75 ? "A memória da máquina passou de 75%. Resuma e grave as decisões na gaveta de Arquitetura antes de continuar." : "",
       ]
@@ -91,9 +92,9 @@ export default function DevCopilotPanel({
         </p>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-auto px-3 py-3 text-sm">
-        {messages.length === 0 && <p className="text-mute">Pergunte sobre o código da pasta aberta. O arquivo inteiro não entra no prompt.</p>}
+        {messages.length === 0 && <p className="text-mute">Pergunte sobre o arquivo aberto. A resposta fica neste painel, com quebra de linha.</p>}
         {messages.map((m, i) => (
-          <p key={i} className={m.role === "user" ? "text-accent" : "whitespace-pre-wrap text-fg"}>
+          <p key={i} className={m.role === "user" ? "min-w-0 whitespace-pre-wrap break-all text-accent" : "min-w-0 whitespace-pre-wrap break-all text-fg"}>
             {m.content || (busy && i === messages.length - 1 ? "…" : "")}
           </p>
         ))}

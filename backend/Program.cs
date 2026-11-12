@@ -300,7 +300,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         var (_, agentIndex0) = memory.Indexes(conv.Id);
         var hasRag = rag.GetFiles(conv.Id).Count > 0;
         var intent = IntentRouter.Route(userText, req.Tools, req.Browser, req.Desktop, hasNotes: agentIndex0.Contains("nota(s)"), hasRagFiles: hasRag);
-        var autoBrowser = kind != OperatorIntentKind.Capabilities && kind != OperatorIntentKind.Planning && intent.Browser;
+        var autoBrowser = conv.Mode != "dev" && kind != OperatorIntentKind.Capabilities && kind != OperatorIntentKind.Planning && intent.Browser;
         var autoFiles = kind != OperatorIntentKind.Capabilities && kind != OperatorIntentKind.Planning && intent.Files;
         var autoDesktop = kind != OperatorIntentKind.Capabilities && kind != OperatorIntentKind.Planning && intent.Desktop;
         IReadOnlyList<NexTool> mcpTools = [];
@@ -387,7 +387,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                 if (active.Length > 12_000) active = active[..12_000] + "\n…";
                 system += "\n\n[ESTADO ATUAL DA BANCADA DEV]\n" +
                           $"Projeto: {session.RootPath}\nMapa Arquitetural do Projeto:\n{digest}\n\n" +
-                          $"Arquivo em Edição na Tela: {session.ActiveFile}\nConteúdo Completo do Arquivo Ativo:\n```{ext}\n{active}\n```\n";
+                          $"Arquivo em Edição na Tela: {session.ActiveFile}\nConteúdo Completo do Arquivo Ativo:\n```{ext}\n{active}\n```\n" +
+                          "Responda sobre esse arquivo. Não repita o arquivo inteiro. Não chame o navegador nem escreva uma chamada de ferramenta em JSON.\n";
                 if (!string.IsNullOrWhiteSpace(req.Selection))
                     system += $"[Trecho selecionado pelo usuário nas linhas {req.SelectionStart}-{req.SelectionEnd}: {req.Selection}]\n";
             }

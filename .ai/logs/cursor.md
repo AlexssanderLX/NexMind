@@ -14,3 +14,4 @@
 | 2026-11-12 | TASK-MICRO-RAG-INGEST | `eeb4a0e` | Micro-RAG nativo: ingestão em streaming, chunks com linha de origem, OCR e índice BM25 em memória | N/A |
 | 2026-11-12 | TASK-MICRO-RAG-TOOLS | `5f7672e` | Ferramentas rag_list_files, rag_search e rag_read_chunk no Nex e nos subagentes, com citação da linha | N/A |
 | 2026-11-12 | TASK-DEV-WORKBENCH | `4ce5ba7` | Micro App Dev: explorador, editor com abas e copilot lateral na pasta aberta | N/A |
+| 2026-11-12 | TASK-DEV-LAYOUT | `76a865e` | Cabeçalho permanente no Dev, colunas arrastáveis e painéis fechados na abertura | N/A |

@@ -29,3 +29,4 @@ acceptance_criteria:
   - test: Enviar "Bom dia Nex" gera resposta em menos de 1 segundo em 4096 ctx sem carregar schemas de MCP.
   - test: O card de raciocinio (ThinkingCard) exibe o bloco de planejamento com a decisao de contexto e ferramentas antes da resposta.
   - test: Pedir uma acao de navegador ou arquivo ativa especificamente aquela ferramenta e ajusta o contexto dinamicamente.
+

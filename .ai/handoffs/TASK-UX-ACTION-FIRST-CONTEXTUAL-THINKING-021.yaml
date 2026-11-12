@@ -1,0 +1,29 @@
+task_id: TASK-UX-ACTION-FIRST-CONTEXTUAL-THINKING-021
+title: Redesenho de UX Action-First com Pilula Contextual de Tarefa e Thinking (Estilo Cursor / Claude Code)
+assigned_by: Antigravity
+assigned_to: Cursor / Claude
+status: READY
+created_at: "2026-11-12T11:33:30Z"
+context:
+  goal: Eliminar o balao solto de thinking no topo da mensagem. O agente deve exibir sua fala/intencao primeiro e, logo abaixo, uma pilula compacta retratil com o status da tarefa executada e o raciocinio correspondente, permitindo inspecionar erros pontuais.
+  worktree: .worktrees/develop
+  reference_files:
+    - frontend/src/components/MessageView.tsx
+    - frontend/src/components/ThinkingCard.tsx
+    - frontend/src/components/ToolAccordion.tsx
+    - .ai/knowledge/security/ESPECIFICACAO_UX_ACTION_FIRST.md
+
+requirements:
+  - id: REQ-01
+    description: Em `MessageView.tsx`, inverter a ordem de exibicao para que o texto da mensagem (`m.content`) apareca no topo, e as tarefas/raciocinio aparecam logo abaixo da acao correspondente.
+  - id: REQ-02
+    description: Fundir visualmente o `ToolAccordion` e o `ThinkingCard` em um componente unificado `TaskThinkingPill.tsx` compacto (1 linha), exibindo resumo de acoes (ex: `⚡ 1 pagina inspecionada · 💭 Raciocinio`) expansivel por clique.
+  - id: REQ-03
+    description: Se uma ferramenta falhar ou retornar erro, a pilula deve exibir destaque visual em vermelho/ambar (`⚠️ Falha na acao · Inspecionar`) permitindo ao usuario abrir e ver exatamente o erro daquela execucao.
+  - id: REQ-04
+    description: Manter build do frontend (`npm --prefix frontend run build`) sem erros.
+
+acceptance_criteria:
+  - test: O texto do agente aparece primeiro sem ser empurrado por um balao gigante no topo.
+  - test: A pilula de tarefa fica compacta e recolhida por padrao apos terminar a geracao.
+  - test: Clicar na pilula abre o raciocinio e log das ferramentas daquela acao especifica.

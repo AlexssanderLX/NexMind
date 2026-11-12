@@ -15,3 +15,4 @@
 | 2026-11-12 | TASK-MICRO-RAG-TOOLS | `5f7672e` | Ferramentas rag_list_files, rag_search e rag_read_chunk no Nex e nos subagentes, com citação da linha | N/A |
 | 2026-11-12 | TASK-DEV-WORKBENCH | `4ce5ba7` | Micro App Dev: explorador, editor com abas e copilot lateral na pasta aberta | N/A |
 | 2026-11-12 | TASK-DEV-LAYOUT | `76a865e` | Cabeçalho permanente no Dev, colunas arrastáveis e painéis fechados na abertura | N/A |
+| 2026-11-12 | TASK-OSINT-VRAM | `8dc625b` | Maestria em OSINT no Security e contexto preso em 4k/8k enquanto o texto couber na GPU | N/A |

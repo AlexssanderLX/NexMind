@@ -33,6 +33,9 @@ public static class ContextPlanner
         var pick = Steps.FirstOrDefault(s => s >= needed);
         if (pick == 0) pick = Steps[^1];
         if (usesMcp && pick < 8192) pick = 8192; // ferramenta de navegador/arquivo não cabe direito em 4k
+        // 16k tira camadas da RTX 3050. Só sobe se histórico + ferramentas passarem de 14 mil caracteres.
+        var contentChars = (promptTokens + conversationTokens) * 3;
+        if (contentChars <= 14_000 && pick > 8192) pick = 8192;
 
         string? warning = null;
         var cap = Math.Max(ceiling, 1024);
@@ -54,7 +57,7 @@ public static class ContextPlanner
 
     public static string GpuNote(int numCtx) => numCtx switch
     {
-        <= 8192 => "100% na GPU",
+        <= 8192 => "100% na GPU (velocidade máxima)",
         <= 16384 => "24 de 36 camadas na GPU, 12 na RAM",
         _ => "~36% na CPU",
     };

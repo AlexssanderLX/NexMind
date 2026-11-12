@@ -231,7 +231,7 @@ try
 
     // ---------- contexto adaptativo
     var p0 = ContextPlanner.Plan(32768, 1800, 20, usesMcp: false, attachmentChars: 0, loadedCtx: null);
-    Check("contexto: 'Bom dia Nex' fica em 4096 e 100% GPU", p0.NumCtx == 4096 && p0.Complexity == "direta" && p0.GpuNote == "100% na GPU" && p0.Warning is null, $"{p0.NumCtx} {p0.Complexity}");
+    Check("contexto: 'Bom dia Nex' fica em 4096 e 100% GPU", p0.NumCtx == 4096 && p0.Complexity == "direta" && p0.GpuNote.Contains("100% na GPU") && p0.Warning is null, $"{p0.NumCtx} {p0.Complexity}");
     var p1 = ContextPlanner.Plan(32768, 3000, 100, usesMcp: true, attachmentChars: 0, loadedCtx: null);
     Check("contexto: ferramenta MCP sobe para 8192 (ainda 100% GPU)", p1.NumCtx == 8192 && p1.Complexity == "ferramenta" && p1.Warning is null, $"{p1.NumCtx}");
     var p2 = ContextPlanner.Plan(32768, 1800, 9000, usesMcp: false, attachmentChars: 30000, loadedCtx: null);
@@ -244,7 +244,7 @@ try
     Check("contexto: modelo já carregado em 8192 não recarrega para 4096", ContextPlanner.Plan(32768, 1800, 20, false, 0, 8192).NumCtx == 8192);
     Check("contexto: histerese não passa de 8192 (16k fica caro na GPU)", ContextPlanner.Plan(32768, 1800, 20, false, 0, 16384).NumCtx == 4096);
     Check("contexto: carregado menor que o necessário não segura", ContextPlanner.Plan(32768, 3000, 100, true, 0, 4096).NumCtx == 8192);
-    Check("contexto: GpuNote por faixa", ContextPlanner.GpuNote(4096) == "100% na GPU" && ContextPlanner.GpuNote(8192) == "100% na GPU" && ContextPlanner.GpuNote(16384).Contains("12 na RAM") && ContextPlanner.GpuNote(32768).Contains("CPU"));
+    Check("contexto: GpuNote por faixa", ContextPlanner.GpuNote(4096).Contains("100% na GPU") && ContextPlanner.GpuNote(8192).Contains("velocidade máxima") && ContextPlanner.GpuNote(16384).Contains("12 na RAM") && ContextPlanner.GpuNote(32768).Contains("CPU"));
     Check("contexto: estimativa de tokens (3 caracteres por token)", ContextPlanner.EstimateTokens(300) == 100 && ContextPlanner.EstimateTokens(301) == 101);
 
     // ---------- telemetria e bloco de planejamento
@@ -252,12 +252,12 @@ try
     Check("telemetria: corta texto longo e tira quebra de linha", ToolTelemetry.Summarize(Args("{\"text\":\"" + new string('a', 200) + "\\nlinha\"}")).Length <= 141);
     Check("telemetria: objeto aninhado vira reticências e não-objeto vira vazio", ToolTelemetry.Summarize(Args("{\"edits\":[1,2]}")) == "edits=…" && ToolTelemetry.Summarize(Args("[]")) == "");
     var blockDirect = ToolTelemetry.PlanningBlock(R("Bom dia"), p0);
-    Check("planejamento: conversa direta mostra contexto 4096 e nenhuma ferramenta", blockDirect.Contains("[Planejamento de Execução]") && blockDirect.Contains("Contexto: 4096 (100% na GPU)") && blockDirect.Contains("Ferramentas: nenhuma"), blockDirect);
+    Check("planejamento: conversa direta mostra contexto 4096 e nenhuma ferramenta", blockDirect.Contains("[Planejamento de Execução]") && blockDirect.Contains("Contexto: 4096 (100% na GPU (velocidade máxima))") && blockDirect.Contains("Ferramentas: nenhuma"), blockDirect);
     var blockTools = ToolTelemetry.PlanningBlock(R("abre https://x.com"), p1);
     Check("planejamento: com navegador mostra Ferramentas: [Navegador] e contexto 8192", blockTools.Contains("Ferramentas: [Navegador]") && blockTools.Contains("Contexto: 8192"), blockTools);
     var mem0 = ToolTelemetry.MemoryTelemetry(p0, notebookAvailable: false);
     Check("memória ativa: mostra tokens usados, contexto e a porcentagem", mem0.Contains($"{p0.EstimatedTokens}/4096 tokens") && mem0.Contains("% ocupado") && p0.EstimatedTokens == 1820, mem0);
-    var memHot = ToolTelemetry.MemoryTelemetry(new ContextPlan(4096, "direta", "100% na GPU", null, 3700), notebookAvailable: true);
+    var memHot = ToolTelemetry.MemoryTelemetry(new ContextPlan(4096, "direta", "100% na GPU (velocidade máxima)", null, 3700), notebookAvailable: true);
     Check("memória ativa: 90% de ocupação e a diretriz de descarregar no caderno", memHot.Contains("(90% ocupado)") && memHot.Contains("75%") && memHot.Contains("topic_write"), memHot);
     Check("memória ativa: sem caderno a diretriz não promete uma ferramenta que não existe", !mem0.Contains("topic_write") && mem0.Contains("resuma os achados"));
     Check("memória ativa: porcentagem fica entre 1 e 100", ToolTelemetry.MemoryTelemetry(new ContextPlan(4096, "d", "g", null, 0), true).Contains("(1% ocupado)") && ToolTelemetry.MemoryTelemetry(new ContextPlan(4096, "d", "g", null, 99999), true).Contains("(100% ocupado)"));

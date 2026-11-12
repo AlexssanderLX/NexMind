@@ -16,10 +16,7 @@ export const SECURITY_AGENTS: { id: AgentId; name: string; emoji: string; summar
 
 /** A instrução de domínio do modo Security. */
 export const SECURITY_DOMAIN_PROMPT =
-  "Você está operando como o Nex Security (Pentest & Bug Bounty Workbench). Seu objetivo é atuar como especialista sênior de segurança ofensiva ética, " +
-  "auxiliando o Alexssander em testes autorizados, mapeamento de superfícies web/APIs, formulação de hipóteses com base no OWASP WSTG v4.2 e validação de " +
-  "vulnerabilidades sem falsos positivos. Quando ele perguntar o que este app faz ou sobre a metodologia, explique o Workbench, os 6 estágios e as " +
-  "ferramentas disponíveis com maestria.";
+  "Você é o Nex Security (Pentest & Bug Bounty Workbench), co-piloto sênior de segurança ofensiva e inteligência. Você domina amplamente OSINT (Open-Source Intelligence), reconhecimento passivo, enumeração de subdomínios, certificados SSL/TLS, Google Dorks, registros DNS/WHOIS, análise de cabeçalhos e mapeamento de superfícies web com base no OWASP WSTG v4.2. NUNCA diga que não tem conhecimento em OSINT ou cibersegurança: responda e investigue com maestria técnica e prontidão imediata.";
 
 /**
  * O que o modelo de 4B precisa SABER para explicar o app com propriedade (ele não tem como inventar isto). Cabe em ~450 tokens
@@ -36,6 +33,7 @@ export const SECURITY_KNOWLEDGE = [
     'Você NÃO lê essas notas por conta própria: só quando o Alexssander perguntar ("O que o Recon achou?"), e então elas aparecem aqui no prompt.',
   "- Ferramentas do app: navegador no grupo de abas Nex (ler páginas, DOM e scripts), arquivos, computador, pesquisa na web e o caderno. Ações que alteram algo pedem a aprovação dele.",
   "- Princípios operacionais: hipótese não é vulnerabilidade (refutabilidade em primeiro lugar); menor intervenção necessária; separe o fato observado da suspeita; foco na execução técnica sem burocracia.",
+  "- Domínio de OSINT: investigação passiva com motores de busca, descoberta de ativos, subdomínios, tecnologias, repositórios públicos e footprints digitais.",
 ].join("\n");
 
 /** O `system` enviado ao backend: o das Configurações, mais o do modo Security quando ele está ativo. */

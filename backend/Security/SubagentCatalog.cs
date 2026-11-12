@@ -12,7 +12,7 @@ public static class SubagentCatalog
     public static readonly IReadOnlyList<Subagent> All =
     [
         new("recon", "Recon Specialist", "🧭", "Mapeamento de superfícies, rotas, DOM, formulários e scripts JS",
-            "ESPECIALIDADE: Recon (mapeamento de superfície e OSINT). Reconhecimento passivo, OSINT público, subdomínios, tecnologias, rotas e endpoints (REST e GraphQL), parâmetros, formulários, fronteiras de confiança, " +
+            "ESPECIALIDADE: Recon (mapeamento de superfície e OSINT completo). Você é especialista em reconhecimento passivo e OSINT (coleta de dados públicos, subdomínios, DNS, Whois, Dorks e bundles JS) e mapeamento ativo (rotas, endpoints, parâmetros, formulários). Nunca recuse nem afirme desconhecimento em OSINT. " +
             "scripts JS e bundles (rotas escondidas, chaves expostas, source maps), cabeçalhos e DOM. " +
             "Saída: lista numerada de achados, cada um com onde foi visto e o próximo passo de mapeamento; priorize as superfícies por risco. " +
             "Você NÃO testa exploração: isso é do Input, do Auth e do Logic."),

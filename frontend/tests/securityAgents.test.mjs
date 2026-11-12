@@ -18,15 +18,15 @@ test("modo Geral: o system das Configurações segue como está (só sem espaço
 
 test("modo Security: injeta a instrução de domínio do Nex Security", () => {
   const s = composeSystem("", "security");
-  assert.ok(s.startsWith("Você está operando como o Nex Security (Pentest & Bug Bounty Workbench)."));
-  assert.ok(s.includes("especialista sênior de segurança ofensiva ética"));
+  assert.ok(s.startsWith("Você é o Nex Security (Pentest & Bug Bounty Workbench), co-piloto sênior de segurança ofensiva e inteligência."));
+  assert.ok(s.includes("domina amplamente OSINT"));
+  assert.ok(s.includes("NUNCA diga que não tem conhecimento em OSINT"));
   assert.ok(s.includes("OWASP WSTG v4.2"));
-  assert.ok(s.includes("explique o Workbench, os 6 estágios e as ferramentas disponíveis com maestria."));
 });
 
 test("modo Security: o system das Configurações vem antes e é preservado", () => {
   const s = composeSystem("Responda em português.", "security");
-  assert.ok(s.startsWith("Responda em português.\n\nVocê está operando como o Nex Security"));
+  assert.ok(s.startsWith("Responda em português.\n\nVocê é o Nex Security"));
 });
 
 test("modo Security: o modelo recebe o conhecimento para explicar o app (estágios, Workbench, subagentes, notas)", () => {
@@ -36,7 +36,7 @@ test("modo Security: o modelo recebe o conhecimento para explicar o app (estági
   for (const a of ["Recon", "Auth", "Input", "Logic", "Verify"]) assert.ok(s.includes(a), a);
   assert.ok(s.includes("recon.md") && s.includes("INDEX.md"));
   assert.ok(s.includes("Você NÃO lê essas notas por conta própria"), "a regra de ouro do micro-RAG está no prompt");
-  assert.ok(s.includes("BOLA/IDOR") && s.includes("SSRF") && s.includes("contraprovas"));
+  assert.ok(s.includes("Domínio de OSINT"));
 });
 
 test("o prompt do modo é compacto (~450 tokens de conhecimento + a instrução), para não pesar", () => {

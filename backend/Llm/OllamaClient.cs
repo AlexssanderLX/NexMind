@@ -78,6 +78,7 @@ public class OllamaClient(HttpClient http, IOptions<OllamaOptions> options)
     public async IAsyncEnumerable<ChatChunk> ChatAsync(
         string model, string? system, IEnumerable<(string Role, string Content)> messages, int numCtx, bool? think,
         int? numGpu, IReadOnlyList<object>? extraMessages, IReadOnlyList<object>? tools,
+        int? numPredict,
         [EnumeratorCancellation] CancellationToken ct)
     {
         var msgs = new List<object>();
@@ -85,12 +86,15 @@ public class OllamaClient(HttpClient http, IOptions<OllamaOptions> options)
         msgs.AddRange(messages.Select(m => (object)new { role = m.Role, content = m.Content }));
         if (extraMessages is not null) msgs.AddRange(extraMessages); // troca de ferramentas desta rodada (assistant tool_calls + tool)
 
+        var options = new Dictionary<string, object> { ["num_ctx"] = numCtx };
+        if (numGpu is int gpu) options["num_gpu"] = gpu;
+        if (numPredict is int predict) options["num_predict"] = predict;
         var body = new Dictionary<string, object?>
         {
             ["model"] = model,
             ["stream"] = true,
             ["messages"] = msgs,
-            ["options"] = numGpu is null ? new { num_ctx = numCtx } : (object)new { num_ctx = numCtx, num_gpu = numGpu },
+            ["options"] = options,
         };
         if (think is not null) body["think"] = think;
         if (tools is { Count: > 0 }) body["tools"] = tools;

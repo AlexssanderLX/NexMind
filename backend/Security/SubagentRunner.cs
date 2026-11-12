@@ -99,7 +99,7 @@ public sealed class SubagentRunner
                 List<ToolCall>? calls = null;
                 var roundText = new StringBuilder();
                 await foreach (var chunk in _ollama.ChatAsync(model, system, history, plan.NumCtx, null, numGpu, extra,
-                                   round < MaxRounds ? tools : null, ct))
+                                   round < MaxRounds ? tools : null, numPredict: null, ct))
                 {
                     if (!string.IsNullOrEmpty(chunk.Content))
                     {

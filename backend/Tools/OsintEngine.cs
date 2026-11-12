@@ -29,6 +29,43 @@ public sealed partial class OsintEngine(IHttpClientFactory httpFactory, Research
         return target.Length >= 3 ? target : null;
     }
 
+        public static string? EmbeddedDomain(string text)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(text ?? "", @"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success ? match.Value : null;
+    }
+
+    public static bool WantsInvestigation(string userText)
+    {
+        var n = LocalAi.Api.Planning.IntentRouter.Normalize(userText ?? "");
+        return n.Contains("osint") || n.Contains("quem e ") || n.Contains("sobre ele") || n.Contains("proximos passos") || n.Contains("pesquise");
+    }
+
+    public static string? ResolveTarget(string userText, IEnumerable<(string Role, string Content)> history)
+    {
+        if (TargetOf(userText) is { } direct) return direct;
+        var loose = Loose(userText);
+        if (loose is not null) return loose;
+        foreach (var msg in history.Reverse())
+        {
+            if (!string.Equals(msg.Role, "user", StringComparison.OrdinalIgnoreCase)) continue;
+            if (TargetOf(msg.Content) is { } prev) return prev;
+            if (Loose(msg.Content) is { } prevLoose) return prevLoose;
+        }
+        return EmbeddedDomain(userText);
+    }
+
+    private static string? Loose(string userText)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(userText ?? "", @"(?:quem\s+[eé]|pesquise(?:\s+sobre)?|pesquisar)\s+(.+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!match.Success) return null;
+        var target = match.Groups[1].Value.Trim().Trim('.', '?', '!', '"');
+        if (target.Length < 3) return null;
+        var lower = target.ToLowerInvariant();
+        if (lower is "ele" or "ela" or "isso" or "este" or "esta") return null;
+        return target;
+    }
+
     public static bool IsDomain(string target)
     {
         var host = target.Trim().TrimEnd('/');

@@ -263,10 +263,14 @@ try
     Check("memória ativa: sem caderno a diretriz não promete uma ferramenta que não existe", !mem0.Contains("topic_write") && mem0.Contains("resuma os achados"));
     Check("memória ativa: porcentagem fica entre 1 e 100", ToolTelemetry.MemoryTelemetry(new ContextPlan(4096, "d", "g", null, 0), true).Contains("(1% ocupado)") && ToolTelemetry.MemoryTelemetry(new ContextPlan(4096, "d", "g", null, 99999), true).Contains("(100% ocupado)"));
     Check("planejamento: o aviso de desempenho aparece no bloco", ToolTelemetry.PlanningBlock(R("oi"), p2).Contains("⚠"));
-    var osintBlock = ToolTelemetry.PlanningBlock(R("osint"), p0, osintTarget: "exemplo.com", osintFacts: 3);
-    Check("osint: o balão mostra as fases e os fatos, sem camada de GPU", osintBlock.Contains("[Investigação OSINT]") && osintBlock.Contains("Alvo: exemplo.com") && osintBlock.Contains("Fase 1:") && osintBlock.Contains("Fase 2:") && osintBlock.Contains("3 fatos catalogados em facts.md") && !osintBlock.Contains("camadas"), osintBlock);
+    var osintBlock = ToolTelemetry.PlanningBlock(R("osint"), p0, osintTarget: "exemplo.com");
+    Check("osint: o balão mostra o alvo e o escopo, sem camada de GPU", osintBlock.Contains("[Investigação OSINT]") && osintBlock.Contains("Alvo: exemplo.com") && osintBlock.Contains("Reconhecimento Passivo Multi-Vetores") && !osintBlock.Contains("camadas"), osintBlock);
     Check("osint: extrai o alvo da frase", OsintEngine.TargetOf("Faça um OSINT sobre Alexssander Ferreira de Almeida") == "Alexssander Ferreira de Almeida");
     Check("osint: domínio é domínio e nome não é", OsintEngine.IsDomain("exemplo.com.br") && !OsintEngine.IsDomain("Alexssander Ferreira de Almeida"));
+    var vectors = Research.Vectors("Ada Lovelace");
+    Check("osint: três vetores de pessoa e nenhum certificado", vectors.Count == 3 && vectors[0].Query.Contains("site:github.com") && vectors[1].Query.Contains("linkedin.com/in") && vectors[2].Query.Contains("jusbrasil.com.br"));
+    Check("osint: domínio ganha o vetor crt.sh", Research.Vectors("exemplo.com").Any(v => v.Query.Contains("crt.sh")));
+    Check("osint: próximos passos reaproveitam o alvo anterior", OsintEngine.ResolveTarget("faz os próximos passos", new[] { ("user", "Faça um OSINT sobre Ada Lovelace") }) == "Ada Lovelace");
 
     // ---------- Nex Security: catálogo dos subagentes
     var ids = SubagentCatalog.All.Select(a => a.Id).ToList();

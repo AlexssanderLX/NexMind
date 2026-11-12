@@ -41,16 +41,14 @@ public static class ToolTelemetry
     }
 
     /// <summary>O bloco que abre o raciocínio. Em OSINT, só as fases da investigação. Sem métrica de GPU.</summary>
-    public static string PlanningBlock(ToolIntent intent, ContextPlan plan, string? hint = null, string? osintTarget = null, int osintFacts = 0)
+    public static string PlanningBlock(ToolIntent intent, ContextPlan plan, string? hint = null, string? osintTarget = null)
     {
         if (!string.IsNullOrWhiteSpace(osintTarget))
         {
             var sbOsint = new StringBuilder();
             sbOsint.AppendLine("💭 [Investigação OSINT]");
             sbOsint.AppendLine($"• Alvo: {osintTarget}");
-            sbOsint.AppendLine("• Fase 1: Varredura de pegada digital (GitHub, perfis técnicos, registros públicos)");
-            sbOsint.AppendLine("• Fase 2: Coleta de evidências e subdomínios (crt.sh / Web)");
-            sbOsint.AppendLine($"• Memória: {osintFacts} fatos catalogados em facts.md");
+            sbOsint.AppendLine("• Escopo: Reconhecimento Passivo Multi-Vetores");
             return sbOsint.ToString();
         }
         var sb = new StringBuilder();

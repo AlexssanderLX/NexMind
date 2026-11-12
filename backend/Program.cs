@@ -153,7 +153,7 @@ api.MapPost("/conversations/{id}/security/{agent}/chat", async (string id, strin
 
 // --- Chat com streaming (NDJSON: {type: thinking|token|done|error, ...})
 api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpContext ctx,
-    ConversationStore store, OllamaClient ollama, Research research, OsintEngine osint, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes, RagEngine rag) =>
+    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes, RagEngine rag) =>
 {
     var ct = ctx.RequestAborted;
     var conv = store.Get(id);
@@ -196,12 +196,11 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         // Regra base: respostas diretas. O modelo de 4B tende a escrever muito; texto longo custa tempo (tokens na GPU/CPU).
         var textLower = userText.ToLowerInvariant();
         // pesquisa na web liga pela frase ("pesquise na internet…", "busque no google…"), sem interruptor; o filtro antes da busca continua
-        var osintTarget = OsintEngine.TargetOf(userText);
-        var wantsOsint = osintTarget is not null || textLower.Contains("osint");
+        var osintTarget = OsintEngine.ResolveTarget(userText, history);
+        var wantsOsint = OsintEngine.WantsInvestigation(userText);
         var autoSearch = req.Search || IntentRouter.WantsSearch(userText) || textLower.Contains("pesquisa na web") || textLower.Contains("pesquise na internet") || wantsOsint;
         var searchAddon = "";
         string? investigationTarget = null;
-        var investigationFacts = 0;
         if (wantsOsint)
         {
             if (osintTarget is null)
@@ -212,19 +211,24 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             }
             else
             {
-                await Send(new { type = "tool", name = "osint", state = "executando", query = osintTarget });
-                var result = await osint.InvestigateAsync(osintTarget, ct);
+                async Task Progress(string msg)
+                {
+                    thinking.Append(msg);
+                    await Send(new { type = "thinking", text = msg });
+                }
+                await Progress($"💭 [Investigação OSINT]\n• Alvo: {osintTarget}\n• Escopo: Reconhecimento Passivo Multi-Vetores\n");
+                var result = await research.InvestigateTargetAsync(osintTarget, Progress, ct);
                 foreach (var fact in result.Facts)
                     memory.AddFact(conv.Id, fact);
-                investigationTarget = result.Target;
-                investigationFacts = result.Facts.Count;
-                var notes = result.Findings.Count == 0
-                    ? "A coleta não devolveu URL. Diga que não houve fato confirmado. Não invente perfil, subdomínio nem link."
-                    : string.Join("\n", result.Findings.Select(h => $"- {h.Title} ({h.Url}): {h.Snippet}"));
-                var playbookPath = Path.Combine(app.Environment.ContentRootPath, "skills", "osint_playbook.md");
-                var playbook = File.Exists(playbookPath) ? File.ReadAllText(playbookPath) : "";
-                searchAddon = $"\n\nOSINT já executado. Alvo: {result.Target}. Classificação: {result.Kind}.\n{notes}\n\n{playbook}\nEntregue o relatório nesse formato, só com o que está acima. Não diga que vai pesquisar ou abrir o Google.\n";
-                await Send(new { type = "tool", name = "osint", state = "pronta" });
+                investigationTarget = osintTarget;
+                var notes = result.Hits.Count == 0
+                    ? "Nenhum registro encontrado em nenhum vetor."
+                    : string.Join("\n", result.Hits.Select(h => $"- {h.Title} | {h.Url} | {h.Snippet}"));
+                searchAddon = "\n\nREGRA DE OURO DA INTELIGÊNCIA:\n" +
+                    "1. É terminantemente PROIBIDO gerar links ou citar redes sociais que NÃO constem na lista abaixo.\n" +
+                    "2. Se um vetor veio vazio, escreva \"Nenhum registro encontrado\" ou omita. Jamais invente handle ou link no formato site.com/@usuario.\n" +
+                    "3. Saída: só o Sumário Executivo dos Fatos Confirmados. Sem próximos passos, sem repetir o nome das ferramentas. No máximo 150 tokens.\n\n" +
+                    $"Alvo: {osintTarget}\nResultados brutos desta rodada:\n{notes}\n";
             }
         }
         else if (autoSearch)
@@ -241,15 +245,10 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             {
                 await Send(new { type = "tool", name = "pesquisa", state = "executando", query });
                 var hits = await research.SearchAsync(query, ct);
-                var saved = 0;
                 foreach (var h in hits)
                     if (FactExtractor.FromWeb(h.Title, h.Url) is { } line)
-                    {
                         memory.AddFact(conv.Id, line);
-                        saved++;
-                    }
                 investigationTarget = query;
-                investigationFacts = saved;
                 var notes = hits.Count == 0
                     ? "A busca não devolveu trechos. Diga isso e não invente o fato."
                     : string.Join("\n", hits.Select(h => $"- {h.Title} ({h.Url}): {h.Snippet}"));
@@ -368,9 +367,12 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         // Qwen3 4B tem 36 camadas. Acima de 16 mil tokens, 24 ficam na GPU e 12 na RAM desde o carregamento.
         int? numGpu = numCtx > 16384 ? 24 : null;
         // O planejamento abre o raciocínio da resposta: o usuário vê o que o Nex decidiu (contexto e ferramentas) antes de qualquer token.
-        var planning = ToolTelemetry.PlanningBlock(intent, plan, notesAsk is null ? null : SecurityIntent.Describe(notesAsk), investigationTarget, investigationFacts);
+        if (investigationTarget is null)
+        {
+        var planning = ToolTelemetry.PlanningBlock(intent, plan, notesAsk is null ? null : SecurityIntent.Describe(notesAsk));
         thinking.Append(planning).Append('\n');
         await Send(new { type = "thinking", text = planning + "\n" });
+        }
 
         var extra = new List<object>();
         // Tarefas de navegador (abrir, ler, clicar, ler de novo) precisam de mais passos que ler um arquivo.
@@ -389,8 +391,9 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             }
             List<ToolCall>? calls = null;
             var roundText = new StringBuilder();
-            await foreach (var chunk in ollama.ChatAsync(req.Model, system, history, numCtx, req.Think, numGpu,
-                               extra, round < MaxToolRounds && ollamaTools.Count > 0 ? ollamaTools : null, ct))
+            var replyCap = investigationTarget is null ? (int?)null : 150;
+            await foreach (var chunk in ollama.ChatAsync(req.Model, system, history, numCtx, investigationTarget is null ? req.Think : false, numGpu,
+                               extra, investigationTarget is null && round < MaxToolRounds && ollamaTools.Count > 0 ? ollamaTools : null, replyCap, ct))
             {
                 if (!string.IsNullOrEmpty(chunk.Thinking))
                 {

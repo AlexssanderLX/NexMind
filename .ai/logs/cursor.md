@@ -12,3 +12,4 @@
 | 2026-11-11 | TASK-LAUNCHER-HEALTHY-RUN | `5ee3d46` | Launcher robusto: atalho não mata instâncias saudáveis, suporte a -DryRun e -Port para testes | N/A |
 | 2026-11-11 | TASK-MCP-DESKTOP-TOGGLE-UI | `c04f31d` | Interruptor Computador no painel de Ferramentas, flag Desktop no chat e ativação das tools do servidor desktop | N/A |
 | 2026-11-12 | TASK-MICRO-RAG-INGEST | `eeb4a0e` | Micro-RAG nativo: ingestão em streaming, chunks com linha de origem, OCR e índice BM25 em memória | N/A |
+| 2026-11-12 | TASK-MICRO-RAG-TOOLS | `5f7672e` | Ferramentas rag_list_files, rag_search e rag_read_chunk no Nex e nos subagentes, com citação da linha | N/A |

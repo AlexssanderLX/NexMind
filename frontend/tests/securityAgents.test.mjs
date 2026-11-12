@@ -67,3 +67,72 @@ test("janela flutuante: nunca sai da área", () => {
   assert.deepEqual(clampWindow({ x: 900, y: 600 }, bounds, size), { x: 620, y: 260 });
   assert.deepEqual(clampWindow({ x: 5, y: 5 }, { w: 200, h: 200 }, size), { x: 0, y: 0 }, "área menor que a janela");
 });
+
+// ---------- várias janelas de subagente ao mesmo tempo ----------
+import { cascadePos, closeWindow, openWindow, windowZ } from "../src/lib/securityAgents.ts";
+import { clampWindow as clampGeometry } from "../src/lib/geometry.ts";
+
+test("janelas: abrir vários especialistas ao mesmo tempo, sem duplicar", () => {
+  let order = [];
+  order = openWindow(order, "recon");
+  order = openWindow(order, "auth");
+  order = openWindow(order, "input");
+  assert.deepEqual(order, ["recon", "auth", "input"]);
+  assert.equal(openWindow(order, "recon").filter((x) => x === "recon").length, 1, "reabrir não duplica");
+});
+
+test("janelas: tocar numa janela já aberta a traz para a frente (última da pilha)", () => {
+  const order = ["recon", "auth", "input"];
+  assert.deepEqual(openWindow(order, "recon"), ["auth", "input", "recon"]);
+  assert.deepEqual(openWindow(order, "input"), ["recon", "auth", "input"]);
+});
+
+test("janelas: fechar uma não mexe nas outras", () => {
+  assert.deepEqual(closeWindow(["recon", "auth", "input"], "auth"), ["recon", "input"]);
+  assert.deepEqual(closeWindow(["recon"], "recon"), []);
+  assert.deepEqual(closeWindow(["recon"], "logic"), ["recon"], "fechar o que não está aberto é inofensivo");
+});
+
+test("janelas: o z-index cresce até a janela da frente (e fica acima dos painéis do Nex, que usam 30)", () => {
+  const order = ["recon", "auth", "input"];
+  assert.ok(windowZ(order, "recon") < windowZ(order, "auth") && windowZ(order, "auth") < windowZ(order, "input"));
+  assert.ok(windowZ(order, "recon") > 30);
+  assert.equal(windowZ(["recon"], "verify"), 40, "fora da pilha não quebra");
+});
+
+test("janelas: cada nova janela abre em cascata, deslocada da anterior, e inteira dentro da tela", () => {
+  const bounds = { w: 1280, h: 800 };
+  const size = { w: 380, h: 460 };
+  const pos = [0, 1, 2, 3, 4].map((i) => cascadePos(i, bounds, size));
+  for (let i = 1; i < pos.length; i++) assert.ok(pos[i].x < pos[i - 1].x && pos[i].y > pos[i - 1].y, `janela ${i} deslocada da ${i - 1}`);
+  for (const p of pos) assert.ok(p.x >= 0 && p.y >= 0 && p.x + size.w <= bounds.w && p.y + size.h <= bounds.h);
+});
+
+test("janelas: em tela pequena a cascata nunca sai da área", () => {
+  const p = cascadePos(4, { w: 500, h: 520 }, { w: 380, h: 460 });
+  assert.ok(p.x >= 0 && p.y >= 0 && p.x + 380 <= 500 + 1e-9 && p.y + 460 <= 520 + 1e-9, JSON.stringify(p));
+});
+
+// ---------- painéis nos cantos da tela (o menu do robô saía cortado) ----------
+test("cantos: o menu do robô (288x335) cabe inteiro nos 4 cantos e no meio", () => {
+  const bounds = { w: 1280, h: 800 };
+  const menu = { w: 288, h: 335 };
+  for (const corner of [{ x: 0, y: 0 }, { x: 1204, y: 0 }, { x: 0, y: 724 }, { x: 1204, y: 724 }, { x: 640, y: 400 }]) {
+    const p = clampGeometry(corner, bounds, menu);
+    assert.ok(p.x >= 0 && p.y >= 0 && p.x + menu.w <= bounds.w && p.y + menu.h <= bounds.h, `canto ${JSON.stringify(corner)} -> ${JSON.stringify(p)}`);
+  }
+});
+
+test("cantos: o caso do print (robô em y=470 numa tela de 800) sobe o painel em vez de cortar a base", () => {
+  const p = clampGeometry({ x: 1180, y: 470 }, { w: 1280, h: 800 }, { w: 288, h: 335 });
+  assert.deepEqual(p, { x: 992, y: 465 });
+});
+
+test("cantos: reservar só o tamanho de uma bolinha (o erro antigo) cortava o painel", () => {
+  const old = clampGeometry({ x: 1180, y: 470 }, { w: 1280, h: 800 }, { w: 288, h: 76 });
+  assert.ok(old.y + 335 > 800, "com 76 px de altura o painel de 335 px passava da borda");
+});
+
+test("cantos: painel maior que a área fica no canto superior esquerdo, sem posição negativa", () => {
+  assert.deepEqual(clampGeometry({ x: 50, y: 50 }, { w: 200, h: 200 }, { w: 380, h: 460 }), { x: 0, y: 0 });
+});

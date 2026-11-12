@@ -144,8 +144,9 @@ test("menu do robô: os 5 especialistas com emoji, nome e descrição", () => {
   assert.equal((html.fabMenu.match(/role="menuitem"/g) ?? []).length, 5);
   assert.match(html.fabMenu, /role="menu" aria-label="Subagentes de Security"/);
   const items = html.fabMenu.split('<li role="none">').slice(1);
-  const marked = items.filter((it) => /class="[^"]*\bbg-accent\/10\b/.test(it)).map((it) => (it.match(/(\w+) Specialist/) ?? [])[1]);
-  assert.deepEqual(marked, ["Auth"], "só o especialista ativo fica marcado");
+  const marked = items.filter((it) => /data-open="true"/.test(it)).map((it) => (it.match(/(\w+) Specialist/) ?? [])[1]);
+  assert.deepEqual(marked, ["Auth", "Verify"], "os especialistas com janela aberta ficam marcados, vários ao mesmo tempo");
+  assert.equal((html.fabMenu.match(/>aberto</g) ?? []).length, 2);
 });
 
 test("janela do subagente: nome no topo, botão fechar ✕ e largura de conversa", () => {

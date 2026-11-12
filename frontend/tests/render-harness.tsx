@@ -44,12 +44,12 @@ export function render() {
     taskPanelQueue: renderToStaticMarkup(<SecurityTaskPanel stage={1} queue={[{ id: "1", title: "Mapear /api", state: "rodando" }]} />),
     fabClosed: renderToStaticMarkup(
       <FloatingPanel title="Subagentes de Security" icon="🤖" orb={<RobotOrb />} open={false} pos={{ x: 900, y: 400 }} {...panelBase}>
-        <AgentMenu active={null} onPick={noop} />
+        <AgentMenu open={[]} onPick={noop} />
       </FloatingPanel>,
     ),
     fabMenu: renderToStaticMarkup(
       <FloatingPanel title="Subagentes de Security" icon="🤖" orb={<RobotOrb />} open pos={{ x: 900, y: 400 }} {...panelBase}>
-        <AgentMenu active="auth" onPick={noop} />
+        <AgentMenu open={["auth", "verify"]} onPick={noop} />
       </FloatingPanel>,
     ),
     subWindow: renderToStaticMarkup(

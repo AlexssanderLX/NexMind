@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { SECURITY_AGENTS, type AgentId } from "../lib/securityAgents";
+import { SECURITY_AGENTS, cascadePos, closeWindow, openWindow, windowZ, type AgentId } from "../lib/securityAgents";
 import FloatingPanel, { type PanelPos } from "./panels/FloatingPanel";
 import SubagentChat from "./SubagentChat";
 
 const FAB_KEY = "nexAgentFabPos";
 const WINDOW_W = 380;
+const WINDOW_H = 460; // estimativa para a posição inicial; o FloatingPanel mede a janela de verdade
 
 /** O botão do robô: um anel luminoso girando com o 🤖 no centro (mesma linguagem das bolinhas dos painéis). */
 export function RobotOrb() {
@@ -30,36 +31,43 @@ export function RobotOrb() {
   );
 }
 
-/** Menu dos 5 especialistas (aparece ao clicar no robô). */
-export function AgentMenu({ active, onPick }: { active: AgentId | null; onPick: (id: AgentId) => void }) {
+/** Menu dos 5 especialistas (aparece ao clicar no robô). Os que já têm janela aberta ficam marcados; clicar neles traz a janela para a frente. */
+export function AgentMenu({ open, onPick }: { open: AgentId[]; onPick: (id: AgentId) => void }) {
   return (
     <ul role="menu" aria-label="Subagentes de Security" className="space-y-0.5">
-      {SECURITY_AGENTS.map((a) => (
-        <li key={a.id} role="none">
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => onPick(a.id)}
-            className={`flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-white/5 ${active === a.id ? "bg-accent/10" : ""}`}
-          >
-            <span className="text-lg leading-5" aria-hidden>
-              {a.emoji}
-            </span>
-            <span className="min-w-0">
-              <span className="block text-[13px] text-fg">{a.name}</span>
-              <span className="block text-[11px] leading-snug text-mute">{a.summary}</span>
-            </span>
-          </button>
-        </li>
-      ))}
+      {SECURITY_AGENTS.map((a) => {
+        const isOpen = open.includes(a.id);
+        return (
+          <li key={a.id} role="none">
+            <button
+              type="button"
+              role="menuitem"
+              data-open={isOpen ? "true" : undefined}
+              onClick={() => onPick(a.id)}
+              className={`flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-white/5 ${isOpen ? "bg-accent/10" : ""}`}
+            >
+              <span className="text-lg leading-5" aria-hidden>
+                {a.emoji}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] text-fg">{a.name}</span>
+                <span className="block text-[11px] leading-snug text-mute">{a.summary}</span>
+              </span>
+              {isOpen && <span className="shrink-0 rounded-full border border-accent/40 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-accent">aberto</span>}
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
 /**
- * Camada do modo Security: o botão do robô (arrastável) e a janela de micro-chat do subagente escolhido.
+ * Camada do modo Security: o botão do robô (arrastável) e as janelas de micro-chat dos subagentes.
  * - Clicar no robô abre o menu flutuante dos 5 especialistas; arrastar move o botão (a posição fica salva).
- * - Escolher um especialista abre a janela de micro-chat na MESMA tela, sem fechar nem sair da conversa principal.
+ * - Cada especialista abre na SUA janela, na mesma tela: dá para ter várias abertas ao mesmo tempo, cada uma com a conversa
+ *   e a posição dela, arrastar uma sem mexer nas outras e falar com cada subagente separadamente. Tocar numa janela a traz para a frente.
+ * - Nenhum painel sai da tela: o limite considera o tamanho real de cada um (inclusive nos cantos).
  * Usa a base do FloatingPanel (arrasto, vidro, borda luminosa), a mesma dos painéis do Nex.
  */
 export default function SecurityAgentsLayer({
@@ -79,7 +87,9 @@ export default function SecurityAgentsLayer({
   const [bounds, setBounds] = useState({ w: 0, h: 0 });
   const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 767px)").matches);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [active, setActive] = useState<AgentId | null>(null);
+  // pilha das janelas abertas: a última está na frente
+  const [order, setOrder] = useState<AgentId[]>([]);
+  const [winPos, setWinPos] = useState<Partial<Record<AgentId, PanelPos>>>({});
   const [fabPos, setFabPos] = useState<PanelPos | null>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(FAB_KEY) ?? "null");
@@ -88,7 +98,6 @@ export default function SecurityAgentsLayer({
       return null;
     }
   });
-  const [winPos, setWinPos] = useState<PanelPos | null>(null);
   const fabRef = useRef(fabPos);
   fabRef.current = fabPos;
 
@@ -109,8 +118,15 @@ export default function SecurityAgentsLayer({
   }, []);
 
   const fabAt: PanelPos = fabPos ?? { x: Math.max(16, bounds.w - 100), y: Math.max(56, bounds.h - 330) };
-  const winAt: PanelPos = winPos ?? { x: Math.max(16, bounds.w - WINDOW_W - 24), y: 70 };
-  const agent = SECURITY_AGENTS.find((a) => a.id === active) ?? null;
+
+  function pick(id: AgentId) {
+    if (!order.includes(id)) {
+      // primeira vez: abre em cascata, uma pouco deslocada da anterior
+      setWinPos((p) => ({ ...p, [id]: cascadePos(order.length, bounds, { w: WINDOW_W, h: WINDOW_H }) }));
+    }
+    setOrder((o) => openWindow(o, id));
+    setMenuOpen(false);
+  }
 
   return (
     <div ref={rootRef} className="pointer-events-none absolute inset-0 z-30" data-security-layer>
@@ -134,36 +150,38 @@ export default function SecurityAgentsLayer({
             }}
             mobile={mobile}
             glass={glass}
+            zIndex={90}
           >
-            <AgentMenu
-              active={active}
-              onPick={(id) => {
-                setActive(id);
-                setMenuOpen(false);
-              }}
-            />
+            <AgentMenu open={order} onPick={pick} />
           </FloatingPanel>
 
-          {agent && (
-            <FloatingPanel
-              title={agent.name}
-              icon={<span aria-hidden>{agent.emoji}</span>}
-              orb={null}
-              open
-              onToggle={() => setActive(null)}
-              pos={winAt}
-              bounds={bounds}
-              onMove={setWinPos}
-              onMoveEnd={() => {}}
-              mobile={mobile}
-              glass={glass}
-              width={WINDOW_W}
-              closeGlyph="✕"
-              closeTitle="Fechar"
-            >
-              <SubagentChat key={agent.id} agent={agent} conversationId={conversationId} ensureConversation={ensureConversation} model={model} ceiling={ceiling} />
-            </FloatingPanel>
-          )}
+          {/* ordem FIXA no DOM (a do catálogo); quem está na frente é decidido pelo z-index. Reordenar elementos no meio de um arrasto soltaria o ponteiro. */}
+          {SECURITY_AGENTS.filter((a) => order.includes(a.id)).map((agent) => {
+            const id = agent.id;
+            return (
+              <FloatingPanel
+                key={id}
+                title={agent.name}
+                icon={<span aria-hidden>{agent.emoji}</span>}
+                orb={null}
+                open
+                onToggle={() => setOrder((o) => closeWindow(o, id))}
+                pos={winPos[id] ?? cascadePos(0, bounds, { w: WINDOW_W, h: WINDOW_H })}
+                bounds={bounds}
+                onMove={(p) => setWinPos((all) => ({ ...all, [id]: p }))}
+                onMoveEnd={() => {}}
+                mobile={mobile}
+                glass={glass}
+                width={WINDOW_W}
+                closeGlyph="✕"
+                closeTitle="Fechar"
+                zIndex={windowZ(order, id)}
+                onFocus={() => setOrder((o) => (o[o.length - 1] === id ? o : openWindow(o, id)))}
+              >
+                <SubagentChat agent={agent} conversationId={conversationId} ensureConversation={ensureConversation} model={model} ceiling={ceiling} />
+              </FloatingPanel>
+            );
+          })}
         </>
       )}
     </div>

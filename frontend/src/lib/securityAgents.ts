@@ -1,5 +1,6 @@
 // Nex Security: os subagentes especialistas e o prompt do modo. Funções puras, com testes em frontend/tests.
 import type { MicroAppMode } from "../types";
+import { clampWindow } from "./geometry.ts";
 
 export type AgentId = "recon" | "auth" | "input" | "logic" | "verify";
 
@@ -60,10 +61,27 @@ export function splitAttachments(content: string): { files: { name: string; char
   return { files, body };
 }
 
-/** Mantém uma janela de largura `w` e altura `h` inteira dentro da área, sem cortar a borda. */
-export function clampWindow(pos: { x: number; y: number }, bounds: { w: number; h: number }, size: { w: number; h: number }) {
-  return {
-    x: Math.max(0, Math.min(pos.x, Math.max(0, bounds.w - size.w))),
-    y: Math.max(0, Math.min(pos.y, Math.max(0, bounds.h - size.h))),
-  };
+export { clampWindow } from "./geometry.ts";
+
+// ---------- várias janelas de subagente ao mesmo tempo ----------
+// `order` é a pilha de janelas abertas: a última é a que está na frente.
+
+/** Abre a janela do especialista, ou só a traz para a frente se ela já está aberta. */
+export function openWindow(order: AgentId[], id: AgentId): AgentId[] {
+  return [...order.filter((x) => x !== id), id];
+}
+
+/** Fecha a janela do especialista (as outras continuam abertas e com a conversa que tinham). */
+export function closeWindow(order: AgentId[], id: AgentId): AgentId[] {
+  return order.filter((x) => x !== id);
+}
+
+/** Onde a N-ésima janela aparece pela primeira vez: em cascata, para não esconder a anterior por completo. */
+export function cascadePos(index: number, bounds: { w: number; h: number }, size: { w: number; h: number }) {
+  return clampWindow({ x: bounds.w - size.w - 24 - index * 44, y: 70 + index * 40 }, bounds, size);
+}
+
+/** z-index da janela: as da frente têm número maior (a base 30 é a dos painéis do Nex). */
+export function windowZ(order: AgentId[], id: AgentId): number {
+  return 40 + Math.max(0, order.indexOf(id));
 }

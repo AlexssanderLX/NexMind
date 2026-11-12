@@ -21,3 +21,4 @@
 | 2026-11-12 | TASK-EVIDENCE-INTENT | `2274c0f` | Classificação da frase em capacidade, escopo ou execução, e Recon limitado a evidência real | N/A |
 | 2026-11-12 | TASK-BENCH-DISCIPLINE | `b13d819` | Alvo da gaveta Escopo entra sem perguntar de novo, e o recon grava na Superfície só o que a busca devolveu | N/A |
 | 2026-11-12 | TASK-DEV-REAL-FOLDER | `9d6c8b3` | Dev grava a pasta real na conversa, restaura as abas e injeta o arquivo aberto no chat | N/A |
+| 2026-11-12 | TASK-DEV-OPEN-404 | `df4fca0` | Abrir pasta no Dev volta a usar a rota que a API já serve, em vez do 404 da sessão nova | N/A |

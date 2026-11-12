@@ -27,3 +27,4 @@ acceptance_criteria:
   - test: O texto do agente aparece primeiro sem ser empurrado por um balao gigante no topo.
   - test: A pilula de tarefa fica compacta e recolhida por padrao apos terminar a geracao.
   - test: Clicar na pilula abre o raciocinio e log das ferramentas daquela acao especifica.
+

@@ -1,0 +1,28 @@
+task_id: TASK-NEX-PERSONA-TWO-PHASE-EXECUTION-022
+title: Atualizacao da Persona do Nex e Ciclo de Execucao em 2 Tempos com Telemetria Viva
+assigned_by: Antigravity
+assigned_to: Cursor / Claude
+status: READY
+created_at: "2026-11-12T11:40:30Z"
+context:
+  goal: Redefinir a persona do Nex no system prompt para um parceiro senior de desenvolvimento e pentest (assertivo, amigo, tranquilo e tecnico) e garantir que o modelo opere no ciclo de 2 tempos (responde primeiro o que vai fazer e depois executa emitindo telemetria ao vivo na barrinha de status).
+  worktree: .worktrees/develop
+  reference_files:
+    - backend/Program.cs
+    - frontend/src/components/MessageView.tsx
+    - frontend/src/components/ThinkingCard.tsx
+
+requirements:
+  - id: REQ-01
+    description: Atualizar o system prompt em `backend/Program.cs` com a nova persona de parceiro de bancada (amigo, sênior, zero bajulacao, comunicacao resumida com densidade tecnica).
+  - id: REQ-02
+    description: Instruir no system prompt a invariante de execucao em 2 tempos (Tempo 1 fala a intencao para o usuario, Tempo 2 aciona a ferramenta).
+  - id: REQ-03
+    description: Assegurar que os eventos de status das ferramentas e thinking emitidos durante o streaming sejam renderizados em tempo real na barra de progresso da tarefa (evitando que o usuario fique no escuro durante a execucao).
+  - id: REQ-04
+    description: Manter build limpo do backend e frontend com 0 erros.
+
+acceptance_criteria:
+  - test: Respostas do Nex soam como um parceiro tecnico sênior e amigo, sem frases feitas nem enrolacao.
+  - test: O agente declara o que vai fazer antes de disparar as ferramentas.
+  - test: A barra de progresso da tarefa exibe os micropassos em tempo real enquanto a acao ocorre.

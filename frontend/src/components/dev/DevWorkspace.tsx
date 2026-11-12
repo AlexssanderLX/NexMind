@@ -67,7 +67,7 @@ export default function DevWorkspace({ settings, core }: { settings: Settings; c
           setActive(session.activeFile);
         }
       } catch {
-        localStorage.removeItem(key);
+        /* a API em execução ainda não tem a sessão: a pasta abre do mesmo jeito */
       }
     })();
     return () => { cancelled = true; };
@@ -81,7 +81,7 @@ export default function DevWorkspace({ settings, core }: { settings: Settings; c
       activeFile: active,
       line: 1,
       column: 1,
-    });
+    }).catch(() => {});
   }, [conversationId, root, tabs, active]);
 
   /** Pasta nova: as abas da pasta anterior não valem mais. */
@@ -93,16 +93,14 @@ export default function DevWorkspace({ settings, core }: { settings: Settings; c
   /** "Abrir Pasta": janela nativa do Windows; cancelar não muda nada. */
   async function pickFolder() {
     const picked = await api.devPick();
-    if (picked.cancelled || !picked.path || !conversationId) return;
-    const opened = await api.devOpenFolder(conversationId, picked.path);
-    setRoot(opened.path);
-    setNodes(opened.nodes);
+    if (picked.cancelled || !picked.path) return;
+    setRoot(picked.root ?? picked.path);
+    setNodes(picked.nodes ?? []);
     resetTabs();
   }
 
   async function dropFolder(path: string) {
-    if (!conversationId) return;
-    const opened = await api.devOpenFolder(conversationId, path);
+    const opened = await api.devOpen(path);
     setRoot(opened.path);
     setNodes((await api.devTree()).nodes);
     resetTabs();

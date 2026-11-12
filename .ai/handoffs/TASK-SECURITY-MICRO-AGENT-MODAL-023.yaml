@@ -1,0 +1,31 @@
+task_id: TASK-SECURITY-MICRO-AGENT-MODAL-023
+title: Consciencia do modo Security no prompt, Barra WSTG Full-Width e Modal Flutuante de Subagente Especializado
+assigned_by: Antigravity
+assigned_to: Cursor / Claude
+status: READY
+created_at: "2026-11-12T12:31:00Z"
+context:
+  goal: Corrigir a falta de contexto do Nex quando no modo Security, esticar a barra dos 6 estágios para 100% da largura com design aprimorado, e implementar o botão flutuante arrastável (ícone de robô) que abre modal de micro-chat com subagente especializado (Recon, Auth, Input, Logic) na mesma tela sem sair da conversa.
+  worktree: .worktrees/develop
+  reference_files:
+    - frontend/src/App.tsx
+    - frontend/src/components/SecurityTaskPanel.tsx
+    - frontend/src/components/panels/FloatingPanel.tsx
+    - backend/Program.cs
+
+requirements:
+  - id: REQ-01
+    description: Em `App.tsx`, quando `microApp === 'security'`, injetar no parametro `system` enviado via `streamChat` a instrucao clara de que a sessao opera como Nex Security (Pentest & Bug Bounty Workbench com WSTG v4.2), para que o modelo responda com total propriedade sobre seguranca e sobre o app.
+  - id: REQ-02
+    description: Em `SecurityTaskPanel.tsx`, atualizar o layout da lista de 6 estagios para ocupar 100% da largura em grid responsivo (`grid grid-cols-2 md:grid-cols-6 gap-2 w-full`), com cards maiores, tipografia clara e borda luminosa no estagio ativo.
+  - id: REQ-03
+    description: Criar componente flutuante arrastavel com icone de robozinho no modo Security. Ao clicar, exibe menu de selecao de subagente (Recon, Auth, Input, Logic, Verify).
+  - id: REQ-04
+    description: Ao selecionar um subagente, abrir janela modal flutuante na mesma tela (utilizando o padrao de `FloatingPanel.tsx`) com micro-chat independente, focado estritamente no papel daquele subagente, consumindo o mesmo endpoint/modelo local com system prompt hiper-focado.
+  - id: REQ-05
+    description: Garantir build verde (`npm --prefix frontend run build` e `dotnet build backend -c Release`) com 0 erros.
+
+acceptance_criteria:
+  - test: Perguntar "Quero saber o que esse app faz" no modo Security faz o Nex explicar com maestria o Security Workbench e metodologia WSTG.
+  - test: A barra de 6 etapas ocupa a largura total da janela com visual polido.
+  - test: O botao arrastavel do robo permite abrir o micro-chat de um subagente (ex: Recon) em modal flutuante na mesma tela e trocar mensagens sobre aquele contexto.

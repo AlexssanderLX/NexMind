@@ -34,3 +34,4 @@ Antes de entregar qualquer prompt ao Alexssander:
     ```
 - [ ] **5. Rastreabilidade de Autoria:**
   - O prompt exige registro da entrega em `.ai/logs/<agente>.md` (Cursor ou Claude).
+

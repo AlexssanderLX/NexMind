@@ -70,7 +70,9 @@ public sealed class Bm25Index
             double score = 0;
             foreach (var term in q)
             {
-                if (!doc.Tf.TryGetValue(term, out var tf)) continue;
+                var tf = doc.Tf.GetValueOrDefault(term);
+                if (tf == 0 && term.Length >= 5 && doc.Content.Contains(term, StringComparison.OrdinalIgnoreCase)) tf = 1;
+                if (tf == 0) continue;
                 var docsWith = df.GetValueOrDefault(term);
                 var idf = Math.Log(1 + (n - docsWith + 0.5) / (docsWith + 0.5));
                 var denom = tf + K1 * (1 - B + B * doc.Length / avg);
@@ -92,7 +94,12 @@ public sealed class Bm25Index
             if (letter && start < 0) start = i;
             if (!letter && start >= 0)
             {
-                if (i - start >= 2) tokens.Add(text[start..i].ToLowerInvariant());
+                if (i - start >= 2)
+                {
+                    var token = text[start..i].ToLowerInvariant();
+                    if (token is "erro" or "error" or "errors") token = "error";
+                    tokens.Add(token);
+                }
                 start = -1;
             }
         }

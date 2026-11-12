@@ -148,7 +148,7 @@ api.MapPost("/conversations/{id}/security/{agent}/chat", async (string id, strin
 
 // --- Chat com streaming (NDJSON: {type: thinking|token|done|error, ...})
 api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpContext ctx,
-    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes) =>
+    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes, RagEngine rag) =>
 {
     var ct = ctx.RequestAborted;
     var conv = store.Get(id);
@@ -220,7 +220,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         // Ferramentas sob demanda: tudo começa DESLIGADO. Só a intenção da frase (ou um interruptor do usuário) injeta o que precisa,
         // porque cada definição de ferramenta custa tokens e contexto. "Bom dia Nex" não leva nenhuma.
         var (_, agentIndex0) = memory.Indexes(conv.Id);
-        var intent = IntentRouter.Route(userText, req.Tools, req.Browser, req.Desktop, hasNotes: agentIndex0.Contains("nota(s)"));
+        var hasRag = rag.GetFiles(conv.Id).Count > 0;
+        var intent = IntentRouter.Route(userText, req.Tools, req.Browser, req.Desktop, hasNotes: agentIndex0.Contains("nota(s)"), hasRagFiles: hasRag);
         var autoBrowser = intent.Browser;
         var autoFiles = intent.Files;
         var autoDesktop = intent.Desktop;
@@ -300,6 +301,12 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             function = new { name = t.QualifiedName, description = t.Description, parameters = t.Schema },
         }).ToList();
         if (intent.Notebook) ollamaTools.AddRange(NotebookTools.Definitions()); // topic_read e topic_write só quando a frase fala do caderno ou ele já tem notas
+        if (intent.Rag)
+        {
+            ollamaTools.AddRange(RagTools.Definitions());
+            system += "\n" + RagTools.CitationRule + "\n" +
+                      "Os arquivos desta conversa NÃO estão no prompt. Para saber o que foi indexado, chame rag_list_files. Para achar um trecho, chame rag_search. Para ler o bloco inteiro, chame rag_read_chunk. Não cole o arquivo na resposta.\n";
+        }
 
         // Contexto adaptativo: decidido aqui, com o tamanho REAL do prompt e das ferramentas injetadas. Começa em 4096 (100% na GPU)
         // e só sobe quando a conversa precisa; o valor das Configurações é o teto.
@@ -366,6 +373,15 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             });
             foreach (var call in calls)
             {
+                if (RagTools.IsRagTool(call.Name))
+                {
+                    await Send(new { type = "mcp", name = call.Name, state = "executando", brief = ToolTelemetry.Summarize(call.Arguments), detail = JsonSerializer.Serialize(call.Arguments) });
+                    var (ragOk, ragText) = await RagTools.Handle(call, rag, conv.Id, ct);
+                    turnBudget -= ragText.Length;
+                    await Send(new { type = "mcp", name = call.Name, state = ragOk ? "concluida" : "falhou", detail = ragOk ? (ragText.Length > 800 ? ragText[..800] : ragText) : "ERRO: " + ragText });
+                    extra.Add(new { role = "tool", tool_name = call.Name, content = ragOk ? ragText : "ERRO: " + ragText });
+                    continue;
+                }
                 if (NotebookTools.IsNotebookTool(call.Name))
                 {
                     // caderno da conversa: nativo, sem aprovação (só lê ou acrescenta notas na pasta desta conversa)

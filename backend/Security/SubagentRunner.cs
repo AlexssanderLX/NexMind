@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using LocalAi.Api.Llm;
 using LocalAi.Api.Planning;
+using LocalAi.Api.Rag;
 
 namespace LocalAi.Api.Security;
 
@@ -25,11 +26,13 @@ public sealed class SubagentRunner
 
     private readonly OllamaClient _ollama;
     private readonly SecurityNotes _notes;
+    private readonly RagEngine _rag;
 
-    public SubagentRunner(OllamaClient ollama, SecurityNotes notes)
+    public SubagentRunner(OllamaClient ollama, SecurityNotes notes, RagEngine rag)
     {
         _ollama = ollama;
         _notes = notes;
+        _rag = rag;
     }
 
     public static List<object> Definitions() =>
@@ -69,6 +72,12 @@ public sealed class SubagentRunner
             if (tail.Length > 0) system += "\n\nSuas notas até agora (não repita):\n" + tail;
 
             var tools = Definitions();
+            var useRag = _rag.GetFiles(conversationId).Count > 0 || IntentRouter.Route(userText, false, false, false, false).Rag;
+            if (useRag)
+            {
+                tools.AddRange(RagTools.Definitions());
+                system += "\n\n" + RagTools.CitationRule + "\nOs arquivos da conversa não estão no prompt: use rag_list_files, rag_search e rag_read_chunk.\n";
+            }
             LoadedModel? loaded = null;
             try { loaded = await _ollama.GetLoadedModelAsync(ct); } catch (HttpRequestException) { /* o erro aparece na chamada do modelo */ }
             int? loadedCtx = loaded is not null && string.Equals(loaded.Name, model, StringComparison.OrdinalIgnoreCase) ? loaded.ContextLength : null;
@@ -112,7 +121,14 @@ public sealed class SubagentRunner
                 foreach (var call in calls)
                 {
                     string result;
-                    if (call.Name != NoteTool) result = $"A ferramenta '{call.Name}' não existe.";
+                    if (RagTools.IsRagTool(call.Name))
+                    {
+                        await send(new { type = "mcp", name = call.Name, state = "executando", brief = ToolTelemetry.Summarize(call.Arguments), detail = JsonSerializer.Serialize(call.Arguments) });
+                        var (ok, text) = await RagTools.Handle(call, _rag, conversationId, ct);
+                        result = ok ? text : "ERRO: " + text;
+                        await send(new { type = "mcp", name = call.Name, state = ok ? "concluida" : "falhou", detail = result.Length > 800 ? result[..800] : result });
+                    }
+                    else if (call.Name != NoteTool) result = $"A ferramenta '{call.Name}' não existe.";
                     else
                     {
                         var content = ToolTelemetry.Summarize(call.Arguments);

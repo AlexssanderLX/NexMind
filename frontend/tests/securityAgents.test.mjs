@@ -31,7 +31,7 @@ test("modo Security: o system das Configurações vem antes e é preservado", ()
 
 test("modo Security: o modelo recebe o conhecimento para explicar o app (estágios, Workbench, subagentes, notas)", () => {
   const s = composeSystem("", "security");
-  for (const stage of ["Escopo & Autorização", "Mapear Superfície", "Formular Hipótese", "Teste Mínimo Seguro", "Interpretar Efeito", "Evidência & Relatório"]) assert.ok(s.includes(stage), stage);
+  for (const stage of ["Escopo & Alvos", "Mapear Superfície", "Formular Hipótese", "Teste Mínimo Seguro", "Interpretar Efeito", "Evidência & Relatório"]) assert.ok(s.includes(stage), stage);
   assert.ok(s.includes("/workbench.html"));
   for (const a of ["Recon", "Auth", "Input", "Logic", "Verify"]) assert.ok(s.includes(a), a);
   assert.ok(s.includes("recon.md") && s.includes("INDEX.md"));

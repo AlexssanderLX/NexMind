@@ -63,7 +63,7 @@ export default function SecurityTaskPanel({
         })}
       </ol>
       <p className="mt-2 text-xs text-mute">
-        {queue.length === 0 ? "Fila de tarefas dos agentes: vazia. Defina o escopo para começar." : `Fila de tarefas dos agentes: ${queue.length}`}
+        {queue.length === 0 ? "Bancada pronta: mapeie superfícies, formule hipóteses ou inspecione parâmetros livremente." : `Fila de tarefas dos agentes: ${queue.length}`}
       </p>
       {queue.length > 0 && (
         <ul className="mt-1 space-y-0.5 text-xs">

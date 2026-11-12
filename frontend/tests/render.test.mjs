@@ -117,7 +117,7 @@ test("barra de etapas: estágio ativo com borda luminosa, concluídos com ✓, p
 
 test("barra de etapas: clicar num cartão é possível (botão) e a fila vazia aparece", () => {
   assert.equal((html.taskPanel0.match(/<button type="button"/g) ?? []).length, 6);
-  assert.match(html.taskPanel0, /Fila de tarefas dos agentes: vazia/);
+  assert.match(html.taskPanel0, /Bancada pronta: mapeie superfícies/);
   assert.match(html.taskPanelQueue, /Fila de tarefas dos agentes: 1/);
   assert.match(html.taskPanelQueue, /Mapear \/api/);
 });

@@ -273,7 +273,9 @@ try
     Check("osint: próximos passos reaproveitam o alvo anterior", OsintEngine.ResolveTarget("faz os próximos passos", new[] { ("user", "Faça um OSINT sobre Ada Lovelace") }) == "Ada Lovelace");
     Check("intenção: pergunta de capacidade não executa", OperatorIntent.Classify("calma só um teste oq vc pode fazer") == OperatorIntentKind.Capabilities);
     Check("intenção: escopo é planejamento", OperatorIntent.Classify("o alvo salvo tá no escopo") == OperatorIntentKind.Planning);
+    Check("intenção: olha a gaveta também é planejamento", OperatorIntent.Classify("olha a gaveta, salvei um alvo") == OperatorIntentKind.Planning);
     Check("intenção: ordem de recon executa", OperatorIntent.Classify("faça o recon de exemplo.com") == OperatorIntentKind.Execution);
+    Check("intenção: a gaveta devolve o domínio cadastrado", OperatorIntent.TargetFromScope("- exemplo.com\nregra: só passivo") == "exemplo.com");
     var scopeDir = OperatorIntent.Directive(OperatorIntentKind.Planning, "- exemplo.com");
     Check("intenção: a gaveta entra no prompt e o estado de evidência também", scopeDir.Contains("[Escopo & Alvos]") && scopeDir.Contains("exemplo.com") && scopeDir.Contains("[CONFIRMED]") && scopeDir.Contains("[NOT_FOUND]"));
 

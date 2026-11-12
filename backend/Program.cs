@@ -212,6 +212,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         var textLower = userText.ToLowerInvariant();
         // pesquisa na web liga pela frase ("pesquise na internet…", "busque no google…"), sem interruptor; o filtro antes da busca continua
         var kind = OperatorIntent.Classify(userText);
+        if (osintTarget is null && (kind == OperatorIntentKind.Execution || OperatorIntent.WantsScope(userText)))
+            osintTarget = OperatorIntent.TargetFromScope(secNotes.ReadVault(conv.Id, "scope").Text);
         var wantsOsint = kind == OperatorIntentKind.Execution && (OsintEngine.WantsInvestigation(userText) || osintTarget is not null);
         var autoSearch = kind != OperatorIntentKind.Capabilities && kind != OperatorIntentKind.Planning &&
             (req.Search || IntentRouter.WantsSearch(userText) || textLower.Contains("pesquisa na web") || textLower.Contains("pesquise na internet") || wantsOsint);
@@ -236,6 +238,12 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                 var result = await research.InvestigateTargetAsync(osintTarget, Progress, taskCt);
                 foreach (var fact in result.Facts)
                     memory.AddFact(conv.Id, fact);
+                if (result.Hits.Count > 0)
+                {
+                    var current = secNotes.ReadVault(conv.Id, "surface").Text.Trim();
+                    var lines = result.Hits.Select(h => $"- [CONFIRMED] {h.Title} | {h.Url}");
+                    secNotes.WriteVault(conv.Id, "surface", (current + "\n" + string.Join("\n", lines)).Trim());
+                }
                 investigationTarget = osintTarget;
                 var notes = result.Hits.Count == 0
                     ? "Nenhum registro encontrado em nenhum vetor."

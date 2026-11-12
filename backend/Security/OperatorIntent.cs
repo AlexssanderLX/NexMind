@@ -19,11 +19,33 @@ public static class OperatorIntent
         var plain = IntentRouter.Normalize(Regex.Replace(userText ?? "", @"\[\[ARQUIVO [^\]]*\]\][\s\S]*?\[\[/ARQUIVO\]\]", " "));
         if (Regex.IsMatch(plain, @"\b(o que voce pode|oq vc pode|quais suas ferramentas|que ferramentas|o que vc faz|so um teste)\b"))
             return OperatorIntentKind.Capabilities;
+        if (Regex.IsMatch(plain, @"\b(salvei um alvo|ta no escopo|olha a gaveta|alvo salvo|no escopo|cadastr|vetor)\b"))
+            return OperatorIntentKind.Planning;
         if (Regex.IsMatch(plain, @"\b(faca o recon|faca recon|investigue|mapeie|osint|subdominios)\b"))
             return OperatorIntentKind.Execution;
-        if (Regex.IsMatch(plain, @"\b(escopo|alvo salvo|ta no escopo|no escopo|cadastr|vetor)\b"))
+        if (Regex.IsMatch(plain, @"\bescopo\b"))
             return OperatorIntentKind.Planning;
         return OperatorIntentKind.Other;
+    }
+
+    public static bool WantsScope(string? userText)
+    {
+        var plain = IntentRouter.Normalize(Regex.Replace(userText ?? "", @"\[\[ARQUIVO [^\]]*\]\][\s\S]*?\[\[/ARQUIVO\]\]", " "));
+        return Regex.IsMatch(plain, @"\b(salvei um alvo|ta no escopo|olha a gaveta|alvo salvo|no escopo)\b");
+    }
+
+    /// <summary>Primeiro domínio, ou a primeira linha útil, da gaveta Escopo & Alvos.</summary>
+    public static string? TargetFromScope(string? scopeText)
+    {
+        var text = scopeText ?? "";
+        var host = Regex.Match(text, @"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b", RegexOptions.IgnoreCase);
+        if (host.Success) return host.Value.ToLowerInvariant();
+        foreach (var line in text.Split('\n'))
+        {
+            var t = line.Trim().TrimStart('-', '*', ' ');
+            if (t.Length >= 3 && !t.StartsWith('#')) return t;
+        }
+        return null;
     }
 
     public const string EvidenceRules =
@@ -31,8 +53,10 @@ public static class OperatorIntent
         "[INFERRED] só como hipótese em cima de dado confirmado. [NOT_FOUND] quando a consulta rodou e veio vazio, 404 ou NXDOMAIN: escreva \"Nenhum registro encontrado nesta consulta\". " +
         "[TOOL_UNAVAILABLE] se a ferramenta não está na lista. [UNVERIFIED] para fala de terceiro sem teste. " +
         "Proibido inventar rota, arquivo, porta, subdomínio, registrar ou cabeçalho. " +
-        "Proibido emitir caixa de comando para o Alexssander colar, a menos que ele peça o comando manual. " +
-        "Se a ação não tem ferramenta local, diga: \"Não possuo ferramenta local ativa para executar esta ação\".";
+        "Proibido escrever bloco fingindo comando (wappalyzer, burp ou similar) para o Alexssander colar. " +
+        "Se a ferramenta existe, chame-a. Se não existe, diga em uma frase: \"Não possuo ferramenta local para esse teste específico\" e pergunte se ele quer hipóteses conceituais. " +
+        "Delegação: superfície, certificado, DNS e endpoint ficam com o Recon; BOLA, IDOR, JWT e contas com o Auth; XSS, SQLi e SSRF com marcador inerte com o Input; regra de negócio e race com o Logic; contraprova com o Verify. Ao delegar, cite o alvo, a hipótese e a nota gerada. " +
+        "Descoberta com URL confirmada vai para a gaveta Superfície. Suspeita sem teste vai para Hipóteses. Não pergunte o domínio se a gaveta Escopo & Alvos já tem o alvo.";
 
     public static string Directive(OperatorIntentKind kind, string scopeText)
     {
@@ -44,7 +68,7 @@ public static class OperatorIntent
             OperatorIntentKind.Capabilities =>
                 "CLASSIFICAÇÃO: [CAPABILITIES_QUERY]. Liste só as capacidades reais (navegador no grupo Nex, arquivos, computador, pesquisa, caderno, OSINT passivo, subagentes). Não recite o checklist de 6 passos. Não chame ferramenta.",
             OperatorIntentKind.Planning =>
-                "CLASSIFICAÇÃO: [PLANNING_AND_SCOPE]. Confirme o alvo com a gaveta abaixo. Se ele disse que o alvo já está salvo, use o que está na gaveta e não peça para digitar de novo. Proponha o teste mínimo. Não execute ainda.",
+                "CLASSIFICAÇÃO: [PLANNING_AND_SCOPE]. A gaveta abaixo já foi lida. Se houver alvo, ele é a verdade oficial: confirme e proponha o teste mínimo. Proibido perguntar \"qual é o domínio?\". Não execute ainda.",
             OperatorIntentKind.Execution =>
                 "CLASSIFICAÇÃO: [ACTIVE_EXECUTION]. Use só ferramenta disponível e o que ela devolveu. Etiquete cada achado como [CONFIRMED] ou [NOT_FOUND].",
             _ => "Antes de analisar, consulte a gaveta de escopo abaixo. Não invente alvo.",

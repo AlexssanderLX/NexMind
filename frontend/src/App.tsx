@@ -6,6 +6,8 @@ import MetricsModal, { loadColor, loadPercent } from "./components/MetricsModal"
 import NexStage from "./components/NexStage";
 import SecurityAgentsLayer from "./components/SecurityAgentsLayer";
 import SecurityTaskPanel from "./components/SecurityTaskPanel";
+import WorkspaceSwitcher from "./components/WorkspaceSwitcher";
+import { parseMode } from "./lib/workspaces";
 import { IDLE_TASKS, TOOL_CARDS, briefArg, describeTask, isBusyState, pathOf, taskStatusText, toolKeyOf, type ToolKey, type ToolTask } from "./lib/toolTasks";
 import SecurityVaultModal from "./components/SecurityVaultModal";
 import type { VaultKey } from "./lib/vaults";
@@ -105,10 +107,7 @@ export default function App() {
   // O painel "Ferramentas" é um monitor das tasks em andamento, atualizado pelos eventos do stream.
   const [toolTasks, setToolTasks] = useState<Record<ToolKey, ToolTask>>(IDLE_TASKS);
   const lastPathRef = useRef("");
-  const [microApp, setMicroApp] = useState<MicroAppMode>(() => {
-    const saved = localStorage.getItem("nexMicroApp");
-    return saved === "security" || saved === "dev" ? saved : "general";
-  });
+  const [microApp, setMicroApp] = useState<MicroAppMode>(() => parseMode(localStorage.getItem("nexMicroApp")));
   const [approval, setApproval] = useState<{ id: string; tool: string; args: unknown; write?: boolean; warning?: string | null } | null>(null);
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadVoice);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
@@ -156,7 +155,13 @@ export default function App() {
     mic: { active: voice.phase === "listening", toggle: () => {} },
   });
 
-  const refreshList = useCallback(() => api.list().then(setConversations).catch(() => {}), []);
+  // cada modo (workspace) tem as suas conversas: a lista vem filtrada pelo modo ativo. Resposta atrasada de outro modo é descartada.
+  const modeRef = useRef(microApp);
+  modeRef.current = microApp;
+  const refreshList = useCallback(() => {
+    const asked = modeRef.current;
+    return api.list(asked).then((list) => modeRef.current === asked && setConversations(list)).catch(() => {});
+  }, [microApp]);
 
   useEffect(() => {
     localStorage.setItem("settings", JSON.stringify(settings));
@@ -176,8 +181,21 @@ export default function App() {
   usePolling(() => api.metrics().then(setMetrics).catch(() => setMetrics(null)), showMetrics ? 1_500 : 10_000);
 
   useEffect(() => {
+    setConversations([]);
     refreshList();
   }, [refreshList]);
+
+  /** Troca de workspace: cada modo tem as suas conversas; ao trocar, abre uma tela limpa do modo novo. */
+  function changeMode(next: MicroAppMode) {
+    if (streaming || next === microApp) return;
+    setMicroApp(next);
+    setActiveId(null);
+    setMessages([]);
+    setChatError(null);
+    setVaultOpen(null);
+    setToolTasks(IDLE_TASKS);
+    lastPathRef.current = "";
+  }
 
   // Rolagem: a conversa só acompanha a resposta enquanto você está no fim. Se você sobe para ler, ela para de te puxar;
   // ao voltar ao fim (ou ao enviar uma mensagem / trocar de conversa) ela volta a acompanhar.
@@ -227,7 +245,7 @@ export default function App() {
   /** O micro-chat do subagente precisa de uma conversa (as anotações ficam na pasta dela): cria uma se ainda não há. */
   async function ensureConversation(): Promise<string> {
     if (activeId) return activeId;
-    const c = await api.create();
+    const c = await api.create(microApp);
     setActiveId(c.id);
     setMessages([]);
     refreshList();
@@ -242,7 +260,7 @@ export default function App() {
     lastPathRef.current = "";
     if (activeId && messages.length === 0) return; // já está numa conversa vazia
     try {
-      const c = await api.create();
+      const c = await api.create(microApp);
       setActiveId(c.id);
       setMessages([]);
       refreshList();
@@ -287,7 +305,7 @@ export default function App() {
     let id = activeId;
     try {
       if (!id) {
-        id = (await api.create()).id;
+        id = (await api.create(microApp)).id;
         setActiveId(id);
       }
     } catch (e) {
@@ -466,8 +484,7 @@ export default function App() {
         onDelete={remove}
         onRename={rename}
         onSettings={() => setShowSettings(true)}
-        microApp={microApp}
-        onMicroApp={setMicroApp}
+        mode={microApp}
       />
 
       {/* sem z-index aqui: um z-index criaria um contexto de empilhamento isolado e o canvas do núcleo (mix-blend-mode: screen) não conseguiria se misturar com o fundo da página */}
@@ -478,7 +495,8 @@ export default function App() {
           </div>
         )}
         <header className="flex items-center justify-between gap-3 px-6 py-3">
-          <div className="flex min-w-0 items-baseline gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <WorkspaceSwitcher mode={microApp} onChange={changeMode} disabled={streaming} />
             <h1 className="truncate text-sm font-medium">{title}</h1>
             <span className="shrink-0 text-xs text-mute max-sm:hidden" title="O contexto é escolhido por mensagem (4096 na GPU, sobe só quando precisa). O valor das Configurações é o máximo.">
               {activeModel} · ctx adaptativo (máx. {settings.numCtx})

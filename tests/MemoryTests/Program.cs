@@ -52,6 +52,23 @@ try
     Check("Reinício: o .json antigo foi ARQUIVADO em _legado (nada apagado)", File.Exists(Path.Combine(convDir, "_legado", "0123456789abcdef0123456789abcdef.json")) && !File.Exists(Path.Combine(convDir, "0123456789abcdef0123456789abcdef.json")));
     Check("a pasta _legado não vira conversa", store2.List().All(s => s.Id.Length == 32 && s.Id != "_legado"));
 
+    // ---------- workspaces: cada conversa nasce num modo e a lista de cada modo só mostra as dele
+    var cSec = store2.Create("security");
+    var cDev = store2.Create("DEV");
+    var cBad = store2.Create("hacker");
+    Check("modos: conversa nasce no modo pedido; modo inválido ou ausente vira general", cSec.Mode == "security" && cDev.Mode == "dev" && cBad.Mode == "general" && store2.Create().Mode == "general");
+    Check("modos: cada lista mostra só as conversas do seu modo", store2.List("security").Any(s => s.Id == cSec.Id) && !store2.List("security").Any(s => s.Id == cDev.Id || s.Id == c.Id)
+        && store2.List("dev").All(s => s.Mode == "dev") && store2.List("general").Any(s => s.Id == c.Id) && !store2.List("general").Any(s => s.Id == cSec.Id));
+    Check("modos: sem filtro lista todas, com o mode de cada uma", store2.List().Count(s => s.Mode == "security") >= 1 && store2.List().Count >= store2.List("general").Count + 2);
+    // conversa antiga, sem o campo mode, é do general
+    var legacyId = "fedcba9876543210fedcba9876543210";
+    Directory.CreateDirectory(Path.Combine(convDir, legacyId));
+    File.WriteAllText(Path.Combine(convDir, legacyId, "conversation.json"), "{\"id\":\"" + legacyId + "\",\"title\":\"sem modo\",\"titleEdited\":false,\"createdAt\":\"2026-01-01T00:00:00Z\",\"updatedAt\":\"2026-01-01T00:00:00Z\",\"messages\":[]}");
+    var storeM = new ConversationStore(convDir);
+    Check("modos: o modo sobrevive ao reinício e a conversa sem campo é general",
+        storeM.List("security").Any(s => s.Id == cSec.Id) && storeM.List("dev").Any(s => s.Id == cDev.Id) && storeM.List("general").Any(s => s.Id == legacyId) && !storeM.List("security").Any(s => s.Id == legacyId));
+    Check("modos: o filtro ignora maiúsculas e espaço", storeM.List(" Security ").Any(s => s.Id == cSec.Id));
+
     // ---------- segurança de caminho
     var sentinel = Path.Combine(root, "nao-apague");
     Directory.CreateDirectory(sentinel);

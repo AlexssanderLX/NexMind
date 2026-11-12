@@ -66,15 +66,26 @@ public partial class ConversationStore
         return Directory.Exists(folder) ? folder : null;
     }
 
-    public List<ConversationSummary> List()
+    public static readonly string[] Modes = ["general", "security", "dev"];
+
+    /// <summary>Modo válido em minúsculas; qualquer outra coisa (ou vazio) vira "general".</summary>
+    public static string NormalizeMode(string? mode)
     {
-        lock (_lock) return _index.Values.OrderByDescending(c => c.UpdatedAt).ToList();
+        var m = (mode ?? "").Trim().ToLowerInvariant();
+        return Modes.Contains(m) ? m : "general";
     }
 
-    public Conversation Create()
+    /// <param name="mode">Se informado, só as conversas deste modo (a lista de cada workspace); sem ele, todas.</param>
+    public List<ConversationSummary> List(string? mode = null)
+    {
+        var filter = string.IsNullOrWhiteSpace(mode) ? null : NormalizeMode(mode);
+        lock (_lock) return _index.Values.Where(c => filter is null || c.Mode == filter).OrderByDescending(c => c.UpdatedAt).ToList();
+    }
+
+    public Conversation Create(string? mode = null)
     {
         var now = DateTime.UtcNow;
-        var c = new Conversation { Id = Guid.NewGuid().ToString("N"), CreatedAt = now, UpdatedAt = now };
+        var c = new Conversation { Id = Guid.NewGuid().ToString("N"), Mode = NormalizeMode(mode), CreatedAt = now, UpdatedAt = now };
         ConversationMemory.Seed(FolderOf(c.Id)); // cria a pasta com os índices e tópicos
         Save(c);
         return c;
@@ -103,7 +114,7 @@ public partial class ConversationStore
             var tmp = path + ".tmp";
             File.WriteAllText(tmp, json);
             File.Move(tmp, path, overwrite: true);
-            _index[c.Id] = new ConversationSummary(c.Id, c.Title, c.UpdatedAt);
+            _index[c.Id] = new ConversationSummary(c.Id, c.Title, c.UpdatedAt, NormalizeMode(c.Mode));
         }
     }
 
@@ -154,7 +165,7 @@ public partial class ConversationStore
         try
         {
             var c = JsonSerializer.Deserialize<Conversation>(File.ReadAllText(path), Json);
-            return c is null ? null : new ConversationSummary(c.Id, c.Title, c.UpdatedAt);
+            return c is null ? null : new ConversationSummary(c.Id, c.Title, c.UpdatedAt, NormalizeMode(c.Mode));
         }
         catch (JsonException) { return null; } // arquivo corrompido: ignora
     }
@@ -162,7 +173,7 @@ public partial class ConversationStore
     private static ConversationSummary? ParseHeader(ReadOnlySpan<byte> data)
     {
         var r = new Utf8JsonReader(data, isFinalBlock: false, default);
-        string? id = null, title = null;
+        string? id = null, title = null, mode = null;
         DateTime? updated = null;
         try
         {
@@ -176,6 +187,7 @@ public partial class ConversationStore
                 {
                     case "id": id = r.GetString(); break;
                     case "title": title = r.GetString(); break;
+                    case "mode": mode = r.GetString(); break; // vem antes de updatedAt; arquivo antigo não tem e vira "general"
                     case "updatedAt": updated = r.GetDateTime(); break;
                 }
                 if (id is not null && title is not null && updated is not null) break;
@@ -183,7 +195,7 @@ public partial class ConversationStore
         }
         catch (JsonException) { return null; }
         return id is not null && title is not null && updated is not null
-            ? new ConversationSummary(id, title, updated.Value)
+            ? new ConversationSummary(id, title, updated.Value, NormalizeMode(mode))
             : null;
     }
 }

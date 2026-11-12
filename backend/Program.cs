@@ -66,8 +66,10 @@ api.MapGet("/metrics", async (SystemMetrics sys, OllamaClient ollama, Cancellati
 });
 
 // --- Conversas
-api.MapGet("/conversations", (ConversationStore s) => s.List());
-api.MapPost("/conversations", (ConversationStore s) => s.Create());
+// ?mode=general|security|dev lista só as conversas daquele workspace; sem o parâmetro, todas (cada item traz o mode)
+api.MapGet("/conversations", (string? mode, ConversationStore s) => s.List(mode));
+// ?mode=... vincula a conversa nova ao workspace ativo
+api.MapPost("/conversations", (string? mode, ConversationStore s) => s.Create(mode));
 api.MapGet("/conversations/{id}", (string id, ConversationStore s) =>
     s.Get(id) is { } c ? Results.Ok(c) : Results.NotFound());
 api.MapDelete("/conversations/{id}", (string id, ConversationStore s) =>

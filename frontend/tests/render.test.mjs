@@ -74,20 +74,38 @@ test("mensagem antiga sem raciocínio nem ferramenta não ganha pílula", () => 
   assert.ok(html.plainOld.includes("Mensagem antiga"));
 });
 
-test("Micro Apps: seletor com Geral e Security, e o modo ativo marcado", () => {
-  for (const s of [html.sidebarGeneral, html.sidebarSecurity]) {
-    assert.match(s, /role="radiogroup" aria-label="Micro Apps"/);
-    assert.match(s, />Geral</);
-    assert.match(s, /Security</);
-    assert.match(s, /<svg[^>]*><path d="M12 3l7 3v5/, "ícone de escudo");
+test("sidebar: sem o bloco 'Micro Apps' e sem o botão de escudo, limpa e focada nas conversas", () => {
+  for (const s of [html.sidebarGeneral, html.sidebarSecurity, html.sidebarCollapsedSecurity]) {
+    assert.doesNotMatch(s, /Micro App/);
+    assert.doesNotMatch(s, /radiogroup/);
+    assert.doesNotMatch(s, /M12 3l7 3v5/, "sem o ícone de escudo");
   }
-  assert.match(html.sidebarGeneral, /role="radio" aria-checked="true"[^>]*>(?:<!-- -->)?Geral/);
-  assert.match(html.sidebarSecurity, /aria-checked="true"[^>]*><svg[\s\S]*?Security/);
+  assert.match(html.sidebarGeneral, /Nova conversa/);
+  assert.match(html.sidebarGeneral, /Recentes/);
 });
 
-test("barra lateral recolhida tem o botão de escudo que alterna o modo", () => {
-  assert.match(html.sidebarCollapsedSecurity, /aria-pressed="true"/);
-  assert.match(html.sidebarCollapsedSecurity, /Micro App: Security/);
+test("sidebar: mostra só as conversas do modo ativo", () => {
+  // o harness passa 3 conversas: uma geral, uma security e uma antiga sem o campo mode (= geral)
+  assert.match(html.sidebarGeneral, /Conversa geral/);
+  assert.match(html.sidebarGeneral, /Conversa antiga/);
+  assert.doesNotMatch(html.sidebarGeneral, /Conversa de seguranca/);
+  assert.match(html.sidebarSecurity, /Conversa de seguranca/);
+  assert.doesNotMatch(html.sidebarSecurity, /Conversa geral|Conversa antiga/);
+  assert.match(html.sidebarDev, /Nenhuma conversa neste modo ainda/);
+});
+
+test("switcher compacto: botão com ícone, nome do modo e setinha", () => {
+  assert.match(html.switcherSecurity, /aria-haspopup="menu"/);
+  assert.match(html.switcherSecurity, /aria-expanded="false"/);
+  assert.match(html.switcherSecurity, /🛡️/);
+  assert.match(html.switcherSecurity, />Security</);
+  assert.match(html.switcherSecurity, /▾/);
+  assert.match(html.switcherDev, /💻[\s\S]*>Dev</);
+  assert.doesNotMatch(html.switcherSecurity, /role="menu"/, "o menu só abre no clique");
+});
+
+test("switcher compacto: bloqueado enquanto o Nex responde", () => {
+  assert.match(html.switcherDisabled, /disabled=""/);
 });
 
 test("gavetas: ocupam 100% da largura em grade de 6 colunas (2, 3 e 6 conforme a tela)", () => {

@@ -27,7 +27,7 @@ export type Message = {
 };
 
 export type Conversation = { id: string; title: string; model?: string | null; messages: Message[] };
-export type ConversationSummary = { id: string; title: string; updatedAt: string };
+export type ConversationSummary = { id: string; title: string; updatedAt: string; mode?: MicroAppMode };
 
 export type OllamaStatus = {
   connected: boolean;

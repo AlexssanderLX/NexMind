@@ -14,8 +14,10 @@ export type DevNode = { name: string; path: string; directory: boolean; children
 export const api = {
   status: () => req<OllamaStatus>("/api/status"),
   metrics: () => req<Metrics>("/api/metrics"),
-  list: () => req<ConversationSummary[]>("/api/conversations"),
-  create: () => req<Conversation>("/api/conversations", { method: "POST" }),
+  /** Só as conversas do modo (workspace) informado; sem modo, todas. */
+  list: (mode?: string) => req<ConversationSummary[]>(`/api/conversations${mode ? `?mode=${mode}` : ""}`),
+  /** A conversa nasce vinculada ao modo (workspace) ativo. */
+  create: (mode?: string) => req<Conversation>(`/api/conversations${mode ? `?mode=${mode}` : ""}`, { method: "POST" }),
   get: (id: string) => req<Conversation>(`/api/conversations/${id}`),
   remove: (id: string) => req<void>(`/api/conversations/${id}`, { method: "DELETE" }),
   /** Histórico do micro-chat de um especialista de Security e as notas dele. */

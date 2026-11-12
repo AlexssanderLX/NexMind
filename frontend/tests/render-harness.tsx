@@ -8,6 +8,7 @@ import { VaultFormatted } from "../src/components/SecurityVaultModal";
 import { VAULTS } from "../src/lib/vaults";
 import SubagentChat from "../src/components/SubagentChat";
 import Sidebar from "../src/components/Sidebar";
+import WorkspaceSwitcher from "../src/components/WorkspaceSwitcher";
 import TaskThinkingPill from "../src/components/TaskThinkingPill";
 import type { Message, MicroAppMode, ToolRun } from "../src/types";
 
@@ -21,7 +22,11 @@ export function render() {
   const sidebar = (microApp: MicroAppMode, collapsed = false) =>
     renderToStaticMarkup(
       <Sidebar
-        items={[{ id: "a", title: "Conversa", updatedAt: "2026-11-12T00:00:00Z" }]}
+        items={[
+          { id: "a", title: "Conversa geral", updatedAt: "2026-11-12T00:00:00Z", mode: "general" },
+          { id: "b", title: "Conversa de seguranca", updatedAt: "2026-11-12T00:00:00Z", mode: "security" },
+          { id: "c", title: "Conversa antiga", updatedAt: "2026-11-12T00:00:00Z" },
+        ]}
         activeId="a"
         connected
         connectionLabel="ok"
@@ -32,8 +37,7 @@ export function render() {
         onDelete={noop}
         onRename={noop}
         onSettings={noop}
-        microApp={microApp}
-        onMicroApp={noop}
+        mode={microApp}
       />,
     );
 
@@ -90,6 +94,10 @@ export function render() {
     sidebarGeneral: sidebar("general"),
     sidebarSecurity: sidebar("security"),
     sidebarCollapsedSecurity: sidebar("security", true),
+    sidebarDev: sidebar("dev"),
+    switcherSecurity: renderToStaticMarkup(<WorkspaceSwitcher mode="security" onChange={noop} />),
+    switcherDev: renderToStaticMarkup(<WorkspaceSwitcher mode="dev" onChange={noop} />),
+    switcherDisabled: renderToStaticMarkup(<WorkspaceSwitcher mode="general" onChange={noop} disabled />),
     panel: renderToStaticMarkup(<SecurityTaskPanel />),
     vaults: [...VAULTS],
   };

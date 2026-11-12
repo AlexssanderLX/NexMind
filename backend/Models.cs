@@ -11,13 +11,15 @@ public class Conversation
     public string Title { get; set; } = "Nova conversa";
     /// <summary>true depois que o usuário renomeou: o título automático (1ª mensagem) não sobrescreve mais.</summary>
     public bool TitleEdited { get; set; }
+    /// <summary>Modo (workspace) em que a conversa nasceu: "general", "security" ou "dev". Conversas antigas, sem o campo, são "general". Não muda depois de criada.</summary>
+    public string Mode { get; set; } = "general";
     public string? Model { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public List<Message> Messages { get; set; } = new();
 }
 
-public record ConversationSummary(string Id, string Title, DateTime UpdatedAt);
+public record ConversationSummary(string Id, string Title, DateTime UpdatedAt, string Mode = "general");
 
 public record RenameRequest(string? Title);
 

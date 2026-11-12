@@ -271,6 +271,11 @@ try
     Check("osint: três vetores de pessoa e nenhum certificado", vectors.Count == 3 && vectors[0].Query.Contains("site:github.com") && vectors[1].Query.Contains("linkedin.com/in") && vectors[2].Query.Contains("jusbrasil.com.br"));
     Check("osint: domínio ganha o vetor crt.sh", Research.Vectors("exemplo.com").Any(v => v.Query.Contains("crt.sh")));
     Check("osint: próximos passos reaproveitam o alvo anterior", OsintEngine.ResolveTarget("faz os próximos passos", new[] { ("user", "Faça um OSINT sobre Ada Lovelace") }) == "Ada Lovelace");
+    Check("intenção: pergunta de capacidade não executa", OperatorIntent.Classify("calma só um teste oq vc pode fazer") == OperatorIntentKind.Capabilities);
+    Check("intenção: escopo é planejamento", OperatorIntent.Classify("o alvo salvo tá no escopo") == OperatorIntentKind.Planning);
+    Check("intenção: ordem de recon executa", OperatorIntent.Classify("faça o recon de exemplo.com") == OperatorIntentKind.Execution);
+    var scopeDir = OperatorIntent.Directive(OperatorIntentKind.Planning, "- exemplo.com");
+    Check("intenção: a gaveta entra no prompt e o estado de evidência também", scopeDir.Contains("[Escopo & Alvos]") && scopeDir.Contains("exemplo.com") && scopeDir.Contains("[CONFIRMED]") && scopeDir.Contains("[NOT_FOUND]"));
 
     // ---------- Nex Security: catálogo dos subagentes
     var ids = SubagentCatalog.All.Select(a => a.Id).ToList();

@@ -211,8 +211,10 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         // Regra base: respostas diretas. O modelo de 4B tende a escrever muito; texto longo custa tempo (tokens na GPU/CPU).
         var textLower = userText.ToLowerInvariant();
         // pesquisa na web liga pela frase ("pesquise na internet…", "busque no google…"), sem interruptor; o filtro antes da busca continua
-        var wantsOsint = OsintEngine.WantsInvestigation(userText);
-        var autoSearch = req.Search || IntentRouter.WantsSearch(userText) || textLower.Contains("pesquisa na web") || textLower.Contains("pesquise na internet") || wantsOsint;
+        var kind = OperatorIntent.Classify(userText);
+        var wantsOsint = kind == OperatorIntentKind.Execution && (OsintEngine.WantsInvestigation(userText) || osintTarget is not null);
+        var autoSearch = kind != OperatorIntentKind.Capabilities && kind != OperatorIntentKind.Planning &&
+            (req.Search || IntentRouter.WantsSearch(userText) || textLower.Contains("pesquisa na web") || textLower.Contains("pesquise na internet") || wantsOsint);
         var searchAddon = "";
         string? investigationTarget = null;
         if (wantsOsint)
@@ -278,9 +280,9 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         var (_, agentIndex0) = memory.Indexes(conv.Id);
         var hasRag = rag.GetFiles(conv.Id).Count > 0;
         var intent = IntentRouter.Route(userText, req.Tools, req.Browser, req.Desktop, hasNotes: agentIndex0.Contains("nota(s)"), hasRagFiles: hasRag);
-        var autoBrowser = intent.Browser;
-        var autoFiles = intent.Files;
-        var autoDesktop = intent.Desktop;
+        var autoBrowser = kind != OperatorIntentKind.Capabilities && kind != OperatorIntentKind.Planning && intent.Browser;
+        var autoFiles = kind != OperatorIntentKind.Capabilities && kind != OperatorIntentKind.Planning && intent.Files;
+        var autoDesktop = kind != OperatorIntentKind.Capabilities && kind != OperatorIntentKind.Planning && intent.Desktop;
         IReadOnlyList<NexTool> mcpTools = [];
         if (autoFiles || autoBrowser || autoDesktop)
         {
@@ -339,6 +341,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                   "\n=== SEU CADERNO DE RACIOCÍNIO (ÍNDICE DO AGENTE: suas hipóteses e notas) ===\n" + agentIndex +
                   "\nPara consultar detalhes ou registrar hipóteses, use as ferramentas topic_read e topic_write. Quando o Alexssander perguntar o que foi anotado, combinado ou comprovado, chame topic_read antes de responder; quando ele pedir para anotar algo, chame topic_write.\n";
         if (!string.IsNullOrWhiteSpace(req.System)) system += "\n\nInstrução adicional da conversa: " + req.System;
+        if (conv.Mode == "security" || kind != OperatorIntentKind.Other)
+            system += "\n\n" + OperatorIntent.Directive(kind, secNotes.ReadVault(conv.Id, "scope").Text) + "\n";
         // Micro-RAG de segurança SOB DEMANDA: as anotações dos subagentes só são lidas quando o Alexssander PERGUNTA por elas
         // ("O que o Recon achou?"). Em qualquer outra conversa nada de security/ é lido, e o Nex principal continua leve.
         var notesAsk = SecurityIntent.Detect(userText);

@@ -65,7 +65,7 @@ public sealed class SubagentRunner
                 .TakeLast(HistoryMessages).Select(e => (e.Role, e.Content)).ToList();
             history.Add(("user", userText));
 
-            var system = SubagentCatalog.BuildSystem(agent);
+            var system = SubagentCatalog.BuildSystem(agent) + "\n\n" + OperatorIntent.EvidenceRules;
             var vault = _notes.VaultPromptBlock(conversationId, 900);
             if (vault.Length > 0) system += "\n\nGAVETAS DA INVESTIGAÇÃO (versão oficial, editada pelo Alexssander; trate como verdade e não contradiga sem motivo):\n" + vault;
             var tail = _notes.Read(conversationId, agent.Id, 1200);

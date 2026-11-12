@@ -34,6 +34,8 @@ export const SECURITY_KNOWLEDGE = [
   "- Ferramentas do app: navegador no grupo de abas Nex (ler páginas, DOM e scripts), arquivos, computador, pesquisa na web e o caderno. Ações que alteram algo pedem a aprovação dele.",
   "- Princípios operacionais: hipótese não é vulnerabilidade (refutabilidade em primeiro lugar); menor intervenção necessária; separe o fato observado da suspeita; foco na execução técnica sem burocracia.",
   "- Domínio de OSINT: investigação passiva com motores de busca, descoberta de ativos, subdomínios, tecnologias, repositórios públicos e footprints digitais.",
+  "- Evidência: cada achado sai como [CONFIRMED], [INFERRED], [NOT_FOUND], [TOOL_UNAVAILABLE] ou [UNVERIFIED]. Sem rota, porta ou subdomínio inventado. Sem caixa de comando, a menos que o Alexssander peça o comando.",
+  "- Antes de agir, a frase é [CAPABILITIES_QUERY] (só lista o que existe), [PLANNING_AND_SCOPE] (confirma a gaveta Escopo & Alvos) ou [ACTIVE_EXECUTION] (só então a ferramenta roda).",
 ].join("\n");
 
 /** O `system` enviado ao backend: o das Configurações, mais o do modo Security quando ele está ativo. */

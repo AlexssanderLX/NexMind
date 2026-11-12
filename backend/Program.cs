@@ -41,6 +41,7 @@ builder.Services.AddHttpClient("search", http =>
     http.DefaultRequestHeaders.UserAgent.ParseAdd("NexMind/1.0 (pesquisa local)");
 });
 builder.Services.AddSingleton<Research>();
+builder.Services.AddSingleton<OsintEngine>();
 builder.Services.AddSingleton(new McpRegistry(Path.Combine(builder.Environment.ContentRootPath, "mcp_servers.json")));
 builder.Services.AddSingleton<ApprovalBroker>();
 builder.Services.AddSingleton(sp => new ConversationMemory(sp.GetRequiredService<ConversationStore>()));
@@ -152,7 +153,7 @@ api.MapPost("/conversations/{id}/security/{agent}/chat", async (string id, strin
 
 // --- Chat com streaming (NDJSON: {type: thinking|token|done|error, ...})
 api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpContext ctx,
-    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes, RagEngine rag) =>
+    ConversationStore store, OllamaClient ollama, Research research, OsintEngine osint, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes, RagEngine rag) =>
 {
     var ct = ctx.RequestAborted;
     var conv = store.Get(id);
@@ -195,9 +196,38 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         // Regra base: respostas diretas. O modelo de 4B tende a escrever muito; texto longo custa tempo (tokens na GPU/CPU).
         var textLower = userText.ToLowerInvariant();
         // pesquisa na web liga pela frase ("pesquise na internet…", "busque no google…"), sem interruptor; o filtro antes da busca continua
-        var autoSearch = req.Search || IntentRouter.WantsSearch(userText) || textLower.Contains("pesquisa na web") || textLower.Contains("pesquise na internet");
+        var osintTarget = OsintEngine.TargetOf(userText);
+        var wantsOsint = osintTarget is not null || textLower.Contains("osint");
+        var autoSearch = req.Search || IntentRouter.WantsSearch(userText) || textLower.Contains("pesquisa na web") || textLower.Contains("pesquise na internet") || wantsOsint;
         var searchAddon = "";
-        if (autoSearch)
+        string? investigationTarget = null;
+        var investigationFacts = 0;
+        if (wantsOsint)
+        {
+            if (osintTarget is null)
+            {
+                var ask = "Qual é o alvo do OSINT: um nome ou um domínio?";
+                content.Append(ask);
+                await Send(new { type = "token", text = ask });
+            }
+            else
+            {
+                await Send(new { type = "tool", name = "osint", state = "executando", query = osintTarget });
+                var result = await osint.InvestigateAsync(osintTarget, ct);
+                foreach (var fact in result.Facts)
+                    memory.AddFact(conv.Id, fact);
+                investigationTarget = result.Target;
+                investigationFacts = result.Facts.Count;
+                var notes = result.Findings.Count == 0
+                    ? "A coleta não devolveu URL. Diga que não houve fato confirmado. Não invente perfil, subdomínio nem link."
+                    : string.Join("\n", result.Findings.Select(h => $"- {h.Title} ({h.Url}): {h.Snippet}"));
+                var playbookPath = Path.Combine(app.Environment.ContentRootPath, "skills", "osint_playbook.md");
+                var playbook = File.Exists(playbookPath) ? File.ReadAllText(playbookPath) : "";
+                searchAddon = $"\n\nOSINT já executado. Alvo: {result.Target}. Classificação: {result.Kind}.\n{notes}\n\n{playbook}\nEntregue o relatório nesse formato, só com o que está acima. Não diga que vai pesquisar ou abrir o Google.\n";
+                await Send(new { type = "tool", name = "osint", state = "pronta" });
+            }
+        }
+        else if (autoSearch)
         {
             await Send(new { type = "tool", name = "pesquisa", state = "filtrando" });
             var (action, query, question) = await research.DecideAsync(req.Model, history, ct);
@@ -211,6 +241,15 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             {
                 await Send(new { type = "tool", name = "pesquisa", state = "executando", query });
                 var hits = await research.SearchAsync(query, ct);
+                var saved = 0;
+                foreach (var h in hits)
+                    if (FactExtractor.FromWeb(h.Title, h.Url) is { } line)
+                    {
+                        memory.AddFact(conv.Id, line);
+                        saved++;
+                    }
+                investigationTarget = query;
+                investigationFacts = saved;
                 var notes = hits.Count == 0
                     ? "A busca não devolveu trechos. Diga isso e não invente o fato."
                     : string.Join("\n", hits.Select(h => $"- {h.Title} ({h.Url}): {h.Snippet}"));
@@ -277,10 +316,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         system += autoSearch
             ? "- Pesquisa na web: LIGADA. Cite a fonte e não invente o que a busca não trouxe.\n"
             : "- Pesquisa na web: não acionada nesta mensagem (liga sozinha quando ele pede para pesquisar na internet). Se ele pedir um fato atual da internet, diga para ele pedir 'pesquise na internet ...'. NUNCA mande ele ligar nada.\n";
-        // Ciclo de 2 tempos SÓ quando há ferramenta injetada. Antes ele ia sempre no prompt, com um exemplo ("vou abrir o site..."), e o modelo
-        // copiava a frase em conversa comum, prometendo uma ação que não podia fazer.
         system += intent.Any
-            ? "\nCICLO DE 2 TEMPOS (você tem ferramentas nesta resposta): TEMPO 1, antes de chamar uma ferramenta, escreva UMA frase dizendo ao Alexssander qual ação vai executar agora. TEMPO 2, só então chame a ferramenta; a cada resultado, relate o micropasso em poucas palavras e, no fim, entregue a conclusão.\n"
+            ? "\nSe for usar uma ferramenta, chame-a direto. Não escreva antes uma frase do tipo 'vou abrir' ou 'vou pesquisar': essa frase encerra o turno sem executar nada. A interface já mostra o status.\n"
             : "\nNesta resposta você NÃO tem ferramentas: responda direto, sem anunciar nem prometer ações como abrir sites, ler arquivos ou clicar.\n";
         // Micro-RAG da conversa: só os dois índices compactos (~120 tokens). O detalhe fica em disco, atrás de topic_read.
         var (systemIndex, agentIndex) = memory.Indexes(conv.Id);
@@ -331,7 +368,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         // Qwen3 4B tem 36 camadas. Acima de 16 mil tokens, 24 ficam na GPU e 12 na RAM desde o carregamento.
         int? numGpu = numCtx > 16384 ? 24 : null;
         // O planejamento abre o raciocínio da resposta: o usuário vê o que o Nex decidiu (contexto e ferramentas) antes de qualquer token.
-        var planning = ToolTelemetry.PlanningBlock(intent, plan, notesAsk is null ? null : SecurityIntent.Describe(notesAsk));
+        var planning = ToolTelemetry.PlanningBlock(intent, plan, notesAsk is null ? null : SecurityIntent.Describe(notesAsk), investigationTarget, investigationFacts);
         thinking.Append(planning).Append('\n');
         await Send(new { type = "thinking", text = planning + "\n" });
 

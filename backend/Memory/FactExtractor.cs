@@ -34,6 +34,14 @@ public static partial class FactExtractor
         }
     }
 
+    /// <summary>Uma linha de fato a partir de um resultado público (título e URL). Sem modelo.</summary>
+    public static string? FromWeb(string title, string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        var line = $"{title} | {url}".Replace('\n', ' ').Trim();
+        return line.Length > 220 ? line[..220] : line;
+    }
+
     private static string? Arg(JsonElement args, string key)
     {
         if (args.ValueKind != JsonValueKind.Object) return null;

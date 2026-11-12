@@ -1,26 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
-  <!-- Testes do micro-RAG da conversa (sem Ollama e sem servidor): compila os mesmos fontes do backend.
-       Rodar com o comando dotnet run apontando para a pasta tests/MemoryTests. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>MemoryTests</RootNamespace>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
-
   <ItemGroup>
-    <Compile Include="..\..\backend\Memory\*.cs" />
-    <Compile Include="..\..\backend\Storage\ConversationStore.cs" />
-    <Compile Include="..\..\backend\Models.cs" />
-    <Compile Include="..\..\backend\Planning\*.cs" />
-    <Compile Include="..\..\backend\Mcp\OutputClip.cs" />
-    <Compile Include="..\..\backend\Dev\WorkspaceManager.cs" />
-    <Compile Include="..\..\backend\Security\SubagentCatalog.cs" />
-    <Compile Include="..\..\backend\Security\SecurityNotes.cs" />
-    <Compile Include="..\..\backend\Security\SecurityIntent.cs" />
-    <Compile Include="..\..\backend\voice\VoiceAssets.cs" />
+    <Compile Remove="ToolCallStub.cs" />
+    <ProjectReference Include="..\..\backend\LocalAi.Api.csproj" />
   </ItemGroup>
-
 </Project>

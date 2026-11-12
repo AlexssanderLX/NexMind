@@ -40,9 +40,19 @@ public static class ToolTelemetry
         return $"[TELEMETRIA DE MEMÓRIA ATIVA: {plan.EstimatedTokens}/{plan.NumCtx} tokens ({pct}% ocupado) | Diretriz: se passar de 75%, {offload} e mantenha suas respostas diretas para preservar 100% da velocidade da GPU]";
     }
 
-    /// <summary>O bloco que abre o raciocínio de cada resposta: o que o Nex decidiu antes de falar.</summary>
-    public static string PlanningBlock(ToolIntent intent, ContextPlan plan, string? hint = null)
+    /// <summary>O bloco que abre o raciocínio. Em OSINT, só as fases da investigação. Sem métrica de GPU.</summary>
+    public static string PlanningBlock(ToolIntent intent, ContextPlan plan, string? hint = null, string? osintTarget = null, int osintFacts = 0)
     {
+        if (!string.IsNullOrWhiteSpace(osintTarget))
+        {
+            var sbOsint = new StringBuilder();
+            sbOsint.AppendLine("💭 [Investigação OSINT]");
+            sbOsint.AppendLine($"• Alvo: {osintTarget}");
+            sbOsint.AppendLine("• Fase 1: Varredura de pegada digital (GitHub, perfis técnicos, registros públicos)");
+            sbOsint.AppendLine("• Fase 2: Coleta de evidências e subdomínios (crt.sh / Web)");
+            sbOsint.AppendLine($"• Memória: {osintFacts} fatos catalogados em facts.md");
+            return sbOsint.ToString();
+        }
         var sb = new StringBuilder();
         sb.AppendLine("💭 [Planejamento de Execução]");
         sb.AppendLine($"• Complexidade: {plan.Complexity}");

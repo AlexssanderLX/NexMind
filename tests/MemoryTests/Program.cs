@@ -6,6 +6,7 @@ using LocalAi.Api.Planning;
 using LocalAi.Api.Mcp;
 using LocalAi.Api.Security;
 using LocalAi.Api.Storage;
+using LocalAi.Api.Tools;
 using LocalAi.Api.Voice;
 
 // Testes do micro-RAG da conversa. Sem framework: cada Check imprime OK/FALHA e o processo sai com 1 se algo falhar.
@@ -262,6 +263,10 @@ try
     Check("memória ativa: sem caderno a diretriz não promete uma ferramenta que não existe", !mem0.Contains("topic_write") && mem0.Contains("resuma os achados"));
     Check("memória ativa: porcentagem fica entre 1 e 100", ToolTelemetry.MemoryTelemetry(new ContextPlan(4096, "d", "g", null, 0), true).Contains("(1% ocupado)") && ToolTelemetry.MemoryTelemetry(new ContextPlan(4096, "d", "g", null, 99999), true).Contains("(100% ocupado)"));
     Check("planejamento: o aviso de desempenho aparece no bloco", ToolTelemetry.PlanningBlock(R("oi"), p2).Contains("⚠"));
+    var osintBlock = ToolTelemetry.PlanningBlock(R("osint"), p0, osintTarget: "exemplo.com", osintFacts: 3);
+    Check("osint: o balão mostra as fases e os fatos, sem camada de GPU", osintBlock.Contains("[Investigação OSINT]") && osintBlock.Contains("Alvo: exemplo.com") && osintBlock.Contains("Fase 1:") && osintBlock.Contains("Fase 2:") && osintBlock.Contains("3 fatos catalogados em facts.md") && !osintBlock.Contains("camadas"), osintBlock);
+    Check("osint: extrai o alvo da frase", OsintEngine.TargetOf("Faça um OSINT sobre Alexssander Ferreira de Almeida") == "Alexssander Ferreira de Almeida");
+    Check("osint: domínio é domínio e nome não é", OsintEngine.IsDomain("exemplo.com.br") && !OsintEngine.IsDomain("Alexssander Ferreira de Almeida"));
 
     // ---------- Nex Security: catálogo dos subagentes
     var ids = SubagentCatalog.All.Select(a => a.Id).ToList();

@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ConversationSummary } from "../types";
+import type { ConversationSummary, MicroAppMode } from "../types";
+
+const ShieldIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" />
+    <path d="M9.5 12l2 2 3.5-4" />
+  </svg>
+);
 
 const PanelIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
@@ -28,7 +35,11 @@ export default function Sidebar({
   onDelete,
   onRename,
   onSettings,
+  microApp,
+  onMicroApp,
 }: {
+  microApp: MicroAppMode;
+  onMicroApp: (mode: MicroAppMode) => void;
   onSettings: () => void;
   onRename: (id: string, title: string) => void;
   items: ConversationSummary[];
@@ -85,6 +96,14 @@ export default function Sidebar({
           <button onClick={onNew} title="Nova conversa" className="mt-2 rounded-lg p-2 text-xl leading-none text-mute hover:bg-white/5 hover:text-accent">
             +
           </button>
+          <button
+            onClick={() => onMicroApp(microApp === "security" ? "general" : "security")}
+            title={microApp === "security" ? "Micro App: Security (clique para voltar ao Geral)" : "Micro App: Geral (clique para o modo Security)"}
+            aria-pressed={microApp === "security"}
+            className={`mt-2 rounded-lg p-2 hover:bg-white/5 ${microApp === "security" ? "text-accent" : "text-mute hover:text-accent"}`}
+          >
+            <ShieldIcon />
+          </button>
           <div className="flex-1" />
           <button onClick={onSettings} title="Configurações" className="mb-2 rounded-lg p-2 text-mute hover:bg-white/5 hover:text-accent">
             <GearIcon />
@@ -111,6 +130,32 @@ export default function Sidebar({
             >
               <span className="text-base leading-none text-accent">+</span> Nova conversa
             </button>
+          </div>
+
+          <div className="px-5 pb-1 pt-2 text-xs font-medium text-mute">Micro Apps</div>
+          <div className="px-3 pb-1">
+            <div role="radiogroup" aria-label="Micro Apps" className="grid grid-cols-2 gap-1 rounded-lg border border-accent/15 p-1">
+              {(
+                [
+                  ["general", "Geral", null],
+                  ["security", "Security", <ShieldIcon key="shield" />],
+                ] as const
+              ).map(([mode, label, icon]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={microApp === mode}
+                  onClick={() => onMicroApp(mode)}
+                  className={`flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                    microApp === mode ? "bg-accent/15 text-accent" : "text-mute hover:bg-white/5 hover:text-fg"
+                  }`}
+                >
+                  {icon}
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="px-5 pb-1 pt-3 text-xs font-medium text-mute">Recentes</div>

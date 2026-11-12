@@ -5,6 +5,7 @@ using LocalAi.Api.Llm;
 using LocalAi.Api.Mcp;
 using LocalAi.Api.Memory;
 using LocalAi.Api.Metrics;
+using LocalAi.Api.Planning;
 using LocalAi.Api.Storage;
 using LocalAi.Api.Tools;
 using LocalAi.Api.Voice;
@@ -149,18 +150,13 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         }
         if (content.Length == 0) // pesquisa pediu esclarecimento: pergunta já enviada, não chama o modelo
         {
-        // Qwen3 4B tem 36 camadas. Acima de 16 mil tokens, 24 ficam na GPU e 12 na RAM desde o carregamento.
-        int? numGpu = req.NumCtx > 16384 ? 24 : null;
-
-        // Ferramentas MCP: o interruptor liga, ou a frase deixa a intenção óbvia (site, aba, arquivo).
-        var autoBrowser = req.Browser || textLower.Contains("http://") || textLower.Contains("https://")
-            || textLower.Contains("navegador") || textLower.Contains("aba") || textLower.Contains("site")
-            || textLower.Contains("github") || textLower.Contains("gmail") || textLower.Contains("pagina") || textLower.Contains("página");
-        var autoFiles = req.Tools || textLower.Contains("arquivo") || textLower.Contains("pasta")
-            || textLower.Contains("diretorio") || textLower.Contains("diretório") || textLower.Contains(".cs") || textLower.Contains(".ts")
-            || textLower.Contains("codigo") || textLower.Contains("código");
-        var autoDesktop = req.Desktop || textLower.Contains("computador") || textLower.Contains("janela")
-            || textLower.Contains("calculadora") || textLower.Contains("bloco de notas") || textLower.Contains("aplicativo");
+        // Ferramentas sob demanda: tudo começa DESLIGADO. Só a intenção da frase (ou um interruptor do usuário) injeta o que precisa,
+        // porque cada definição de ferramenta custa tokens e contexto. "Bom dia Nex" não leva nenhuma.
+        var (_, agentIndex0) = memory.Indexes(conv.Id);
+        var intent = IntentRouter.Route(userText, req.Tools, req.Browser, req.Desktop, hasNotes: agentIndex0.Contains("nota(s)"));
+        var autoBrowser = intent.Browser;
+        var autoFiles = intent.Files;
+        var autoDesktop = intent.Desktop;
         IReadOnlyList<NexTool> mcpTools = [];
         if (autoFiles || autoBrowser || autoDesktop)
         {
@@ -177,11 +173,14 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         var agora = DateTime.Now.ToString("dddd, dd 'de' MMMM 'de' yyyy, HH:mm:ss", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
         var system =
             $"Data e hora atual do sistema: {agora} (Horário local do Alexssander).\n" +
-            "Você é o Nex, um assistente de IA local e inteligente rodando no computador do usuário. " +
-            "Seu criador e usuário é o Alexssander, um Desenvolvedor e Pentester experiente. " +
-            "Comunicação: seja direto, técnico, profissional e vá direto ao ponto, sem enrolação nem fechamentos clichês como 'espero ter ajudado'. " +
-            "Quando estiver operando ferramentas, seja ultra-conciso para poupar contexto e tempo de GPU. " +
-            "Quando estiver conversando conceitualmente com o Alexssander, responda com profundidade técnica e parceria.\n\n" +
+            "Você é o Nex, parceiro técnico sênior e amigo de bancada do Alexssander (desenvolvedor e pentester experiente), rodando local no computador dele. " +
+            "Fale como um colega experiente: direto, calmo, confiante e técnico. Zero bajulação: nada de elogio vazio, de 'claro!', 'ótima pergunta' nem de 'espero ter ajudado'. " +
+            "Texto curto e denso: vá ao ponto, dê a recomendação e o motivo em uma ou duas frases, com termos de engenharia. " +
+            "Se discordar ou enxergar um risco, diga com franqueza e proponha a alternativa; se não souber, diga que não sabe. " +
+            "Em conversa conceitual aprofunde com parceria, sem enrolar.\n\n" +
+            "CICLO DE 2 TEMPOS (sempre que for usar uma ferramenta): TEMPO 1, antes de chamar qualquer ferramenta, escreva UMA frase dizendo ao Alexssander o que vai fazer (exemplo: 'Vou abrir o site e ler a página.'). " +
+            "TEMPO 2, só então chame a ferramenta; a cada resultado, relate o micropasso em poucas palavras e, no fim, entregue a conclusão. " +
+            "Sem ferramentas, responda direto: nada de plano nem de anúncio.\n\n" +
             "Arquitetura de Ferramentas (MCP - Model Context Protocol):\n" +
             "- Você tem acesso a servidores MCP que expandem seu poder além do chat.\n" +
             "- NUNCA PROMETA O QUE NÃO TEM FERRAMENTA: só diga que vai fazer algo se existir uma ferramenta na lista para isso. Se não existir, diga com clareza que não consegue e, se fizer sentido, mostre o comando para o Alexssander executar. Não peça confirmação para uma ação que você não tem como executar.\n" +
@@ -222,14 +221,36 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             type = "function",
             function = new { name = t.QualifiedName, description = t.Description, parameters = t.Schema },
         }).ToList();
-        ollamaTools.AddRange(NotebookTools.Definitions()); // topic_read e topic_write: sempre disponíveis, vinculadas a esta conversa
+        if (intent.Notebook) ollamaTools.AddRange(NotebookTools.Definitions()); // topic_read e topic_write só quando a frase fala do caderno ou ele já tem notas
+
+        // Contexto adaptativo: decidido aqui, com o tamanho REAL do prompt e das ferramentas injetadas. Começa em 4096 (100% na GPU)
+        // e só sobe quando a conversa precisa; o valor das Configurações é o teto.
+        LoadedModel? loadedModel = null;
+        try { loadedModel = await ollama.GetLoadedModelAsync(ct); } catch (HttpRequestException) { /* sem Ollama: o erro aparece na chamada do modelo */ }
+        int? loadedCtx = loadedModel is not null && string.Equals(loadedModel.Name, req.Model, StringComparison.OrdinalIgnoreCase) ? loadedModel.ContextLength : null;
+        var attachmentChars = System.Text.RegularExpressions.Regex.Matches(userText, @"\[\[ARQUIVO [^\]]*\]\][\s\S]*?\[\[/ARQUIVO\]\]").Sum(m => m.Length);
+        var plan = ContextPlanner.Plan(
+            req.NumCtx,
+            ContextPlanner.EstimateTokens(system.Length + JsonSerializer.Serialize(ollamaTools).Length),
+            ContextPlanner.EstimateTokens(history.Sum(h => h.Content.Length)),
+            intent.AnyMcp,
+            attachmentChars,
+            loadedCtx);
+        var numCtx = plan.NumCtx;
+        // Qwen3 4B tem 36 camadas. Acima de 16 mil tokens, 24 ficam na GPU e 12 na RAM desde o carregamento.
+        int? numGpu = numCtx > 16384 ? 24 : null;
+        // O planejamento abre o raciocínio da resposta: o usuário vê o que o Nex decidiu (contexto e ferramentas) antes de qualquer token.
+        var planning = ToolTelemetry.PlanningBlock(intent, plan);
+        thinking.Append(planning).Append('\n');
+        await Send(new { type = "thinking", text = planning + "\n" });
+
         var extra = new List<object>();
         // Tarefas de navegador (abrir, ler, clicar, ler de novo) precisam de mais passos que ler um arquivo.
         var MaxToolRounds = browserTools.Count > 0 ? 12 : 4;
         // Custo de contexto: cada leitura é cortada em ~metade do contexto (em caracteres, 1500..8000) e a rodada inteira
         // não passa de ~1 caractere por token de contexto; acabou o orçamento, o modelo responde com o que já leu.
-        var resultCap = Math.Clamp(req.NumCtx / 2, 1500, 8000);
-        var turnBudget = browserTools.Count > 0 ? req.NumCtx * 3 / 2 : req.NumCtx;
+        var resultCap = Math.Clamp(numCtx / 2, 1500, 8000);
+        var turnBudget = browserTools.Count > 0 ? numCtx * 3 / 2 : numCtx;
 
         for (var round = 0; round <= MaxToolRounds; round++)
         {
@@ -240,8 +261,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             }
             List<ToolCall>? calls = null;
             var roundText = new StringBuilder();
-            await foreach (var chunk in ollama.ChatAsync(req.Model, system, history, req.NumCtx, req.Think, numGpu,
-                               extra, round < MaxToolRounds ? ollamaTools : null, ct))
+            await foreach (var chunk in ollama.ChatAsync(req.Model, system, history, numCtx, req.Think, numGpu,
+                               extra, round < MaxToolRounds && ollamaTools.Count > 0 ? ollamaTools : null, ct))
             {
                 if (!string.IsNullOrEmpty(chunk.Thinking))
                 {
@@ -270,10 +291,10 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                 if (NotebookTools.IsNotebookTool(call.Name))
                 {
                     // caderno da conversa: nativo, sem aprovação (só lê ou acrescenta notas na pasta desta conversa)
-                    await Send(new { type = "mcp", name = call.Name, state = "executando" });
+                    await Send(new { type = "mcp", name = call.Name, state = "executando", brief = ToolTelemetry.Summarize(call.Arguments), detail = JsonSerializer.Serialize(call.Arguments) });
                     var (nbOk, nbText) = NotebookTools.Handle(call, memory, conv.Id, Math.Min(resultCap, Math.Max(turnBudget, 500)));
                     turnBudget -= nbText.Length;
-                    await Send(new { type = "mcp", name = call.Name, state = nbOk ? "concluida" : "falhou" });
+                    await Send(new { type = "mcp", name = call.Name, state = nbOk ? "concluida" : "falhou", detail = nbOk ? (nbText.Length > 800 ? nbText[..800] : nbText) : "ERRO: " + nbText });
                     extra.Add(new { role = "tool", tool_name = call.Name, content = nbOk ? nbText : "ERRO: " + nbText });
                     continue;
                 }
@@ -302,12 +323,12 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                     if (!allowed)
                     {
                         result = "O usuário recusou esta ação (ou não respondeu a tempo). Não tente executá-la de novo; diga o que você faria.";
-                        await Send(new { type = "mcp", name = tool.QualifiedName, state = "recusada" });
+                        await Send(new { type = "mcp", name = tool.QualifiedName, state = "recusada", brief = ToolTelemetry.Summarize(call.Arguments), detail = "Recusada pelo Alexssander (ou sem resposta a tempo)." });
                     }
                     else
                     {
                         var argsText = JsonSerializer.Serialize(call.Arguments);
-                        await Send(new { type = "mcp", name = tool.QualifiedName, state = "executando", detail = argsText.Length > 500 ? argsText[..500] : argsText });
+                        await Send(new { type = "mcp", name = tool.QualifiedName, state = "executando", brief = ToolTelemetry.Summarize(call.Arguments), detail = argsText.Length > 500 ? argsText[..500] : argsText });
                         var r = await mcp.CallAsync(tool, call.Arguments, Math.Min(resultCap, turnBudget), ct);
                         turnBudget -= r.Text.Length;
                         result = r.Ok ? r.Text : "ERRO: " + r.Text;

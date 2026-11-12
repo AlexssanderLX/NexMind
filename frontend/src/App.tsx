@@ -4,13 +4,14 @@ import Background from "./components/Background";
 import MessageView from "./components/MessageView";
 import MetricsModal, { loadColor, loadPercent } from "./components/MetricsModal";
 import NexStage from "./components/NexStage";
+import SecurityTaskPanel from "./components/SecurityTaskPanel";
 import SettingsModal from "./components/SettingsModal";
 import Sidebar from "./components/Sidebar";
 import { useNexCore } from "./hooks/useNexCore";
 import { usePolling } from "./hooks/usePolling";
 import { useVoice } from "./hooks/useVoice";
 import { createTokenBuffer } from "./lib/tokenBuffer";
-import type { ConversationSummary, Message, Metrics, OllamaStatus, Settings, VoiceSettings, VoiceStatus, VoiceTimings } from "./types";
+import type { ConversationSummary, Message, Metrics, MicroAppMode, OllamaStatus, Settings, VoiceSettings, VoiceStatus, VoiceTimings } from "./types";
 
 const VOICE_DEFAULTS: VoiceSettings = {
   enabled: false,
@@ -94,12 +95,15 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [reasoning, setReasoning] = useState(false);
-  const [searchOn, setSearchOn] = useState(() => localStorage.getItem("nexSearch") === "1");
-  const [mcpOn, setMcpOn] = useState(() => localStorage.getItem("nexMcp") === "1");
+  // Cold start: as ferramentas SEMPRE começam desligadas (ao abrir o app e a cada conversa nova). Ligadas pesam ~3500 tokens no prompt.
+  // O backend liga sozinho só a que a frase pede; os interruptores forçam.
+  const [searchOn, setSearchOn] = useState(false);
+  const [mcpOn, setMcpOn] = useState(false);
   const [mcpState, setMcpState] = useState<"pronta" | "executando">("pronta");
-  const [browserOn, setBrowserOn] = useState(() => localStorage.getItem("nexBrowser") === "1");
+  const [browserOn, setBrowserOn] = useState(false);
   const [browserState, setBrowserState] = useState<"pronta" | "executando">("pronta");
-  const [desktopOn, setDesktopOn] = useState(() => localStorage.getItem("nexDesktop") === "1");
+  const [desktopOn, setDesktopOn] = useState(false);
+  const [microApp, setMicroApp] = useState<MicroAppMode>(() => (localStorage.getItem("nexMicroApp") === "security" ? "security" : "general"));
   const [desktopState, setDesktopState] = useState<"pronta" | "executando">("pronta");
   const [approval, setApproval] = useState<{ id: string; tool: string; args: unknown; write?: boolean; warning?: string | null } | null>(null);
   const [searchState, setSearchState] = useState<"desligada" | "pronta" | "executando">("desligada");
@@ -120,6 +124,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("voice-settings", JSON.stringify(voiceSettings));
   }, [voiceSettings]);
+
+  useEffect(() => {
+    localStorage.setItem("nexMicroApp", microApp);
+  }, [microApp]);
 
   useEffect(() => {
     api.voiceStatus().then(setVoiceStatus).catch(() => setVoiceStatus(null));
@@ -203,6 +211,12 @@ export default function App() {
   async function newConversation() {
     if (streaming) return;
     setChatError(null);
+    // conversa nova = cold start: nenhuma ferramenta ligada, nenhum schema extra no prompt
+    setSearchOn(false);
+    setSearchState("desligada");
+    setMcpOn(false);
+    setBrowserOn(false);
+    setDesktopOn(false);
     if (activeId && messages.length === 0) return; // já está numa conversa vazia
     try {
       const c = await api.create();
@@ -297,16 +311,14 @@ export default function App() {
       }
     };
     if (speakBack) voice.armSpeech();
-    // Contexto sob medida: o de 32 mil joga parte do modelo na CPU (3x mais lento). Usa o menor que cabe na conversa
-    // (+ espaço para a resposta) e só sobe quando o texto realmente precisa; Configurações fica como limite máximo.
-    const neededTokens = Math.ceil((messages.reduce((n, m) => n + m.content.length, 0) + text.length) / 3) + 1500 + (mcpOn ? 3500 : 0); // ferramentas: descrições + resultados
-    const ctxNow = [4096, 8192, 16384, 32768].find((c) => c >= neededTokens && c <= settings.numCtx) ?? settings.numCtx;
+    // O contexto agora é decidido no BACKEND (4096 na GPU, sobe só quando a conversa ou as ferramentas precisam):
+    // a tela manda o valor das Configurações como TETO.
     try {
       await streamChat(
         id,
         text,
         activeModel,
-        { ...settings, numCtx: Math.min(ctxNow, settings.numCtx) },
+        settings,
         (ev) => {
           if (firstEvent) {
             firstEvent = false;
@@ -332,8 +344,8 @@ export default function App() {
                 const tools = [...(m.tools ?? [])];
                 const last = tools[tools.length - 1];
                 if (last && last.name === ev.name && (last.state === "executando" || last.state === "carregando"))
-                  tools[tools.length - 1] = { name: ev.name, state: ev.state, detail: [last.detail, ev.detail].filter(Boolean).join("\n\n") };
-                else tools.push({ name: ev.name, state: ev.state, detail: ev.detail });
+                  tools[tools.length - 1] = { name: ev.name, state: ev.state, detail: [last.detail, ev.detail].filter(Boolean).join("\n\n"), brief: ev.brief ?? last.brief };
+                else tools.push({ name: ev.name, state: ev.state, detail: ev.detail, brief: ev.brief });
                 return { ...m, tools };
               });
             }
@@ -426,6 +438,8 @@ export default function App() {
         onDelete={remove}
         onRename={rename}
         onSettings={() => setShowSettings(true)}
+        microApp={microApp}
+        onMicroApp={setMicroApp}
       />
 
       {/* sem z-index aqui: um z-index criaria um contexto de empilhamento isolado e o canvas do núcleo (mix-blend-mode: screen) não conseguiria se misturar com o fundo da página */}
@@ -433,11 +447,27 @@ export default function App() {
         <header className="flex items-center justify-between gap-3 px-6 py-3">
           <div className="flex min-w-0 items-baseline gap-3">
             <h1 className="truncate text-sm font-medium">{title}</h1>
-            <span className="shrink-0 text-xs text-mute max-sm:hidden">
-              {activeModel} · ctx {settings.numCtx}
+            <span className="shrink-0 text-xs text-mute max-sm:hidden" title="O contexto é escolhido por mensagem (4096 na GPU, sobe só quando precisa). O valor das Configurações é o máximo.">
+              {activeModel} · ctx adaptativo (máx. {settings.numCtx})
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {microApp === "security" && (
+              <>
+                <span className="rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-accent" title="Modo Security ativo">
+                  🛡 Sessão de segurança
+                </span>
+                <a
+                  href="/workbench.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full border border-accent/30 bg-panel/80 px-3 py-1 text-xs text-accent hover:border-accent hover:bg-accent/10"
+                  title="Abrir o OWASP Workbench em uma nova aba"
+                >
+                  OWASP Workbench ↗
+                </a>
+              </>
+            )}
             <button
               onClick={() => setShowMetrics(true)}
               title="Consumo do sistema"
@@ -454,6 +484,8 @@ export default function App() {
             </button>
           </div>
         </header>
+
+        {microApp === "security" && <SecurityTaskPanel />}
 
         <NexStage
           core={nex}

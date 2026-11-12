@@ -4,8 +4,7 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import type { Message } from "../types";
-import ThinkingCard from "./ThinkingCard";
-import ToolAccordion from "./ToolAccordion";
+import TaskThinkingPill from "./TaskThinkingPill";
 
 /** O Qwen às vezes usa \( \) e \[ \] em vez de $ $ e $$ $$; o remark-math só entende os cifrões. */
 function normalizeMath(text: string): string {
@@ -41,11 +40,12 @@ function MessageView({ m, streaming }: { m: Message; streaming?: boolean }) {
     );
   }
 
+  const hasPill = (m.tools?.length ?? 0) > 0 || !!m.thinking;
+  const live = !!streaming && !m.stats;
+
+  // Action-first: o texto do Nex vem PRIMEIRO; a pílula de tarefa (ferramentas + raciocínio) fica logo abaixo, numa linha.
   return (
     <div className="text-[15px] leading-7" data-no-core data-color-card>
-      {m.tools && m.tools.length > 0 && <ToolAccordion tools={m.tools} />}
-      {m.thinking && <ThinkingCard text={m.thinking} streaming={!!streaming && !m.stats} />}
-
       {m.content ? (
         <div className="md break-words">
           <Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}>
@@ -53,9 +53,11 @@ function MessageView({ m, streaming }: { m: Message; streaming?: boolean }) {
           </Markdown>
         </div>
       ) : (
-        streaming && !m.thinking && <span className="text-mute">…</span>
+        streaming && !hasPill && <span className="text-mute">…</span>
       )}
       {streaming && m.content && <span className="inline-block h-4 w-1.5 animate-pulse bg-mute align-middle" />}
+
+      {hasPill && <TaskThinkingPill tools={m.tools ?? []} thinking={m.thinking} live={live} />}
 
       {m.stats && (
         <div className="mt-3 text-xs text-mute">

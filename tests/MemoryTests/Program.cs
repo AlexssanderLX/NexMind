@@ -2,6 +2,7 @@ using System.Text.Json;
 using LocalAi.Api;
 using LocalAi.Api.Llm;
 using LocalAi.Api.Memory;
+using LocalAi.Api.Planning;
 using LocalAi.Api.Storage;
 using LocalAi.Api.Voice;
 
@@ -168,6 +169,52 @@ try
     Check("voz: NEX_VOICE_HOME troca a pasta comum", VoiceAssets.LocalRoot == Path.Combine(root, "outro-lugar"), VoiceAssets.LocalRoot);
     Environment.SetEnvironmentVariable("NEX_VOICE_HOME", antes);
     Check("voz: sem NEX_VOICE_HOME volta para %LOCALAPPDATA%\nex\voice", VoiceAssets.LocalRoot.EndsWith(Path.Combine("nex", "voice")), VoiceAssets.LocalRoot);
+
+    // ---------- roteador de intenção: tudo desligado por padrão, a frase liga só o que precisa
+    ToolIntent R(string text, bool f = false, bool b = false, bool d = false, bool notes = false) => IntentRouter.Route(text, f, b, d, notes);
+    foreach (var direta in new[] { "Bom dia Nex", "Explique o que é um race condition", "Qual a diferença entre TCP e UDP?", "Escreva um código em C# que soma dois números", "Como está o abacaxi?", "Me dá um resumo do OWASP Top 10" })
+        Check($"intenção direta, nenhuma ferramenta: '{direta}'", !R(direta).Any, R(direta).Describe());
+    Check("intenção: URL liga só o navegador", R("Abre https://alexssanderlx.com.br e me diz o título") is { Browser: true, Files: false, Desktop: false });
+    Check("intenção: 'abas' e 'página' ligam o navegador (com e sem acento)", R("liste as abas do grupo").Browser && R("leia a página aberta").Browser && R("leia a pagina aberta").Browser);
+    Check("intenção: 'aba' não casa dentro de 'abacaxi'", !R("quanto custa o abacaxi").Browser);
+    Check("intenção: GitHub, Gmail e LinkedIn ligam o navegador", R("vê o que tem no GitHub").Browser && R("resume meu gmail").Browser && R("abre o LinkedIn").Browser);
+    Check("intenção: arquivo, pasta e caminho do Windows ligam só Arquivos", R("leia o arquivo notas.md") is { Files: true, Browser: false } && R("liste a pasta C:/dados").Files && R("abra C:\\temp\\x.txt").Files);
+    Check("intenção: extensão conhecida liga Arquivos", R("revise o Program.cs").Files && R("olha o config.json").Files);
+    Check("intenção: janela, calculadora e bloco de notas ligam o Computador", R("abre a calculadora").Desktop && R("lista as janelas abertas").Desktop && R("escreve no bloco de notas").Desktop);
+    Check("intenção: anotar e hipótese ligam o Caderno", R("anote no scratchpad que a hipótese 1 é X").Notebook && R("o que anotamos até agora?").Notebook && R("como é sua memória?").Notebook);
+    Check("intenção: caderno com notas já existentes fica disponível", R("bom dia", notes: true).Notebook && !R("bom dia").Notebook);
+    Check("intenção: interruptor do usuário liga mesmo sem a frase", R("oi", f: true).Files && R("oi", b: true).Browser && R("oi", d: true).Desktop);
+    Check("intenção: texto de anexo não conta (PDF que cita 'site')", !R("[[ARQUIVO a.pdf]]\nvisite o site https://x.com na pasta\n[[/ARQUIVO]]\nresuma em duas frases").AnyMcp);
+    Check("intenção: Describe lista os nomes", R("abre https://x.com e anota").Describe() == "Navegador, Caderno" && R("oi").Describe() == "nenhuma");
+    Check("intenção: Normalize tira acento e caixa", IntentRouter.Normalize("PÁGINA Já Aberta") == "pagina ja aberta");
+
+    // ---------- contexto adaptativo
+    var p0 = ContextPlanner.Plan(32768, 1800, 20, usesMcp: false, attachmentChars: 0, loadedCtx: null);
+    Check("contexto: 'Bom dia Nex' fica em 4096 e 100% GPU", p0.NumCtx == 4096 && p0.Complexity == "direta" && p0.GpuNote == "100% na GPU" && p0.Warning is null, $"{p0.NumCtx} {p0.Complexity}");
+    var p1 = ContextPlanner.Plan(32768, 3000, 100, usesMcp: true, attachmentChars: 0, loadedCtx: null);
+    Check("contexto: ferramenta MCP sobe para 8192 (ainda 100% GPU)", p1.NumCtx == 8192 && p1.Complexity == "ferramenta" && p1.Warning is null, $"{p1.NumCtx}");
+    var p2 = ContextPlanner.Plan(32768, 1800, 9000, usesMcp: false, attachmentChars: 30000, loadedCtx: null);
+    Check("contexto: anexo grande sobe para 16384 e avisa do desempenho", p2.NumCtx == 16384 && p2.Complexity == "extensa" && p2.Warning is not null && p2.Warning.Contains("RAM"), $"{p2.NumCtx} {p2.Warning}");
+    var p3 = ContextPlanner.Plan(32768, 1800, 25000, usesMcp: false, attachmentChars: 75000, loadedCtx: null);
+    Check("contexto: conversa gigante chega a 32768 com aviso de CPU", p3.NumCtx == 32768 && p3.Warning!.Contains("14") && p3.GpuNote.Contains("CPU"), $"{p3.NumCtx}");
+    var p4 = ContextPlanner.Plan(8192, 1800, 40000, usesMcp: false, attachmentChars: 0, loadedCtx: null);
+    Check("contexto: o teto das Configurações manda e o corte é avisado", p4.NumCtx == 8192 && p4.Warning!.Contains("cortado"), $"{p4.NumCtx} {p4.Warning}");
+    Check("contexto: teto menor que 4096 é respeitado", ContextPlanner.Plan(2048, 1800, 20, false, 0, null).NumCtx == 2048);
+    Check("contexto: modelo já carregado em 8192 não recarrega para 4096", ContextPlanner.Plan(32768, 1800, 20, false, 0, 8192).NumCtx == 8192);
+    Check("contexto: histerese não passa de 8192 (16k fica caro na GPU)", ContextPlanner.Plan(32768, 1800, 20, false, 0, 16384).NumCtx == 4096);
+    Check("contexto: carregado menor que o necessário não segura", ContextPlanner.Plan(32768, 3000, 100, true, 0, 4096).NumCtx == 8192);
+    Check("contexto: GpuNote por faixa", ContextPlanner.GpuNote(4096) == "100% na GPU" && ContextPlanner.GpuNote(8192) == "100% na GPU" && ContextPlanner.GpuNote(16384).Contains("12 na RAM") && ContextPlanner.GpuNote(32768).Contains("CPU"));
+    Check("contexto: estimativa de tokens (3 caracteres por token)", ContextPlanner.EstimateTokens(300) == 100 && ContextPlanner.EstimateTokens(301) == 101);
+
+    // ---------- telemetria e bloco de planejamento
+    Check("telemetria: resume argumentos", ToolTelemetry.Summarize(Args("{\"url\":\"https://a.com/x\",\"tab_id\":5}")) == "url=https://a.com/x tab_id=5");
+    Check("telemetria: corta texto longo e tira quebra de linha", ToolTelemetry.Summarize(Args("{\"text\":\"" + new string('a', 200) + "\\nlinha\"}")).Length <= 141);
+    Check("telemetria: objeto aninhado vira reticências e não-objeto vira vazio", ToolTelemetry.Summarize(Args("{\"edits\":[1,2]}")) == "edits=…" && ToolTelemetry.Summarize(Args("[]")) == "");
+    var blockDirect = ToolTelemetry.PlanningBlock(R("Bom dia"), p0);
+    Check("planejamento: conversa direta mostra contexto 4096 e nenhuma ferramenta", blockDirect.Contains("[Planejamento de Execução]") && blockDirect.Contains("Contexto: 4096 (100% na GPU)") && blockDirect.Contains("Ferramentas: nenhuma"), blockDirect);
+    var blockTools = ToolTelemetry.PlanningBlock(R("abre https://x.com"), p1);
+    Check("planejamento: com navegador mostra Ferramentas: [Navegador] e contexto 8192", blockTools.Contains("Ferramentas: [Navegador]") && blockTools.Contains("Contexto: 8192"), blockTools);
+    Check("planejamento: o aviso de desempenho aparece no bloco", ToolTelemetry.PlanningBlock(R("oi"), p2).Contains("⚠"));
 
     // ---------- Delete leva a micropasta inteira
     Check("Delete remove a micropasta inteira", store.Delete(c2.Id) && !Directory.Exists(Path.Combine(convDir, c2.Id)) && store.Get(c2.Id) is null);

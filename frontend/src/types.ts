@@ -10,7 +10,12 @@ export type ToolRun = {
   name: string;
   state: string;
   detail?: string;
+  /** Resumo de uma linha dos argumentos, para a barra de telemetria ao vivo (ex.: "url=https://…"). */
+  brief?: string;
 };
+
+/** Micro App ativo na barra lateral: conversa geral ou o modo de segurança (OWASP Workbench). */
+export type MicroAppMode = "general" | "security";
 
 export type Message = {
   role: "user" | "assistant";
@@ -80,7 +85,7 @@ export type StreamEvent =
   | { type: "token"; text: string }
   | { type: "thinking"; text: string }
   | { type: "tool"; name: string; state: string; query?: string }
-  | { type: "mcp"; name: string; state: string; detail?: string }
+  | { type: "mcp"; name: string; state: string; detail?: string; brief?: string }
   | { type: "approval"; id: string; tool: string; server: string; name: string; args: unknown; write?: boolean; warning?: string | null }
   | { type: "done"; stats: ChatStats | null }
   | { type: "error"; message: string };

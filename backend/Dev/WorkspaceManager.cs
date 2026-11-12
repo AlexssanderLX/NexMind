@@ -38,6 +38,71 @@ public sealed class WorkspaceManager
         return full;
     }
 
+    /// <summary>Nome de exibição da pasta ("ia-local"); para a raiz de um disco ("C:\"), o próprio caminho.</summary>
+    public static string FolderName(string path)
+    {
+        var trimmed = path.TrimEnd('\\', '/');
+        var name = Path.GetFileName(trimmed);
+        return name.Length > 0 ? name : path;
+    }
+
+    /// <summary>Limpa a saída do seletor: sem quebras de linha e sem espaços nas pontas. Vazio = o usuário cancelou.</summary>
+    public static string? ParsePicked(string? output)
+    {
+        var text = (output ?? "").Replace("\r", "").Replace("\n", "").Trim().Trim('\uFEFF');
+        return text.Length == 0 ? null : text;
+    }
+
+    private static readonly SemaphoreSlim PickerGate = new(1, 1);
+
+    // Janela nativa de seleção de pasta do Windows (FolderBrowserDialog) num PowerShell STA, sempre na frente das outras janelas.
+    // Vai como -EncodedCommand (UTF-16 em base64): nenhum caractere do script passa por aspas do shell.
+    private const string PickerScript =
+        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; " +
+        "Add-Type -AssemblyName System.Windows.Forms; " +
+        "$owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true; ShowInTaskbar = $false; Opacity = 0; StartPosition = 'CenterScreen' }; " +
+        "$owner.Show(); $owner.Activate(); " +
+        "$dlg = New-Object System.Windows.Forms.FolderBrowserDialog; " +
+        "$dlg.Description = 'Escolha a pasta do projeto'; $dlg.ShowNewFolderButton = $false; " +
+        "if ($dlg.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dlg.SelectedPath) }; " +
+        "$owner.Close()";
+
+    /// <summary>
+    /// Abre o seletor nativo de pastas do Windows e devolve o caminho escolhido (null se cancelou). Uma janela por vez.
+    /// </summary>
+    public async Task<string?> PickFolderAsync(CancellationToken ct)
+    {
+        if (!OperatingSystem.IsWindows()) throw new InvalidOperationException("O seletor de pastas nativo só existe no Windows.");
+        if (!await PickerGate.WaitAsync(0, ct)) throw new InvalidOperationException("Já há uma janela de seleção de pasta aberta.");
+        try
+        {
+            using var proc = new Process();
+            proc.StartInfo = new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = "-NoProfile -NonInteractive -STA -WindowStyle Hidden -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(PickerScript)),
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+            };
+            if (!proc.Start()) throw new InvalidOperationException("Não foi possível abrir o seletor de pastas.");
+            var stdout = proc.StandardOutput.ReadToEndAsync(ct);
+            _ = proc.StandardError.ReadToEndAsync(ct);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromMinutes(5));
+            try { await proc.WaitForExitAsync(timeout.Token); }
+            catch (OperationCanceledException)
+            {
+                try { proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+                throw;
+            }
+            return ParsePicked(await stdout);
+        }
+        finally { PickerGate.Release(); }
+    }
+
     public List<DevNode> Tree()
     {
         var root = Require();

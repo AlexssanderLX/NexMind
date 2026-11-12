@@ -58,6 +58,9 @@ export const api = {
   },
   devOpen: (path: string) =>
     req<{ path: string }>("/api/dev/workspace/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) }),
+  /** Abre a janela nativa do Windows para escolher a pasta; devolve a pasta e a árvore (ou cancelled). */
+  devPick: () =>
+    req<{ cancelled: boolean; path?: string; name?: string; root?: string; nodes?: DevNode[] }>("/api/dev/workspace/pick", { method: "POST" }),
   devTree: () => req<{ root: string; nodes: DevNode[] }>("/api/dev/workspace/tree"),
   devRead: (path: string) => req<{ path: string; content: string }>(`/api/dev/workspace/file?path=${encodeURIComponent(path)}`),
   devWrite: (path: string, content: string) =>

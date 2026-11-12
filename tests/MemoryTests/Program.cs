@@ -69,6 +69,21 @@ try
         storeM.List("security").Any(s => s.Id == cSec.Id) && storeM.List("dev").Any(s => s.Id == cDev.Id) && storeM.List("general").Any(s => s.Id == legacyId) && !storeM.List("security").Any(s => s.Id == legacyId));
     Check("modos: o filtro ignora maiúsculas e espaço", storeM.List(" Security ").Any(s => s.Id == cSec.Id));
 
+    // ---------- Nex Dev: seletor de pasta e abertura do workspace
+    Check("dev: nome da pasta para o topo do explorador", LocalAi.Api.Dev.WorkspaceManager.FolderName("C:\\Users\\a\\ia-local") == "ia-local" && LocalAi.Api.Dev.WorkspaceManager.FolderName("C:\\proj\\app\\") == "app" && LocalAi.Api.Dev.WorkspaceManager.FolderName("C:\\") == "C:\\");
+    Check("dev: saída do seletor limpa (quebra de linha, BOM) e vazio = cancelou",
+        LocalAi.Api.Dev.WorkspaceManager.ParsePicked("C:\\proj\\ia-local\r\n") == "C:\\proj\\ia-local" && LocalAi.Api.Dev.WorkspaceManager.ParsePicked("\uFEFFC:\\x") == "C:\\x"
+        && LocalAi.Api.Dev.WorkspaceManager.ParsePicked("") is null && LocalAi.Api.Dev.WorkspaceManager.ParsePicked("  \r\n") is null && LocalAi.Api.Dev.WorkspaceManager.ParsePicked(null) is null);
+    static bool Throws(Action a) { try { a(); return false; } catch (InvalidOperationException) { return true; } }
+    var devWs = new LocalAi.Api.Dev.WorkspaceManager();
+    var devDir = Path.Combine(root, "projeto-dev");
+    Directory.CreateDirectory(Path.Combine(devDir, "src"));
+    File.WriteAllText(Path.Combine(devDir, "src", "a.cs"), "class A {}");
+    var devOpened = devWs.Open(devDir);
+    Check("dev: abrir a pasta escolhida define a raiz e a árvore traz os arquivos", devWs.Root == devOpened && devWs.Tree().Any(n => n.Directory && n.Name == "src" && n.Children.Any(c => c.Name == "a.cs")));
+    Check("dev: pasta inexistente é recusada e a raiz anterior continua", Throws(() => devWs.Open(Path.Combine(root, "nao-existe"))) && devWs.Root == devOpened);
+    Check("dev: leitura fica presa à raiz (../ recusado)", Throws(() => devWs.Read("../fora.txt")) && devWs.Read("src/a.cs") == "class A {}");
+
     // ---------- segurança de caminho
     var sentinel = Path.Combine(root, "nao-apague");
     Directory.CreateDirectory(sentinel);

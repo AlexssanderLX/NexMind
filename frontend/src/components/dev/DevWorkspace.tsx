@@ -1,5 +1,6 @@
 import { useState, type PointerEvent as ReactPointerEvent } from "react";
 import { api, type DevNode } from "../../api";
+import type { NexCore } from "../../hooks/useNexCore";
 import type { Settings } from "../../types";
 import { loadDrawers } from "../../lib/devPrompt";
 import DevCodeViewer, { type DevTab } from "./DevCodeViewer";
@@ -10,7 +11,7 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
 
-export default function DevWorkspace({ settings }: { settings: Settings }) {
+export default function DevWorkspace({ settings, core }: { settings: Settings; core: NexCore }) {
   const [root, setRoot] = useState<string | null>(null);
   const [nodes, setNodes] = useState<DevNode[]>([]);
   const [tabs, setTabs] = useState<DevTab[]>([]);
@@ -36,11 +37,30 @@ export default function DevWorkspace({ settings }: { settings: Settings }) {
     window.addEventListener("pointerup", up);
   }
 
-  async function openFolder(path: string) {
+  /** Pasta nova: as abas da pasta anterior não valem mais. */
+  function resetTabs() {
+    setTabs([]);
+    setActive(null);
+  }
+
+  /** "Abrir Pasta": janela nativa do Windows; cancelar não muda nada. */
+  async function pickFolder() {
+    const picked = await api.devPick();
+    if (picked.cancelled || !picked.path) return;
+    setRoot(picked.path);
+    setNodes(picked.nodes ?? []);
+    resetTabs();
+  }
+
+  async function dropFolder(path: string) {
     const opened = await api.devOpen(path);
     setRoot(opened.path);
-    const tree = await api.devTree();
-    setNodes(tree.nodes);
+    setNodes((await api.devTree()).nodes);
+    resetTabs();
+  }
+
+  async function refresh() {
+    setNodes((await api.devTree()).nodes);
   }
 
   async function openFile(path: string) {
@@ -67,7 +87,7 @@ export default function DevWorkspace({ settings }: { settings: Settings }) {
   return (
     <div className="flex min-h-0 flex-1 bg-[#0b0f19]">
       <div style={{ width: explorerW }} className="shrink-0">
-        <DevFileExplorer root={root} nodes={nodes} onOpenFolder={openFolder} onOpenFile={(p) => void openFile(p)} />
+        <DevFileExplorer root={root} nodes={nodes} activePath={active} onPickFolder={pickFolder} onDropFolder={dropFolder} onRefresh={refresh} onOpenFile={(p) => void openFile(p)} />
       </div>
       <div
         role="separator"
@@ -77,6 +97,7 @@ export default function DevWorkspace({ settings }: { settings: Settings }) {
         className="w-1.5 shrink-0 cursor-col-resize bg-white/5 transition-colors hover:bg-accent/40"
       />
       <DevCodeViewer
+        core={core}
         tabs={tabs}
         active={active}
         onSelect={setActive}

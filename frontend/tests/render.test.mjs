@@ -204,3 +204,41 @@ test("FloatingPanel: os painéis existentes continuam como eram (288px, botão �
   assert.match(html.plainPanel, /title="Recolher em bolinha"/);
   assert.match(html.plainPanel, />–</);
 });
+
+test("Dev explorador: sem pasta, só o botão Abrir Pasta (nada de campo para digitar o caminho)", () => {
+  assert.match(html.explorerEmpty, /📂 Abrir Pasta/);
+  assert.doesNotMatch(html.explorerEmpty, /<input/);
+  assert.doesNotMatch(html.explorerEmpty, /placeholder/);
+  assert.doesNotMatch(html.explorerEmpty, /C:\caminho/);
+});
+
+test("Dev explorador: com pasta, o nome do projeto em negrito no topo, com chevron, atualizar e trocar", () => {
+  assert.match(html.explorerOpen, /aria-expanded="true"/);
+  assert.match(html.explorerOpen, /font-bold[^>]*>[\s\S]*?📁[\s\S]*?>ia-local</);
+  assert.match(html.explorerOpen, /aria-label="Atualizar a árvore"/);
+  assert.match(html.explorerOpen, /aria-label="Trocar de pasta"/);
+  assert.doesNotMatch(html.explorerOpen, /Abrir Pasta<\/button>/, "o botão grande some quando há pasta");
+});
+
+test("Dev explorador: ícones por tipo de arquivo na árvore", () => {
+  for (const label of [">TSX<", ">npm<", ">M↓<", ">&gt;_<"]) assert.ok(html.explorerOpen.includes(label), label);
+  assert.match(html.explorerOpen, /data-file-icon/);
+});
+
+test("Dev editor vazio: Núcleo do Nex, marca Nex Dev, instrução e modelo", () => {
+  for (const h of [html.welcome3d, html.welcomeCss, html.viewerEmpty]) {
+    assert.match(h, />Nex Dev</);
+    assert.match(h, /Selecione um arquivo na árvore à esquerda para editar com o agente\./);
+    assert.match(h, /nex-unfiltered:latest/);
+  }
+  assert.match(html.welcome3d, /<canvas/, "o núcleo 3D (canvas WebGL)");
+  assert.match(html.welcomeCss, /radial-gradient/, "sem WebGL, o orbe de CSS");
+  assert.doesNotMatch(html.viewerEmpty, /Abra um arquivo na árvore à esquerda\./);
+});
+
+test("Dev editor com arquivo: aba com ● se não salvo, fechar ×, números de linha e a tela de boas-vindas some", () => {
+  assert.match(html.viewerTabs, /● Program\.cs/);
+  assert.match(html.viewerTabs, /aria-label="Fechar src\/Program\.cs"/);
+  assert.match(html.viewerTabs, /<div class="px-2">1<\/div><div class="px-2">2<\/div>/);
+  assert.doesNotMatch(html.viewerTabs, /Nex Dev/);
+});

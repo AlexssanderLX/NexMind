@@ -467,6 +467,18 @@ api.MapPost("/dev/workspace/open", (WorkspaceOpen body, WorkspaceManager ws) =>
     try { return Results.Ok(new { path = ws.Open(body.Path) }); }
     catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
 });
+// "Abrir Pasta": abre a janela nativa de seleção de pasta do Windows, define a escolhida como workspace e já devolve a árvore
+api.MapPost("/dev/workspace/pick", async (WorkspaceManager ws, CancellationToken ct) =>
+{
+    try
+    {
+        var picked = await ws.PickFolderAsync(ct);
+        if (picked is null) return Results.Ok(new { cancelled = true });
+        var path = ws.Open(picked);
+        return Results.Ok(new { cancelled = false, path, name = WorkspaceManager.FolderName(path), root = ws.Root, nodes = ws.Tree() });
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+});
 api.MapGet("/dev/workspace/tree", (WorkspaceManager ws) =>
 {
     try { return Results.Ok(new { root = ws.Root, nodes = ws.Tree() }); }

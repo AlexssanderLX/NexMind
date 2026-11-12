@@ -532,7 +532,7 @@ export default function App() {
         </header>
 
         {microApp === "dev" ? (
-          <DevWorkspace settings={settings} />
+          <DevWorkspace settings={settings} core={nex} />
         ) : (
         <>
         {microApp === "security" && <SecurityTaskPanel counts={vaultCounts} onOpen={setVaultOpen} />}

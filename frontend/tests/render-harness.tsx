@@ -8,11 +8,26 @@ import { VaultFormatted } from "../src/components/SecurityVaultModal";
 import { VAULTS } from "../src/lib/vaults";
 import SubagentChat from "../src/components/SubagentChat";
 import Sidebar from "../src/components/Sidebar";
+import DevFileExplorer from "../src/components/dev/DevFileExplorer";
+import DevCodeViewer, { DevWelcome } from "../src/components/dev/DevCodeViewer";
+import type { NexCore } from "../src/hooks/useNexCore";
 import WorkspaceSwitcher from "../src/components/WorkspaceSwitcher";
 import TaskThinkingPill from "../src/components/TaskThinkingPill";
 import type { Message, MicroAppMode, ToolRun } from "../src/types";
 
 const noop = () => {};
+const asyncNoop = async () => {};
+const fakeCore = (enabled: boolean) =>
+  ({ enabled, coreRef: { current: null }, profile: "balanced", state: "idle", palette: 0, follow: 0.5, getLevel: () => 0, onSphereClick: noop, onUnavailable: noop }) as unknown as NexCore;
+const devNodes = [
+  { name: "src", path: "src", directory: true, children: [{ name: "Program.cs", path: "src/Program.cs", directory: false, children: [] }] },
+  { name: "App.tsx", path: "App.tsx", directory: false, children: [] },
+  { name: "package.json", path: "package.json", directory: false, children: [] },
+  { name: "README.md", path: "README.md", directory: false, children: [] },
+  { name: "build.ps1", path: "build.ps1", directory: false, children: [] },
+];
+const explorer = (root: string | null) =>
+  renderToStaticMarkup(<DevFileExplorer root={root} nodes={root ? devNodes : []} onPickFolder={asyncNoop} onDropFolder={asyncNoop} onRefresh={asyncNoop} onOpenFile={noop} />);
 const planning = "💭 [Planejamento de Execução]\n• Complexidade: direta\n• Contexto: 4096 (100% na GPU)\n• Ferramentas: nenhuma\n".repeat(5);
 const run = (name: string, state: string, extra: Partial<ToolRun> = {}): ToolRun => ({ name, state, ...extra });
 
@@ -95,6 +110,12 @@ export function render() {
     sidebarSecurity: sidebar("security"),
     sidebarCollapsedSecurity: sidebar("security", true),
     sidebarDev: sidebar("dev"),
+    explorerEmpty: explorer(null),
+    explorerOpen: explorer("C:\\Users\\a\\ia-local"),
+    welcome3d: renderToStaticMarkup(<DevWelcome core={fakeCore(true)} model="nex-unfiltered:latest" />),
+    welcomeCss: renderToStaticMarkup(<DevWelcome core={fakeCore(false)} model="nex-unfiltered:latest" />),
+    viewerEmpty: renderToStaticMarkup(<DevCodeViewer core={fakeCore(false)} tabs={[]} active={null} onSelect={noop} onClose={noop} onChange={noop} onSave={noop} />),
+    viewerTabs: renderToStaticMarkup(<DevCodeViewer core={fakeCore(false)} tabs={[{ path: "src/Program.cs", content: "class A {}\nvar x = 1;", dirty: true }]} active="src/Program.cs" onSelect={noop} onClose={noop} onChange={noop} onSave={noop} />),
     switcherSecurity: renderToStaticMarkup(<WorkspaceSwitcher mode="security" onChange={noop} />),
     switcherDev: renderToStaticMarkup(<WorkspaceSwitcher mode="dev" onChange={noop} />),
     switcherDisabled: renderToStaticMarkup(<WorkspaceSwitcher mode="general" onChange={noop} disabled />),

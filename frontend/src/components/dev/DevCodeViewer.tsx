@@ -1,4 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import NeuralCore from "../../core/NeuralCore";
+import type { NexCore } from "../../hooks/useNexCore";
+import { DEV_MODEL } from "../../lib/devPrompt";
 
 const KEYWORDS = new Set("if else return const let var class public private async await function import export from new void string int bool for while try catch throw interface record namespace using type".split(" "));
 
@@ -15,7 +18,41 @@ function paint(line: string) {
 
 export type DevTab = { path: string; content: string; dirty: boolean };
 
+/** Tela de boas-vindas (nenhum arquivo aberto): o Núcleo Orbital do Nex, a marca "Nex Dev" e o modelo em uso. */
+export function DevWelcome({ core, model }: { core: NexCore; model: string }) {
+  const hitRef = useRef<HTMLDivElement>(null);
+  return (
+    <div ref={hitRef} className="relative flex flex-1 items-center justify-center overflow-hidden" data-dev-welcome>
+      {core.enabled ? (
+        <NeuralCore
+          ref={core.coreRef}
+          enabled
+          profile={core.profile}
+          state={core.state}
+          palette={core.palette}
+          follow={core.follow}
+          presence="hero"
+          getLevel={core.getLevel}
+          hitRef={hitRef}
+          onSphereClick={core.onSphereClick}
+          onUnavailable={core.onUnavailable}
+        />
+      ) : (
+        // sem WebGL: um orbe de CSS com o mesmo brilho neon
+        <div aria-hidden className="absolute h-56 w-56 rounded-full bg-[radial-gradient(circle_at_35%_30%,#ffffff,#67e8f9_25%,#7c3aed_65%,#2e1065)] opacity-80 shadow-[0_0_80px_rgba(34,211,238,0.35)]" />
+      )}
+      <div className="pointer-events-none relative z-10 mt-72 flex flex-col items-center px-6 text-center">
+        <h2 className="text-2xl font-semibold tracking-wide text-fg drop-shadow-[0_0_14px_rgba(34,211,238,0.5)]">Nex Dev</h2>
+        <p className="mt-2 max-w-sm text-sm text-mute">Selecione um arquivo na árvore à esquerda para editar com o agente.</p>
+        <span className="mt-3 rounded-full border border-accent/30 bg-black/30 px-3 py-1 font-mono text-[11px] text-accent">{model}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function DevCodeViewer({
+  core,
+  model = DEV_MODEL,
   tabs,
   active,
   onSelect,
@@ -23,6 +60,8 @@ export default function DevCodeViewer({
   onChange,
   onSave,
 }: {
+  core: NexCore;
+  model?: string;
   tabs: DevTab[];
   active: string | null;
   onSelect: (path: string) => void;
@@ -94,7 +133,7 @@ export default function DevCodeViewer({
           </div>
         </div>
       ) : (
-        <div className="flex flex-1 items-center justify-center text-sm text-mute">Abra um arquivo na árvore à esquerda.</div>
+        <DevWelcome core={core} model={model} />
       )}
     </section>
   );

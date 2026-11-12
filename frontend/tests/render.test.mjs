@@ -242,3 +242,15 @@ test("Dev editor com arquivo: aba com ● se não salvo, fechar ×, números de 
   assert.match(html.viewerTabs, /<div class="px-2">1<\/div><div class="px-2">2<\/div>/);
   assert.doesNotMatch(html.viewerTabs, /Nex Dev/);
 });
+
+test("gaveta Escopo & Alvos: faixa com o alvo padrão (domínio em minúsculas) e a regra do 'meu alvo'", () => {
+  assert.match(html.scopeBanner, /data-scope-banner/);
+  assert.match(html.scopeBanner, /Alvo padrão: <strong[^>]*>alexssanderlx\.com\.br</);
+  assert.match(html.scopeBanner, /Todas as ações de Recon e Pentest usam este alvo/);
+  assert.doesNotMatch(html.scopeBanner, /a@x\.com/, "o domínio do e-mail da conta de teste não vira alvo");
+});
+
+test("gaveta Escopo & Alvos: sem alvo, a faixa pede o domínio", () => {
+  assert.match(html.scopeBannerEmpty, /Nenhum alvo definido/);
+  assert.doesNotMatch(html.scopeBannerEmpty, /Alvo padrão/);
+});

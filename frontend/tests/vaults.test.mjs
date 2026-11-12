@@ -44,3 +44,16 @@ test("rótulo de salvo: nunca salvo, agora, minutos e data", () => {
   assert.equal(lastSavedLabel("2026-11-12T11:55:00Z", now), "salvo há 5 min");
   assert.match(lastSavedLabel("2026-11-10T09:00:00Z", now), /^salvo em /);
 });
+
+import { scopeTarget } from "../src/lib/vaults.ts";
+
+test("alvo padrão: o primeiro domínio do escopo, em minúsculas (igual ao backend)", () => {
+  assert.equal(scopeTarget("# Alvos\n- AlexssanderLX.com.br\n- outro.com"), "alexssanderlx.com.br");
+  assert.equal(scopeTarget("alvo: https://app.exemplo.com/login"), "app.exemplo.com");
+});
+
+test("alvo padrão: sem domínio usa a primeira linha útil; vazio dá null", () => {
+  assert.equal(scopeTarget("# Alvos\n\n- rede interna da empresa"), "rede interna da empresa");
+  assert.equal(scopeTarget(""), null);
+  assert.equal(scopeTarget("# só título\n"), null);
+});

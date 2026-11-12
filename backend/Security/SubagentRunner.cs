@@ -3,6 +3,7 @@ using System.Text.Json;
 using LocalAi.Api.Llm;
 using LocalAi.Api.Planning;
 using LocalAi.Api.Rag;
+using LocalAi.Api.Tools;
 
 namespace LocalAi.Api.Security;
 
@@ -27,13 +28,28 @@ public sealed class SubagentRunner
     private readonly OllamaClient _ollama;
     private readonly SecurityNotes _notes;
     private readonly RagEngine _rag;
+    private readonly ReconEngine _recon;
 
-    public SubagentRunner(OllamaClient ollama, SecurityNotes notes, RagEngine rag)
+    public SubagentRunner(OllamaClient ollama, SecurityNotes notes, RagEngine rag, ReconEngine recon)
     {
         _ollama = ollama;
         _notes = notes;
         _rag = rag;
+        _recon = recon;
     }
+
+    /// <summary>Frase pedindo recon/OSINT/mapeamento: o Recon roda a ferramenta real ANTES do modelo falar (o modelo de 4B nem sempre chama sozinho).</summary>
+    public static bool WantsRecon(string? userText)
+    {
+        var n = IntentRouter.Normalize(userText ?? "");
+        return System.Text.RegularExpressions.Regex.IsMatch(n, @"\b(recon|osint|mapeie|mapear|reconhecimento|subdominios?|investigue|investigar|dns|rdap|cabecalhos?)\b");
+    }
+
+    /// <summary>Texto da ferramenta que o prompt do subagente recebe quando ela já rodou nesta rodada.</summary>
+    public static string ReconResultBlock(string report) =>
+        "\n\nRESULTADO REAL DA FERRAMENTA recon_target (rodou agora, nesta rodada). Cite SÓ o que está aqui, com o estado de cada linha. " +
+        "Depois, chame note_write UMA vez no formato [RECON] Alvo: {host} | Descoberta: {dado} | Evidência: {status/origem}, usando apenas linhas [CONFIRMED]. " +
+        "Linhas [NOT_FOUND] ou [TOOL_UNAVAILABLE] você relata como estão, sem preencher.\n" + report;
 
     public static List<object> Definitions() =>
     [
@@ -72,6 +88,23 @@ public sealed class SubagentRunner
             if (tail.Length > 0) system += "\n\nSuas notas até agora (não repita):\n" + tail;
 
             var tools = Definitions();
+            // ferramentas reais dos subagentes: todos leem as gavetas; só o Recon roda recon_target
+            var isRecon = agent.Id == "recon";
+            tools.AddRange(ReconTools.Definitions(includeRecon: isRecon, includeVault: true));
+            system += "\n\nFERRAMENTAS REAIS: você só executa o que está conectado: note_write, vault_read" + (isRecon ? ", recon_target" : "") +
+                      ". Se a ação pedida não tem ferramenta (Burp, ZAP, Wappalyzer, nmap, sqlmap...), diga \"Ferramenta indisponível: [TOOL_UNAVAILABLE]\" e pare. " +
+                      "NUNCA escreva comando de terminal, bloco de código com comando ou marcador como [ACTIVE_EXECUTION] fingindo que rodou algo.";
+            if (isRecon && WantsRecon(userText))
+            {
+                var domain = ReconEngine.NormalizeDomain(OsintEngine.EmbeddedDomain(userText)) ?? ReconEngine.NormalizeDomain(OperatorIntent.TargetFromScope(_notes.ReadVault(conversationId, "scope").Text));
+                if (domain is not null)
+                {
+                    await send(new { type = "mcp", name = ReconTools.Recon, state = "executando", brief = "domain=" + domain, detail = "domain=" + domain });
+                    var report = await _recon.RunAsync(domain, ct);
+                    await send(new { type = "mcp", name = ReconTools.Recon, state = "concluida", detail = report.Text.Length > 800 ? report.Text[..800] : report.Text });
+                    system += ReconResultBlock(report.Text.Length > 3200 ? report.Text[..3200] : report.Text);
+                }
+            }
             var useRag = _rag.GetFiles(conversationId).Count > 0 || IntentRouter.Route(userText, false, false, false, false).Rag;
             if (useRag)
             {
@@ -128,7 +161,14 @@ public sealed class SubagentRunner
                         result = ok ? text : "ERRO: " + text;
                         await send(new { type = "mcp", name = call.Name, state = ok ? "concluida" : "falhou", detail = result.Length > 800 ? result[..800] : result });
                     }
-                    else if (call.Name != NoteTool) result = $"A ferramenta '{call.Name}' não existe.";
+                    else if (ReconTools.IsReconTool(call.Name) && (call.Name != ReconTools.Recon || isRecon))
+                    {
+                        await send(new { type = "mcp", name = call.Name, state = "executando", brief = ToolTelemetry.Summarize(call.Arguments), detail = JsonSerializer.Serialize(call.Arguments) });
+                        var (rok, rtext) = await ReconTools.HandleAsync(call, _recon, _notes, conversationId, 3200, ct);
+                        result = rok ? rtext : "ERRO: " + rtext;
+                        await send(new { type = "mcp", name = call.Name, state = rok ? "concluida" : "falhou", detail = result.Length > 800 ? result[..800] : result });
+                    }
+                    else if (call.Name != NoteTool) result = $"A ferramenta '{call.Name}' não existe para este especialista. Declare [TOOL_UNAVAILABLE].";
                     else
                     {
                         var content = ToolTelemetry.Summarize(call.Arguments);

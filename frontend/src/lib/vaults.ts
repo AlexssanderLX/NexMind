@@ -57,3 +57,17 @@ export function lastSavedLabel(updatedAt: string | null | undefined, now = Date.
   if (min < 60) return `salvo há ${min} min`;
   return `salvo em ${new Date(t).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
 }
+
+/**
+ * O alvo padrão da gaveta Escopo & Alvos (espelha OperatorIntent.TargetFromScope no backend): o primeiro domínio do texto
+ * ou, se não houver domínio, a primeira linha útil. É nele que o Recon e o Nex atuam quando o Alexssander diz "meu alvo".
+ */
+export function scopeTarget(text: string): string | null {
+  const host = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b/i.exec(text);
+  if (host) return host[0].toLowerCase();
+  for (const line of text.split("\n")) {
+    const t = line.trim().replace(/^[-* ]+/, "");
+    if (t.length >= 3 && !t.startsWith("#")) return t;
+  }
+  return null;
+}

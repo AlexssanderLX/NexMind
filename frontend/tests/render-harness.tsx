@@ -4,7 +4,7 @@ import MessageView from "../src/components/MessageView";
 import FloatingPanel from "../src/components/panels/FloatingPanel";
 import { AgentMenu, RobotOrb } from "../src/components/SecurityAgentsLayer";
 import SecurityTaskPanel from "../src/components/SecurityTaskPanel";
-import { VaultFormatted } from "../src/components/SecurityVaultModal";
+import { ScopeBanner, VaultFormatted } from "../src/components/SecurityVaultModal";
 import { VAULTS } from "../src/lib/vaults";
 import SubagentChat from "../src/components/SubagentChat";
 import Sidebar from "../src/components/Sidebar";
@@ -63,6 +63,8 @@ export function render() {
     taskPanel0: renderToStaticMarkup(<SecurityTaskPanel />),
     taskPanelCounts: renderToStaticMarkup(<SecurityTaskPanel counts={{ surface: 3, hypotheses: 1 }} />),
     vaultFormatted: renderToStaticMarkup(<VaultFormatted text={"# Rotas\n- GET /api/users/{id}\n- POST /api/login\nTexto solto"} />),
+    scopeBanner: renderToStaticMarkup(<ScopeBanner text={"# Alvos\n- Alexssanderlx.com.br\n- conta: a@x.com"} />),
+    scopeBannerEmpty: renderToStaticMarkup(<ScopeBanner text="" />),
     vaultEmpty: renderToStaticMarkup(<VaultFormatted text="" />),
     taskPanelQueue: renderToStaticMarkup(<SecurityTaskPanel queue={[{ id: "1", title: "Mapear /api", state: "rodando" }]} />),
     fabClosed: renderToStaticMarkup(

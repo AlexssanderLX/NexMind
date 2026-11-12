@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { VAULTS, countItems, findVault, lastSavedLabel, parseVault, type VaultKey } from "../lib/vaults";
+import { VAULTS, countItems, findVault, lastSavedLabel, parseVault, scopeTarget, type VaultKey } from "../lib/vaults";
 
 /** Corpo da visualização formatada (separado do modal para renderizar em testes). */
 export function VaultFormatted({ text }: { text: string }) {
@@ -30,6 +30,26 @@ export function VaultFormatted({ text }: { text: string }) {
   );
 }
 
+/** Faixa da gaveta Escopo & Alvos: deixa claro qual é o alvo padrão de todas as ações de Recon e Pentest. */
+export function ScopeBanner({ text }: { text: string }) {
+  const target = scopeTarget(text);
+  return (
+    <p
+      data-scope-banner
+      className={`mb-3 rounded-lg border px-3 py-2 text-xs ${target ? "border-accent/40 bg-accent/10 text-fg" : "border-amber-400/30 bg-amber-400/5 text-amber-200"}`}
+    >
+      {target ? (
+        <>
+          🎯 Alvo padrão: <strong className="font-mono text-accent">{target}</strong>
+          <span className="block text-mute">Todas as ações de Recon e Pentest usam este alvo. Quando você disser "meu alvo", é ele.</span>
+        </>
+      ) : (
+        <>Nenhum alvo definido. Escreva o domínio (ex.: exemplo.com.br) e salve: ele vira o alvo padrão do Nex e dos subagentes.</>
+      )}
+    </p>
+  );
+}
+
 /**
  * Modal de uma gaveta da investigação: visualização formatada ou editor de texto/Markdown. Salvar grava nas notas da conversa
  * (security/vault/*.md); a partir daí os subagentes leem a versão editada. ESC ou o ✕ fecham (pedindo confirmação se há edição não salva).
@@ -52,6 +72,7 @@ export default function SecurityVaultModal({
   const [saved, setSaved] = useState("");
   const [draft, setDraft] = useState("");
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [loading, setLoading] = useState(!!conversationId);
   const [saving, setSaving] = useState(false);
@@ -105,6 +126,8 @@ export default function SecurityVaultModal({
       setDraft(r.text);
       setUpdatedAt(r.updatedAt ?? new Date().toISOString());
       onSaved(vaultKey, countItems(r.text));
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 2500);
     } catch {
       setError("Não consegui salvar. Tente de novo.");
     } finally {
@@ -147,6 +170,7 @@ export default function SecurityVaultModal({
         </header>
 
         <div className="min-h-[220px] flex-1 overflow-y-auto px-5 py-4">
+          {vaultKey === "scope" && !loading && <ScopeBanner text={draft} />}
           {loading ? (
             <p className="text-mute">Carregando…</p>
           ) : mode === "view" ? (
@@ -166,7 +190,7 @@ export default function SecurityVaultModal({
 
         <footer className="flex items-center gap-3 border-t border-white/10 px-5 py-3 text-xs">
           <span className="min-w-0 flex-1 truncate text-mute" role="status">
-            {error ? <span className="text-red-300">{error}</span> : dirty ? "alterações não salvas" : lastSavedLabel(updatedAt)} · {countItems(draft)} item(ns)
+            {error ? <span className="text-red-300">{error}</span> : justSaved ? <span className="text-emerald-300">✓ Salvo{vaultKey === "scope" && scopeTarget(saved) ? `: alvo padrão ${scopeTarget(saved)}` : ""}</span> : dirty ? "alterações não salvas" : lastSavedLabel(updatedAt)} · {countItems(draft)} item(ns)
           </span>
           <button onClick={tryClose} className="rounded-lg px-3 py-1.5 text-mute hover:bg-white/5 hover:text-fg">
             Fechar

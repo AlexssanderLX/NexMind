@@ -290,7 +290,7 @@ try
     Check("security: Verify exige controle negativo", SubagentCatalog.Find("verify")!.Prompt.Contains("controle negativo"));
     Check("security: todo prompt traz a tabela de quem trata de quê (roteamento entre especialistas)",
         SubagentCatalog.All.All(a => SubagentCatalog.BuildSystem(a).Contains("Input = XSS, SSRF, SQLi e SSTI") && SubagentCatalog.BuildSystem(a).Contains("Auth = IDOR, BOLA, BFLA e tokens")));
-    Check("security: prompts curtos para o modelo de 4B (< 2200 caracteres cada)", SubagentCatalog.All.All(a => SubagentCatalog.BuildSystem(a).Length < 2200), string.Join(",", SubagentCatalog.All.Select(a => SubagentCatalog.BuildSystem(a).Length)));
+    Check("security: prompts curtos para o modelo de 4B (< 2500 caracteres cada)", SubagentCatalog.All.All(a => SubagentCatalog.BuildSystem(a).Length < 2500), string.Join(",", SubagentCatalog.All.Select(a => SubagentCatalog.BuildSystem(a).Length)));
 
     // ---------- Nex Security: anotações em Markdown por especialista (micro-RAG)
     var sc = store.Create();
@@ -315,6 +315,76 @@ try
     Check("gavetas: chave inventada, conversa inexistente e texto gigante são recusados",
         secNotes.WriteVault(sc.Id, "../x", "a") is not null && secNotes.WriteVault("0123456789abcdef0123456789abcdee", "scope", "a") is not null
         && secNotes.WriteVault(sc.Id, "tests", new string('x', 40_001)) is not null && secNotes.ReadVault(sc.Id, "../x").Text == "");
+    // ---------- OSINT: entidade limpa a partir de linguagem natural
+    Check("osint: 'para mim de' não entra no alvo", OsintEngine.TargetOf("Faz um OSINT para mim de Alexssander Ferreira de Almeida") == "Alexssander Ferreira de Almeida", OsintEngine.TargetOf("Faz um OSINT para mim de Alexssander Ferreira de Almeida"));
+    Check("osint: variações coloquiais ficam só com o nome ou domínio",
+        OsintEngine.TargetOf("faz um osint pra mim sobre Maria Silva") == "Maria Silva" && OsintEngine.TargetOf("osint por favor de alexssanderlx.com.br") == "alexssanderlx.com.br"
+        && OsintEngine.TargetOf("osint sobre João da Silva?") == "João da Silva" && OsintEngine.TargetOf("OSINT de alexssanderlx.com.br.") == "alexssanderlx.com.br");
+    Check("osint: o 'de' no meio do nome é preservado", EntityCleaner.Clean("para mim de Pedro de Souza") == "Pedro de Souza" && EntityCleaner.Clean("Daniel") == "Daniel" && EntityCleaner.Clean("  \"Ana\"! ") == "Ana");
+    Check("osint: ResolveTarget também limpa o pedido solto (quem é / pesquise)", OsintEngine.ResolveTarget("pesquise sobre Carlos Lima", []) == "Carlos Lima");
+
+    // ---------- Escopo & Alvos no chat principal
+    Check("escopo: 'meu alvo', 'o domínio' e 'tá no escopo' pedem a gaveta", OperatorIntent.WantsScope("o que você pode fazer no meu alvo?") && OperatorIntent.WantsScope("o domínio já tá no escopo") && !OperatorIntent.WantsScope("bom dia"));
+    Check("escopo: o alvo vem da gaveta (domínio primeiro) e não de adivinhação", OperatorIntent.TargetFromScope("# Alvos\n- alexssanderlx.com.br\n- contas de teste: a@x.com") == "alexssanderlx.com.br" && OperatorIntent.TargetFromScope("") is null);
+    var capDirective = OperatorIntent.Directive(OperatorIntentKind.Capabilities, "- alexssanderlx.com.br");
+    Check("escopo: 'o que você pode fazer' lista as ferramentas reais e o alvo da gaveta, sem scanners externos",
+        capDirective.Contains("recon_target") && capDirective.Contains("RDAP") && capDirective.Contains("crt.sh") && capDirective.Contains("alexssanderlx.com.br") && capDirective.Contains("NÃO cite Burp"), capDirective);
+    Check("escopo: pergunta comum também carrega a regra do alvo padrão", OperatorIntent.Directive(OperatorIntentKind.Other, "- alexssanderlx.com.br").Contains("meu alvo") && OperatorIntent.Directive(OperatorIntentKind.Other, "- alexssanderlx.com.br").Contains("sem perguntar de novo"));
+    Check("escopo: classificação do 'o que você pode fazer no meu alvo'", OperatorIntent.Classify("o que você pode fazer no meu alvo?") == OperatorIntentKind.Capabilities);
+
+    // ---------- Recon real: entrada, rede pública, RDAP, crt.sh, cabeçalhos
+    Check("recon: domínio normalizado (esquema, caminho, porta, caixa)", ReconEngine.NormalizeDomain("https://Alvo.com.br:8443/x?y=1") == "alvo.com.br" && ReconEngine.NormalizeDomain("  alexssanderlx.com.br. ") == "alexssanderlx.com.br" && ReconEngine.NormalizeDomain("user@alvo.com") == "alvo.com");
+    Check("recon: IP, localhost e texto livre não são domínio", ReconEngine.NormalizeDomain("127.0.0.1") is null && ReconEngine.NormalizeDomain("localhost") is null && ReconEngine.NormalizeDomain("o site dele") is null && ReconEngine.NormalizeDomain("") is null && ReconEngine.NormalizeDomain(null) is null);
+    Check("recon: rede privada, loopback e link-local são recusadas; IP público passa",
+        !ReconEngine.IsPublicAddress(System.Net.IPAddress.Parse("127.0.0.1")) && !ReconEngine.IsPublicAddress(System.Net.IPAddress.Parse("10.1.2.3")) && !ReconEngine.IsPublicAddress(System.Net.IPAddress.Parse("192.168.0.9"))
+        && !ReconEngine.IsPublicAddress(System.Net.IPAddress.Parse("172.20.0.1")) && !ReconEngine.IsPublicAddress(System.Net.IPAddress.Parse("169.254.169.254")) && !ReconEngine.IsPublicAddress(System.Net.IPAddress.Parse("::1"))
+        && !ReconEngine.IsPublicAddress(System.Net.IPAddress.Parse("fd00::1")) && !ReconEngine.IsPublicAddress(System.Net.IPAddress.Parse("::ffff:10.0.0.1"))
+        && ReconEngine.IsPublicAddress(System.Net.IPAddress.Parse("8.8.8.8")) && ReconEngine.IsPublicAddress(System.Net.IPAddress.Parse("172.32.0.1")) && ReconEngine.IsPublicAddress(System.Net.IPAddress.Parse("2606:4700::1111")));
+    Check("recon: RDAP do Registro.br para .br e rdap.org para o resto", ReconEngine.RdapUrl("alexssanderlx.com.br") == "https://rdap.registro.br/domain/alexssanderlx.com.br" && ReconEngine.RdapUrl("exemplo.com") == "https://rdap.org/domain/exemplo.com");
+    Check("recon: candidatos a domínio registrável", string.Join("|", ReconEngine.RegistrableCandidates("www.api.alvo.com")) == "www.api.alvo.com|api.alvo.com|alvo.com" && string.Join("|", ReconEngine.RegistrableCandidates("app.alvo.com.br")) == "app.alvo.com.br|alvo.com.br");
+    var rdap = ReconEngine.ParseRdap("{\"ldhName\":\"alvo.com.br\",\"status\":[\"active\"],\"events\":[{\"eventAction\":\"registration\",\"eventDate\":\"2020-01-02T00:00:00Z\"},{\"eventAction\":\"expiration\",\"eventDate\":\"2027-01-02T00:00:00Z\"},{\"eventAction\":\"last changed\",\"eventDate\":\"2026-05-05T00:00:00Z\"}],\"nameservers\":[{\"ldhName\":\"NS1.Host.com\"},{\"ldhName\":\"ns2.host.com\"}],\"entities\":[{\"handle\":\"X\",\"roles\":[\"registrant\"]},{\"handle\":\"REG\",\"roles\":[\"registrar\"],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"Registro Exemplo Ltda\"]]]}]}");
+    Check("recon: RDAP vira registrar, datas, nameservers e status", rdap is { Registrar: "Registro Exemplo Ltda", Created: "2020-01-02T00:00:00Z", Expires: "2027-01-02T00:00:00Z", Updated: "2026-05-05T00:00:00Z" } && rdap.Nameservers.SequenceEqual(["ns1.host.com", "ns2.host.com"]) && rdap.Status.Contains("active"));
+    Check("recon: RDAP vazio ou quebrado vira null, nunca inventa", ReconEngine.ParseRdap("{}") is null && ReconEngine.ParseRdap("não é json") is null && ReconEngine.ParseRdap("[]") is null);
+    var crtNames = ReconEngine.ParseCrt("[{\"name_value\":\"alvo.com\\n*.api.alvo.com\"},{\"name_value\":\"WWW.alvo.com\"},{\"name_value\":\"outro.org\"},{\"name_value\":\"alvo.com\"}]", "alvo.com", 10, out var crtTotal);
+    Check("recon: crt.sh dá só nomes do domínio, únicos e em minúsculas", string.Join(",", crtNames) == "alvo.com,api.alvo.com,www.alvo.com" && crtTotal == 3, string.Join(",", crtNames));
+    Check("recon: crt.sh com limite informa o total real", ReconEngine.ParseCrt("[{\"name_value\":\"a.alvo.com\\nb.alvo.com\\nc.alvo.com\"}]", "alvo.com", 2, out var crtBig).Count == 2 && crtBig == 3 && ReconEngine.ParseCrt("lixo", "alvo.com", 5, out var crtBad).Count == 0 && crtBad == 0);
+    var hdr = ReconEngine.HeaderEvidence(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["content-security-policy"] = "default-src 'self'", ["X-Frame-Options"] = "DENY" }, https: true);
+    Check("recon: cabeçalhos de segurança com [CONFIRMED] ou [NOT_FOUND], por cabeçalho", hdr.Any(l => l.Contains("Content-Security-Policy") && l.Contains("[CONFIRMED]")) && hdr.Any(l => l.Contains("Strict-Transport-Security") && l.Contains("[NOT_FOUND]")) && hdr.Any(l => l.Contains("X-Frame-Options") && l.Contains("DENY")) && hdr.Count == 4);
+    Check("recon: HSTS não é cobrado de resposta em HTTP", ReconEngine.HeaderEvidence(new Dictionary<string, string>(), https: false).Any(l => l.Contains("Strict-Transport-Security") && l.Contains("n/a") && !l.Contains("[NOT_FOUND]")));
+
+    // relatório completo com rede falsa: nada de rota inventada, cada seção com estado
+    var reconFake = new ReconEngine(new FakeHttpFactory(url => url.Contains("crt.sh") ? (200, "[{\"name_value\":\"mail.alvo-teste.invalid\"}]") : url.Contains("rdap") ? (404, "") : (503, "")));
+    var reconReport = await reconFake.RunAsync("https://Alvo-Teste.invalid/qualquer", CancellationToken.None);
+    Check("recon: relatório tem as 4 seções e o domínio limpo", reconReport.Valid && reconReport.Domain == "alvo-teste.invalid" && new[] { "[DNS]", "[RDAP]", "[CERTIFICADOS crt.sh]", "[HTTP]" }.All(reconReport.Text.Contains), reconReport.Text);
+    Check("recon: NXDOMAIN, RDAP 404 e sem IP saem como [NOT_FOUND]; crt.sh respondeu e sai [CONFIRMED]", reconReport.Text.Contains("NXDOMAIN") && reconReport.Text.Contains("Nenhum registro RDAP encontrado nesta consulta [NOT_FOUND]") && reconReport.Text.Contains("mail.alvo-teste.invalid") && reconReport.Text.Contains("Sem IP para sondar [NOT_FOUND]"), reconReport.Text);
+    Check("recon: sem probe HTTP nenhuma rota é inventada", !reconReport.Text.Contains("/admin") && !reconReport.Text.Contains("/api") && !reconReport.Text.Contains("robots.txt"), reconReport.Text);
+    var reconDown = await new ReconEngine(new FakeHttpFactory(_ => throw new HttpRequestException("sem rede"))).RunAsync("alvo-teste.invalid", CancellationToken.None);
+    Check("recon: serviço fora do ar sai como [TOOL_UNAVAILABLE] (não some nem vira achado)", reconDown.Text.Contains("RDAP indisponível") && reconDown.Text.Contains("[TOOL_UNAVAILABLE]") && reconDown.Text.Contains("crt.sh indisponível"), reconDown.Text);
+    var reconBad = await reconFake.RunAsync("o site dele", CancellationToken.None);
+    Check("recon: entrada que não é domínio é recusada com [NOT_FOUND]", !reconBad.Valid && reconBad.Text.Contains("não é um nome de domínio"));
+
+    // ---------- ferramentas de Security (recon_target e vault_read) e subagentes
+    var rt = ReconTools.Definitions();
+    Check("ferramentas: recon_target e vault_read com a descrição de 4 partes", rt.Count == 2 && ReconTools.ReconDescription.Contains("O QUE FAZ:") && ReconTools.ReconDescription.Contains("NÃO FAÇA:") && ReconTools.VaultDescription.Contains("RETORNA:") && ReconTools.IsReconTool("recon_target") && ReconTools.IsReconTool("vault_read") && !ReconTools.IsReconTool("note_write"));
+    Check("ferramentas: só vault_read para os outros subagentes", ReconTools.Definitions(includeRecon: false).Count == 1 && ReconTools.Definitions(includeVault: false).Count == 1);
+    secNotes.WriteVault(sc.Id, "scope", "- alvo: alexssanderlx.com.br");
+    var vr = await ReconTools.HandleAsync(new ToolCall("vault_read", Args("{\"drawer\":\"scope\"}")), reconFake, secNotes, sc.Id, 2000, CancellationToken.None);
+    Check("ferramentas: vault_read devolve a versão salva da gaveta", vr.Ok && vr.Text.Contains("alexssanderlx.com.br"), vr.Text);
+    var vrEmpty = await ReconTools.HandleAsync(new ToolCall("vault_read", Args("{\"drawer\":\"evidence\"}")), reconFake, secNotes, sc.Id, 2000, CancellationToken.None);
+    Check("ferramentas: gaveta vazia diz que está vazia, sem inventar", vrEmpty.Ok && vrEmpty.Text.Contains("vazia") && vrEmpty.Text.Contains("[NOT_FOUND]"));
+    var vrBad = await ReconTools.HandleAsync(new ToolCall("vault_read", Args("{\"drawer\":\"../x\"}")), reconFake, secNotes, sc.Id, 2000, CancellationToken.None);
+    Check("ferramentas: gaveta inventada é recusada", !vrBad.Ok);
+    var rtScope = await ReconTools.HandleAsync(new ToolCall("recon_target", Args("{\"domain\":\"lixo\"}")), reconFake, secNotes, sc.Id, 3000, CancellationToken.None);
+    Check("ferramentas: recon_target sem domínio válido usa o alvo da gaveta de escopo", rtScope.Ok && rtScope.Text.Contains("RECON_TARGET alexssanderlx.com.br"), rtScope.Text);
+    secNotes.WriteVault(sc.Id, "scope", "");
+    var rtNone = await ReconTools.HandleAsync(new ToolCall("recon_target", Args("{}")), reconFake, secNotes, sc.Id, 3000, CancellationToken.None);
+    Check("ferramentas: sem domínio e sem escopo, erro claro em vez de chute", !rtNone.Ok && rtNone.Text.Contains("não é um nome de domínio"));
+    Check("subagentes: pedido de recon liga a ferramenta antes do modelo falar", SubagentRunner.WantsRecon("faça um recon do alvo") && SubagentRunner.WantsRecon("liste os subdomínios") && SubagentRunner.WantsRecon("OSINT em alvo.com") && !SubagentRunner.WantsRecon("explique o que é IDOR"));
+    Check("subagentes: o prompt declara só ferramentas reais e proíbe comando fingido", SubagentCatalog.BuildSystem(SubagentCatalog.Find("recon")!).Contains("recon_target") && SubagentCatalog.BuildSystem(SubagentCatalog.Find("recon")!).Contains("NUNCA simule comandos de terminal") && SubagentCatalog.BuildSystem(SubagentCatalog.Find("recon")!).Contains("Wappalyzer"));
+    Check("subagentes: o resultado real entra no prompt com a ordem de anotar só [CONFIRMED]", SubagentRunner.ReconResultBlock("X").Contains("RESULTADO REAL DA FERRAMENTA recon_target") && SubagentRunner.ReconResultBlock("X").Contains("note_write") && SubagentRunner.ReconResultBlock("X").Contains("[CONFIRMED]"));
+    var mcpCfg = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "backend", "mcp_servers.json"))).RootElement.GetProperty("mcpServers").GetProperty("browser");
+    Check("mcp: o navegador roda server.py e está habilitado", mcpCfg.GetProperty("args")[0].GetString() == "backend/Mcp/Browser/server.py" && mcpCfg.GetProperty("args").GetArrayLength() == 1 && mcpCfg.GetProperty("enabled").GetBoolean());
+
     var secIndex = secNotes.ReadIndex(sc.Id);
     Check("security: INDEX.md resume cada especialista (quantas notas e a última)", secIndex.Contains("- recon: 2 nota(s)") && secIndex.Contains("/admin/export") && secIndex.Contains("- auth: 1 nota(s)") && !secIndex.Contains("input:"), secIndex);
     Check("security: arquivos de especialistas ficam separados", File.ReadAllText(Path.Combine(secDir, "recon.md")).Contains("/api/v2/users") && !File.ReadAllText(Path.Combine(secDir, "auth.md")).Contains("/api/v2/users"));
@@ -422,3 +492,18 @@ finally
 
 Console.WriteLine($"\n{total - failures}/{total} verificações ok");
 return failures == 0 ? 0 : 1;
+
+/// <summary>Rede falsa para o ReconEngine: cada URL devolve (status, corpo) definidos pelo teste; uma exceção vira falha de conexão.</summary>
+sealed class FakeHttpFactory(Func<string, (int Status, string Body)> answer) : IHttpClientFactory
+{
+    public HttpClient CreateClient(string name) => new(new FakeHandler(answer));
+
+    private sealed class FakeHandler(Func<string, (int Status, string Body)> answer) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var (status, body) = answer(request.RequestUri!.ToString());
+            return Task.FromResult(new HttpResponseMessage((System.Net.HttpStatusCode)status) { Content = new StringContent(body) });
+        }
+    }
+}

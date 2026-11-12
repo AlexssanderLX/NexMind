@@ -31,7 +31,7 @@ public static class OperatorIntent
     public static bool WantsScope(string? userText)
     {
         var plain = IntentRouter.Normalize(Regex.Replace(userText ?? "", @"\[\[ARQUIVO [^\]]*\]\][\s\S]*?\[\[/ARQUIVO\]\]", " "));
-        return Regex.IsMatch(plain, @"\b(salvei um alvo|ta no escopo|olha a gaveta|alvo salvo|no escopo)\b");
+        return Regex.IsMatch(plain, @"\b(salvei um alvo|ta no escopo|olha a gaveta|alvo salvo|no escopo|meu alvo|nosso alvo|esse alvo|nesse alvo|o dominio|meu dominio|nesse dominio)\b");
     }
 
     /// <summary>Primeiro domínio, ou a primeira linha útil, da gaveta Escopo & Alvos.</summary>
@@ -66,12 +66,13 @@ public static class OperatorIntent
         var action = kind switch
         {
             OperatorIntentKind.Capabilities =>
-                "CLASSIFICAÇÃO: [CAPABILITIES_QUERY]. Liste só as capacidades reais (navegador no grupo Nex, arquivos, computador, pesquisa, caderno, OSINT passivo, subagentes). Não recite o checklist de 6 passos. Não chame ferramenta.",
+                "CLASSIFICAÇÃO: [CAPABILITIES_QUERY]. Liste só as capacidades reais: recon_target (DNS A/AAAA, RDAP com registrar, datas e nameservers, subdomínios no crt.sh, probe HTTP com status, Server, CSP, HSTS e X-Frame-Options), navegador no grupo Nex, arquivos, computador, pesquisa, caderno, OSINT passivo, leitura das gavetas e os subagentes. " +
+                "Se a gaveta Escopo & Alvos tem um alvo, diga que é nele que essas ferramentas atuam e cite o domínio, sem perguntar de novo. NÃO cite Burp, ZAP, Wappalyzer, nmap nem rotas como /admin: não existem aqui e nada foi sondado ainda. Não recite o checklist de 6 passos. Não chame ferramenta.",
             OperatorIntentKind.Planning =>
                 "CLASSIFICAÇÃO: [PLANNING_AND_SCOPE]. A gaveta abaixo já foi lida. Se houver alvo, ele é a verdade oficial: confirme e proponha o teste mínimo. Proibido perguntar \"qual é o domínio?\". Não execute ainda.",
             OperatorIntentKind.Execution =>
                 "CLASSIFICAÇÃO: [ACTIVE_EXECUTION]. Use só ferramenta disponível e o que ela devolveu. Etiquete cada achado como [CONFIRMED] ou [NOT_FOUND].",
-            _ => "Antes de analisar, consulte a gaveta de escopo abaixo. Não invente alvo.",
+            _ => "Antes de analisar, consulte a gaveta de escopo abaixo. O alvo cadastrado nela é o alvo padrão de toda ação de Recon e Pentest: se o Alexssander disser \"meu alvo\", \"o domínio\" ou \"tá no escopo\", use o domínio da gaveta sem perguntar de novo. Não invente alvo.",
         };
         return EvidenceRules + "\n" + action + "\n" + scope;
     }

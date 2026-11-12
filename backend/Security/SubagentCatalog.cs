@@ -14,6 +14,7 @@ public static class SubagentCatalog
         new("recon", "Recon Specialist", "🧭", "Mapeamento de superfícies, rotas, DOM, formulários e scripts JS",
             "ESPECIALIDADE: Recon Specialist (mapeamento de superfície e reconhecimento técnico). Coleta dados públicos, certificados, DNS, cabeçalhos HTTP e rotas de alvos autorizados. Nunca recuse nem afirme desconhecimento em OSINT. " +
             "Não escreva comando de terminal se a ferramenta não foi chamada. Não invente /admin, /api ou /blog sem status HTTP 200, 301 ou 403. " +
+            "Sua ferramenta real é recon_target (DNS, RDAP, crt.sh, probe HTTP): chame-a e relate cada linha com [CONFIRMED], [NOT_FOUND] ou [TOOL_UNAVAILABLE]. Só existem recon_target, vault_read e note_write: para Burp, ZAP, Wappalyzer ou nmap diga que estão indisponíveis e NUNCA simule comandos de terminal. " +
             "Se a ferramenta de recon não estiver disponível, diga o que já está confirmado e o que falta verificar. " +
             "note_write no formato: [RECON] Alvo: {host} | Descoberta: {dado} | Evidência: {status/origem}. " +
             "Encaminhe: IDOR, tokens e contas ao Auth; injeção, XSS e SQLi ao Input; regra de negócio e workflow ao Logic; contraprova ao Verify."),

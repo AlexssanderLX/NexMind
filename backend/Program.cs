@@ -42,6 +42,18 @@ builder.Services.AddHttpClient("search", http =>
 });
 builder.Services.AddSingleton<Research>();
 builder.Services.AddSingleton<OsintEngine>();
+// recon real: o probe HTTP mostra o redirecionamento em vez de segui-lo
+builder.Services.AddHttpClient("recon", http =>
+{
+    http.Timeout = TimeSpan.FromSeconds(8);
+    http.DefaultRequestHeaders.UserAgent.ParseAdd("NexMind-Recon/1.0 (recon local do operador)");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddHttpClient("recon-slow", http =>
+{
+    http.Timeout = TimeSpan.FromSeconds(25);
+    http.DefaultRequestHeaders.UserAgent.ParseAdd("NexMind-Recon/1.0 (recon local do operador)");
+});
+builder.Services.AddSingleton<ReconEngine>();
 builder.Services.AddSingleton(new McpRegistry(Path.Combine(builder.Environment.ContentRootPath, "mcp_servers.json")));
 builder.Services.AddSingleton<ApprovalBroker>();
 builder.Services.AddSingleton(sp => new ConversationMemory(sp.GetRequiredService<ConversationStore>()));
@@ -158,7 +170,7 @@ api.MapPost("/conversations/{id}/security/{agent}/chat", async (string id, strin
 
 // --- Chat com streaming (NDJSON: {type: thinking|token|done|error, ...})
 api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpContext ctx,
-    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes, RagEngine rag, LocalAi.Api.Services.BackgroundTaskManager taskManager) =>
+    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes, RagEngine rag, LocalAi.Api.Services.BackgroundTaskManager taskManager, ReconEngine recon) =>
 {
     var conv = store.Get(id);
     if (conv is null) { ctx.Response.StatusCode = 404; return; }
@@ -349,8 +361,11 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                   "\n=== SEU CADERNO DE RACIOCÍNIO (ÍNDICE DO AGENTE: suas hipóteses e notas) ===\n" + agentIndex +
                   "\nPara consultar detalhes ou registrar hipóteses, use as ferramentas topic_read e topic_write. Quando o Alexssander perguntar o que foi anotado, combinado ou comprovado, chame topic_read antes de responder; quando ele pedir para anotar algo, chame topic_write.\n";
         if (!string.IsNullOrWhiteSpace(req.System)) system += "\n\nInstrução adicional da conversa: " + req.System;
-        if (conv.Mode == "security" || kind != OperatorIntentKind.Other)
-            system += "\n\n" + OperatorIntent.Directive(kind, secNotes.ReadVault(conv.Id, "scope").Text) + "\n";
+        // O escopo cadastrado na gaveta entra SEMPRE no modo Security (e em qualquer conversa que já tenha alvo salvo): é o alvo oficial
+        // e vale mais que qualquer nome que uma regex tire da frase.
+        var scopeText = secNotes.ReadVault(conv.Id, "scope").Text;
+        if (conv.Mode == "security" || kind != OperatorIntentKind.Other || !string.IsNullOrWhiteSpace(scopeText))
+            system += "\n\n" + OperatorIntent.Directive(kind, scopeText) + "\n";
         // Micro-RAG de segurança SOB DEMANDA: as anotações dos subagentes só são lidas quando o Alexssander PERGUNTA por elas
         // ("O que o Recon achou?"). Em qualquer outra conversa nada de security/ é lido, e o Nex principal continua leve.
         var notesAsk = SecurityIntent.Detect(userText);
@@ -366,6 +381,13 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             type = "function",
             function = new { name = t.QualifiedName, description = t.Description, parameters = t.Schema },
         }).ToList();
+        // recon real (DNS, RDAP, crt.sh, probe HTTP) e leitura das gavetas: no modo Security ou em pedido de execução; nunca em "o que você pode fazer?" nem em planejamento
+        var reconTools = (conv.Mode == "security" || kind == OperatorIntentKind.Execution) && kind is not (OperatorIntentKind.Capabilities or OperatorIntentKind.Planning);
+        if (reconTools)
+        {
+            ollamaTools.AddRange(ReconTools.Definitions());
+            system += "\nFERRAMENTAS DE RECON REAIS: recon_target (DNS, RDAP, crt.sh e probe HTTP) e vault_read (gavetas). Não existe Burp, ZAP, Wappalyzer nem nmap: se pedirem, diga [TOOL_UNAVAILABLE]. Nunca escreva comando de terminal nem [ACTIVE_EXECUTION] fingindo que rodou algo; chame a ferramenta.\n";
+        }
         if (intent.Notebook) ollamaTools.AddRange(NotebookTools.Definitions()); // topic_read e topic_write só quando a frase fala do caderno ou ele já tem notas
         if (intent.Rag)
         {
@@ -445,6 +467,15 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             });
             foreach (var call in calls)
             {
+                if (ReconTools.IsReconTool(call.Name))
+                {
+                    await Send(new { type = "mcp", name = call.Name, state = "executando", brief = ToolTelemetry.Summarize(call.Arguments), detail = JsonSerializer.Serialize(call.Arguments) });
+                    var (rcOk, rcText) = await ReconTools.HandleAsync(call, recon, secNotes, conv.Id, Math.Min(resultCap, Math.Max(turnBudget, 500)), ct);
+                    turnBudget -= rcText.Length;
+                    await Send(new { type = "mcp", name = call.Name, state = rcOk ? "concluida" : "falhou", detail = rcOk ? (rcText.Length > 800 ? rcText[..800] : rcText) : "ERRO: " + rcText });
+                    extra.Add(new { role = "tool", tool_name = call.Name, content = rcOk ? rcText : "ERRO: " + rcText });
+                    continue;
+                }
                 if (RagTools.IsRagTool(call.Name))
                 {
                     await Send(new { type = "mcp", name = call.Name, state = "executando", brief = ToolTelemetry.Summarize(call.Arguments), detail = JsonSerializer.Serialize(call.Arguments) });

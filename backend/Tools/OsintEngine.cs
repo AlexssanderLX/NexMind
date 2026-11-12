@@ -25,7 +25,7 @@ public sealed partial class OsintEngine(IHttpClientFactory httpFactory, Research
         var plain = Regex.Replace(userText ?? "", @"\[\[ARQUIVO [^\]]*\]\][\s\S]*?\[\[/ARQUIVO\]\]", " ").Trim();
         var match = TargetPhrase().Match(plain);
         if (!match.Success) return null;
-        var target = match.Groups[1].Value.Trim().Trim('"', '\'', '.', '?', '!');
+        var target = EntityCleaner.Clean(match.Groups[1].Value);
         return target.Length >= 3 ? target : null;
     }
 
@@ -59,7 +59,7 @@ public sealed partial class OsintEngine(IHttpClientFactory httpFactory, Research
     {
         var match = System.Text.RegularExpressions.Regex.Match(userText ?? "", @"(?:quem\s+[eé]|pesquise(?:\s+sobre)?|pesquisar)\s+(.+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         if (!match.Success) return null;
-        var target = match.Groups[1].Value.Trim().Trim('.', '?', '!', '"');
+        var target = EntityCleaner.Clean(match.Groups[1].Value);
         if (target.Length < 3) return null;
         var lower = target.ToLowerInvariant();
         if (lower is "ele" or "ela" or "isso" or "este" or "esta") return null;

@@ -63,9 +63,9 @@
     "browser": {
       "command": "backend/data/mcp/browser/venv/Scripts/python.exe",
       "args": [
-        "-m",
-        "backend.Mcp.Browser.server"
+        "backend/Mcp/Browser/server.py"
       ],
+      "enabled": true,
       "env": {
         "HEADLESS": "false"
       },

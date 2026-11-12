@@ -16,3 +16,4 @@
 | 2026-11-12 | TASK-DEV-WORKBENCH | `4ce5ba7` | Micro App Dev: explorador, editor com abas e copilot lateral na pasta aberta | N/A |
 | 2026-11-12 | TASK-DEV-LAYOUT | `76a865e` | Cabeçalho permanente no Dev, colunas arrastáveis e painéis fechados na abertura | N/A |
 | 2026-11-12 | TASK-OSINT-VRAM | `8dc625b` | Maestria em OSINT no Security e contexto preso em 4k/8k enquanto o texto couber na GPU | N/A |
+| 2026-11-12 | TASK-OSINT-PIPELINE | `d073994` | Esteira passiva de OSINT: crt.sh e dorks no backend, fatos em facts.md e balão sem métrica de GPU | N/A |

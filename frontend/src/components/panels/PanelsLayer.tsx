@@ -156,12 +156,17 @@ function ToolsBody({ tools, onToggle }: { tools: ToolItem[]; onToggle?: (name: s
                   </button>
                 )}
               </div>
-              {open && (
-                <p className="pb-2 pl-4 leading-snug text-mute">
-                  {t.description ?? "Sem descrição."}
-                  {t.status === "executando" && <span className="ml-1 text-accent">· {t.note ?? "executando"}</span>}
+              {/* monitor da task: o que a ferramenta faz agora, ao vivo (o ponto pulsa enquanto executa) */}
+              {t.note && (
+                <p
+                  data-task-state={t.status}
+                  aria-live="polite"
+                  className={`pb-1.5 pl-4 text-[11px] leading-snug ${t.status === "executando" ? "text-accent" : "text-mute"}`}
+                >
+                  {t.label ?? t.name}: {t.note}
                 </p>
               )}
+              {open && <p className="pb-2 pl-4 leading-snug text-mute">{t.description ?? "Sem descrição."}</p>}
             </div>
           );
         })}

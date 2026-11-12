@@ -43,6 +43,8 @@ async def fake_host(token="tok-teste", answer=True):
                         result = {"url": msg.get("url"), "tabId": msg.get("tabId") or 101, "loaded": True}
                     elif msg["op"] == "tabs":
                         result = {"tabs": [{"id": 5, "title": "Gmail", "url": "https://mail.google.com/", "current": True}, {"id": 6, "title": "GitHub", "url": "https://github.com/", "current": False}]}
+                    elif msg["op"] == "recon":
+                        result = {"title": "Painel", "links": [], "forms": [{"action": "https://alvo.local/login", "method": "post", "fields": [{"name": "email", "type": "email"}, {"name": "senha", "type": "password"}]}], "inputs": [], "scripts": [], "endpoints": ["/api/v2/users"], "inlineScripts": 1, "tabId": msg.get("tabId") or 5, "url": "https://alvo.local/"}
                     elif msg["op"] == "get_dom":
                         result = {"text": "ola", "items": [{"id": 1, "tag": "a", "label": "Inbox"}], "tabId": msg.get("tabId") or 5, "url": "https://mail.google.com/"}
                     else:
@@ -233,6 +235,63 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             server._bind_error = None
             blocker.close()
             await blocker.wait_closed()
+
+
+    async def test_recon_devolve_json_curto_e_valido_pelo_relay(self):
+        r, w, t = await fake_host()
+        await asyncio.sleep(0.2)
+        out = await server.browser_recon(tab_id=6)
+        data = json.loads(out)
+        self.assertEqual(data["tab"], 6)
+        self.assertEqual(data["forms"][0]["fields"], ["email:email", "senha:password"])
+        self.assertIn("/api/v2/users", data["endpoints"])
+        self.assertLessEqual(len(out), server.RECON_MAX_CHARS)
+        w.close()
+        t.cancel()
+
+
+class ReconSanitizerTests(unittest.TestCase):
+    def big(self, n=400):
+        return {
+            "tabId": 5, "url": "https://alvo.local/dashboard", "title": "Painel",
+            "links": [{"href": f"https://alvo.local/pagina/{i}", "label": f"Pagina {i}"} for i in range(n)],
+            "forms": [{"action": "https://alvo.local/login", "method": "post", "fields": [{"name": "email", "type": "email"}, {"name": "senha", "type": "password"}]}],
+            "inputs": [{"name": f"q{i}", "type": "text"} for i in range(60)],
+            "scripts": [f"https://cdn.alvo.local/app{i}.js" for i in range(40)],
+            "endpoints": [f"/api/v1/recurso{i}" for i in range(60)],
+            "inlineScripts": 3,
+        }
+
+    def test_pagina_enorme_cabe_no_limite_e_continua_json_valido(self):
+        out = server.build_recon(self.big())
+        self.assertLessEqual(len(out), 2500)
+        data = json.loads(out)  # nunca cortado no meio
+        self.assertEqual(data["url"], "https://alvo.local/dashboard")
+        self.assertIn("omitidos", data)
+        self.assertGreater(data["omitidos"]["links"], 0)
+
+    def test_o_que_importa_sobrevive_e_os_links_saem_primeiro(self):
+        data = json.loads(server.build_recon(self.big()))
+        self.assertEqual(data["forms"][0]["action"], "alvo.local/login")
+        self.assertEqual(data["forms"][0]["method"], "post")
+        self.assertTrue(data["endpoints"])
+        self.assertNotIn("forms", data["omitidos"])
+
+    def test_pagina_pequena_vem_inteira_sem_omitidos(self):
+        small = {"tabId": 1, "url": "https://x.com/", "title": "X", "links": [{"href": "https://x.com/a", "label": ""}], "forms": [], "inputs": [], "scripts": [], "endpoints": [], "inlineScripts": 0}
+        data = json.loads(server.build_recon(small))
+        self.assertNotIn("omitidos", data)
+        self.assertEqual(data["links"], ["x.com/a"])
+
+    def test_sem_lixo_visual_no_resultado(self):
+        out = server.build_recon(self.big(5))
+        for lixo in ("class", "style", "<svg", "<div", "<span"):
+            self.assertNotIn(lixo, out)
+
+    def test_limite_menor_e_respeitado(self):
+        out = server.build_recon(self.big(), max_chars=900)
+        self.assertLessEqual(len(out), 900)
+        json.loads(out)
 
 
 if __name__ == "__main__":

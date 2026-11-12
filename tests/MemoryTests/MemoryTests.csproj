@@ -15,6 +15,7 @@
     <Compile Include="..\..\backend\Storage\ConversationStore.cs" />
     <Compile Include="..\..\backend\Models.cs" />
     <Compile Include="..\..\backend\Planning\*.cs" />
+    <Compile Include="..\..\backend\Mcp\OutputClip.cs" />
     <Compile Include="..\..\backend\Security\SubagentCatalog.cs" />
     <Compile Include="..\..\backend\Security\SecurityNotes.cs" />
     <Compile Include="..\..\backend\Security\SecurityIntent.cs" />

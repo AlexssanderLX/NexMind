@@ -209,7 +209,7 @@ public sealed class McpRegistry : IAsyncDisposable
                     foreach (var prop in arguments.EnumerateObject()) args[prop.Name] = prop.Value.Clone();
                 var res = await client.CallToolAsync(tool.Name, args, cancellationToken: cts.Token);
                 var text = string.Concat(res.Content.OfType<TextContentBlock>().Select(b => b.Text));
-                if (text.Length > maxChars) text = text[..maxChars] + "\n[…saída cortada para caber no contexto: peça só um trecho (head/tail) ou busque antes]";
+                text = OutputClip.Clip(text, maxChars);
                 return new(res.IsError != true, text.Length > 0 ? text : "(sem saída)");
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)

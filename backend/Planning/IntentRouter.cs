@@ -30,8 +30,16 @@ public sealed record ToolIntent(bool Files, bool Browser, bool Desktop, bool Not
 public static partial class IntentRouter
 {
     // Palavras inteiras, sem acento e em minúsculas (o texto é normalizado antes). \b evita casar "aba" dentro de "abacaxi".
-    [GeneratedRegex(@"https?://|\bwww\.|\bnavegador\b|\babas?\b|\bsites?\b|\bpaginas?\b|\bgithub\b|\bgmail\b|\blinkedin\b|\burl\b|\bchrome\b")]
+    [GeneratedRegex(@"https?://|\bwww\.|\bnavegador\b|\babas?\b|\bsites?\b|\bpaginas?\b|\bgithub\b|\bgmail\b|\blinkedin\b|\burl\b|\bchrome\b|\bendpoints?\b|\brecon\b|\bformularios?\b|\bdom\b")]
     private static partial Regex BrowserWords();
+
+    // Pesquisa na web liga pela frase, sem interruptor: "pesquise na internet", "busque no google", "notícias de hoje".
+    [GeneratedRegex(@"\b(pesquis(a|e|ar)|busc(a|ar)|busque|procur(a|e|ar))\b.{0,40}\b(na (web|internet)|no google|online)\b|\bpesquisa na web\b|\bnoticias\b|\bna internet\b")]
+    private static partial Regex SearchWords();
+
+    /// <summary>A frase pede uma pesquisa na web? O texto dos anexos não conta.</summary>
+    public static bool WantsSearch(string userText) =>
+        SearchWords().IsMatch(Normalize(Regex.Replace(userText ?? "", @"\[\[ARQUIVO [^\]]*\]\][\s\S]*?\[\[/ARQUIVO\]\]", " ")));
 
     [GeneratedRegex(@"\barquivos?\b|\bpastas?\b|\bdiretorios?\b|\bdiretorio\b|\.(cs|ts|tsx|js|json|md|txt|py|ps1|yaml|yml|csv|pdf|docx|html|css)\b|\b[a-z]:[\\/]")]
     private static partial Regex FileWords();

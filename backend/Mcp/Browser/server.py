@@ -271,6 +271,71 @@ async def browser_get_dom(tab_id: int = 0) -> str:
     return _clip(body)
 
 
+RECON_MAX_CHARS = 2500
+
+
+def build_recon(payload: dict, max_chars: int = RECON_MAX_CHARS) -> str:
+    """Resumo estruturado da superfície de uma página, em JSON compacto e SEMPRE válido (nunca cortado no meio).
+
+    Se passar do limite, descarta itens inteiros do fim das listas menos importantes primeiro (links, scripts, campos soltos,
+    endpoints, formulários) e registra em "omitidos" quantos saíram, para o modelo saber que há mais.
+    """
+    def host(url: str) -> str:
+        return url.split("://", 1)[-1]
+
+    links = [{"u": host(x["href"]), "t": x.get("label", "")} if x.get("label") else host(x["href"]) for x in payload.get("links") or [] if x.get("href")]
+    forms = [
+        {"action": host(f.get("action") or ""), "method": f.get("method") or "get", "fields": [f"{c.get('name')}:{c.get('type')}" for c in f.get("fields") or []]}
+        for f in payload.get("forms") or []
+    ]
+    inputs = [f"{c.get('name')}:{c.get('type')}" for c in payload.get("inputs") or []]
+    scripts = [host(s) for s in payload.get("scripts") or []]
+    endpoints = list(payload.get("endpoints") or [])
+    lists = {"links": links, "scripts": scripts, "inputs": inputs, "endpoints": endpoints, "forms": forms}
+    omitted: dict[str, int] = {}
+
+    def render() -> str:
+        doc: dict = {"tab": payload.get("tabId"), "url": payload.get("url"), "title": payload.get("title") or ""}
+        for key in ("forms", "inputs", "endpoints", "scripts", "links"):
+            if lists[key]:
+                doc[key] = lists[key]
+        if payload.get("inlineScripts"):
+            doc["inlineScripts"] = payload["inlineScripts"]
+        if omitted:
+            doc["omitidos"] = dict(omitted)
+        return json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
+
+    order = ["links", "scripts", "inputs", "endpoints", "forms"]  # o que sai primeiro, quando falta espaço
+    out = render()
+    while len(out) > max_chars:
+        victim = next((k for k in order if lists[k]), None)
+        if victim is None:
+            break
+        # tira em lotes (~10% do que resta) do FIM da lista: a parte de cima é a mais relevante
+        drop = max(1, len(lists[victim]) // 10)
+        del lists[victim][-drop:]
+        omitted[victim] = omitted.get(victim, 0) + drop
+        out = render()
+    if len(out) > max_chars:  # só título e url enormes: nunca devolve JSON quebrado
+        out = json.dumps({"tab": payload.get("tabId"), "url": str(payload.get("url"))[:200], "omitidos": "tudo"}, ensure_ascii=False, separators=(",", ":"))
+    return out
+
+
+@mcp.tool()
+async def browser_recon(tab_id: int = 0) -> str:
+    """
+    O QUE FAZ: mapeia a superfície de uma aba do grupo Nex num JSON curto (até 2500 caracteres): links, formulários (action, método, campos), campos soltos, scripts externos e endpoints /api achados em scripts. Sem CSS, SVG nem texto decorativo.
+    QUANDO USAR: ao pedido de mapear, reconhecer, listar rotas, endpoints, formulários, parâmetros ou scripts de uma página, ou para entender a estrutura antes de testar. Para LER o conteúdo (texto) use browser_get_dom.
+    COMO USAR: sem argumentos lê a aba atual. Para outra aba, passe tab_id (de browser_tabs). É leitura: roda direto, sem aprovação.
+    NÃO FAÇA: não invente rotas que não vieram na lista; não trate "endpoints" como vulnerabilidades, são só o que a página referencia.
+    RETORNA: JSON com tab, url, title, forms, inputs, endpoints, scripts, links e, se algo foi omitido por tamanho, "omitidos" com a contagem.
+    SE VIER VAZIO: espere um instante e chame de novo uma vez.
+    """
+    await _get_pacer().before_action()
+    payload = await _call("recon", tabId=int(tab_id) or None)
+    return build_recon(payload)
+
+
 @mcp.tool()
 async def browser_click(element_id: int, tab_id: int = 0) -> str:
     """

@@ -6,6 +6,7 @@ import MetricsModal, { loadColor, loadPercent } from "./components/MetricsModal"
 import NexStage from "./components/NexStage";
 import SecurityAgentsLayer from "./components/SecurityAgentsLayer";
 import SecurityTaskPanel from "./components/SecurityTaskPanel";
+import { IDLE_TASKS, TOOL_CARDS, briefArg, describeTask, isBusyState, pathOf, taskStatusText, toolKeyOf, type ToolKey, type ToolTask } from "./lib/toolTasks";
 import SecurityVaultModal from "./components/SecurityVaultModal";
 import type { VaultKey } from "./lib/vaults";
 import SettingsModal from "./components/SettingsModal";
@@ -99,18 +100,12 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [reasoning, setReasoning] = useState(false);
-  // Cold start: as ferramentas SEMPRE começam desligadas (ao abrir o app e a cada conversa nova). Ligadas pesam ~3500 tokens no prompt.
-  // O backend liga sozinho só a que a frase pede; os interruptores forçam.
-  const [searchOn, setSearchOn] = useState(false);
-  const [mcpOn, setMcpOn] = useState(false);
-  const [mcpState, setMcpState] = useState<"pronta" | "executando">("pronta");
-  const [browserOn, setBrowserOn] = useState(false);
-  const [browserState, setBrowserState] = useState<"pronta" | "executando">("pronta");
-  const [desktopOn, setDesktopOn] = useState(false);
+  // Ferramentas por intenção: o backend aciona só a que a frase pede (cada uma injetada pesa ~3500 tokens), sem interruptor.
+  // O painel "Ferramentas" é um monitor das tasks em andamento, atualizado pelos eventos do stream.
+  const [toolTasks, setToolTasks] = useState<Record<ToolKey, ToolTask>>(IDLE_TASKS);
+  const lastPathRef = useRef("");
   const [microApp, setMicroApp] = useState<MicroAppMode>(() => (localStorage.getItem("nexMicroApp") === "security" ? "security" : "general"));
-  const [desktopState, setDesktopState] = useState<"pronta" | "executando">("pronta");
   const [approval, setApproval] = useState<{ id: string; tool: string; args: unknown; write?: boolean; warning?: string | null } | null>(null);
-  const [searchState, setSearchState] = useState<"desligada" | "pronta" | "executando">("desligada");
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadVoice);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
@@ -238,12 +233,9 @@ export default function App() {
   async function newConversation() {
     if (streaming) return;
     setChatError(null);
-    // conversa nova = cold start: nenhuma ferramenta ligada, nenhum schema extra no prompt
-    setSearchOn(false);
-    setSearchState("desligada");
-    setMcpOn(false);
-    setBrowserOn(false);
-    setDesktopOn(false);
+    // conversa nova = cold start: nenhuma task em andamento
+    setToolTasks(IDLE_TASKS);
+    lastPathRef.current = "";
     if (activeId && messages.length === 0) return; // já está numa conversa vazia
     try {
       const c = await api.create();
@@ -360,13 +352,17 @@ export default function App() {
             buffer.push("content", ev.text);
           }
           else if (ev.type === "thinking") buffer.push("thinking", ev.text);
-          else if (ev.type === "tool")
-            setSearchState(ev.state === "executando" || ev.state === "filtrando" ? "executando" : "pronta");
+          else if (ev.type === "tool") {
+            const note = ev.state === "filtrando" ? "avaliando a pergunta antes de buscar" : ev.query ? `pesquisando "${ev.query}"` : "pesquisando";
+            setToolTasks((t) => ({ ...t, pesquisa: { busy: isBusyState(ev.state), note } }));
+          }
           else if (ev.type === "mcp") {
-            const busy = ev.state === "carregando" || ev.state === "executando";
-            if (String(ev.name).startsWith("browser__")) setBrowserState(busy ? "executando" : "pronta");
-            else if (String(ev.name).startsWith("desktop__")) setDesktopState(busy ? "executando" : "pronta");
-            else if (String(ev.name).startsWith("arquivos__") || ev.name === "mcp") setMcpState(busy ? "executando" : "pronta");
+            const key = ev.name === "mcp" ? "mcp" : toolKeyOf(String(ev.name));
+            if (key) {
+              if (key === "browser" && String(ev.name).endsWith("browser_navigate")) lastPathRef.current = pathOf(briefArg(ev.brief, "url"));
+              const note = describeTask(String(ev.name), ev.brief, lastPathRef.current);
+              setToolTasks((t) => ({ ...t, [key]: { busy: isBusyState(ev.state), note } }));
+            }
             if (ev.name !== "mcp") {
               patchLast((m) => {
                 const tools = [...(m.tools ?? [])];
@@ -390,10 +386,10 @@ export default function App() {
           }
         },
         abort.signal,
-        searchOn,
-        mcpOn,
-        browserOn,
-        desktopOn,
+        false, // sem interruptores: o backend decide pela intenção da frase
+        false,
+        false,
+        false,
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
@@ -542,70 +538,13 @@ export default function App() {
           }
           info={{ mode: reasoning ? "Raciocínio" : "Conversa", model: activeModel, connected }}
           runs={runs}
-          tools={[
-            {
-              name: "pesquisa",
-              label: "Pesquisa na web",
-              description: "Busca na internet quando a pergunta precisa de fatos atuais, com um filtro antes da busca.",
-              status: !searchOn ? "desligada" : searchState === "executando" ? "executando" : "pronta",
-              note: !searchOn ? "desligada" : searchState === "executando" ? "pesquisando" : "ligada",
-            },
-            {
-              name: "browser",
-              label: "Navegador",
-              description: "Abre o Chromium na sua tela, move o cursor e pesquisa. O clique pede a sua aprovação.",
-              status: !browserOn ? "desligada" : browserState === "executando" ? "executando" : "pronta",
-              note: !browserOn ? "desligada" : browserState === "executando" ? "navegando" : "ligada",
-            },
-            {
-              name: "desktop",
-              label: "Computador",
-              description: "Lê e controla janelas do Windows. Clique, digitação e atalho pedem a sua aprovação.",
-              status: !desktopOn ? "desligada" : desktopState === "executando" ? "executando" : "pronta",
-              note: !desktopOn ? "desligada" : desktopState === "executando" ? "executando" : "ligada",
-            },
-            {
-              name: "mcp",
-              label: "Arquivos do Nex",
-              description: "Lê arquivos de qualquer pasta do PC e cria ou edita arquivos. Criar, editar e áreas sensíveis pedem a sua aprovação, com aviso das consequências. O tamanho das leituras é limitado pelo contexto.",
-              status: !mcpOn ? "desligada" : mcpState === "executando" ? "executando" : "pronta",
-              note: !mcpOn ? "desligada" : mcpState === "executando" ? "executando" : "ligada",
-            },
-          ]}
-          onToggleTool={(name) => {
-            if (name === "browser") {
-              setBrowserOn((on) => {
-                const next = !on;
-                localStorage.setItem("nexBrowser", next ? "1" : "0");
-                if (!next) setBrowserState("pronta");
-                return next;
-              });
-              return;
-            }
-            if (name === "desktop") {
-              setDesktopOn((on) => {
-                const next = !on;
-                localStorage.setItem("nexDesktop", next ? "1" : "0");
-                if (!next) setDesktopState("pronta");
-                return next;
-              });
-              return;
-            }
-            if (name === "mcp") {
-              setMcpOn((on) => {
-                localStorage.setItem("nexMcp", on ? "0" : "1");
-                return !on;
-              });
-              return;
-            }
-            if (name !== "pesquisa") return;
-            setSearchOn((on) => {
-              const next = !on;
-              localStorage.setItem("nexSearch", next ? "1" : "0");
-              setSearchState(next ? "pronta" : "desligada");
-              return next;
-            });
-          }}
+          tools={TOOL_CARDS.map((c) => ({
+            name: c.key,
+            label: c.label,
+            description: c.description,
+            status: toolTasks[c.key].busy ? "executando" : "pronta",
+            note: taskStatusText(toolTasks[c.key]),
+          }))}
         >
           <div className="mx-auto max-w-3xl space-y-6">
             {messages.map((m, i) => (

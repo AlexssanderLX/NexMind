@@ -172,7 +172,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         var history = conv.Messages.Select(m => (m.Role, m.Content)).ToList();
         // Regra base: respostas diretas. O modelo de 4B tende a escrever muito; texto longo custa tempo (tokens na GPU/CPU).
         var textLower = userText.ToLowerInvariant();
-        var autoSearch = req.Search || textLower.Contains("pesquisa na web") || textLower.Contains("pesquise na internet");
+        // pesquisa na web liga pela frase ("pesquise na internet…", "busque no google…"), sem interruptor; o filtro antes da busca continua
+        var autoSearch = req.Search || IntentRouter.WantsSearch(userText) || textLower.Contains("pesquisa na web") || textLower.Contains("pesquise na internet");
         var searchAddon = "";
         if (autoSearch)
         {
@@ -239,20 +240,20 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             "- Leitor de Anexos: ATIVO. O Alexssander pode anexar PDFs, DOCX, planilhas, códigos e textos pelo botão de clipe. O conteúdo vem na mensagem entre [[ARQUIVO]] e [[/ARQUIVO]].\n";
         system += fileTools.Count > 0
             ? $"- MCP Arquivos do Nex: LIGADO ({string.Join(", ", fileTools.Select(t => t.QualifiedName))}). Você pode ler arquivos do PC e criar/editar arquivos com aprovação dele. Se faltar o caminho, pergunte. Você NÃO tem ferramenta para apagar, mover ou renomear arquivos, nem para rodar comandos: se pedirem isso, diga que não consegue.\n"
-            : "- MCP Arquivos do Nex: DESLIGADO. Se o Alexssander pedir para você ler, criar ou modificar arquivos do PC, avise-o diretamente: 'Para eu mexer em arquivos, por favor ligue o interruptor \"Arquivos do Nex\" no painel lateral de Ferramentas.'\n";
+            : "- MCP Arquivos do Nex: não acionado nesta mensagem (liga sozinho pelo que o Alexssander pede, sem interruptor). Se ele pedir para ler, criar ou modificar arquivos do PC, peça só o caminho ou o nome do arquivo, pois a ferramenta entra assim que ele disser. NUNCA mande ele ligar nada.\n";
         system += browserTools.Count > 0
             ? $"- MCP Navegador: LIGADO, no Chrome que o Alexssander já tem aberto e logado ({string.Join(", ", browserTools.Select(t => t.QualifiedName))}). Sua mesa de trabalho é o grupo de abas verde chamado Nex, com várias abas: é o único lugar onde você enxerga e age. O Alexssander pode abrir Gmail, LinkedIn, GitHub etc. dentro desse grupo, já logado, e pedir para você trabalhar neles; você também pode abrir sites (o grupo é criado por você: nunca peça para ele criar). Cada ferramenta traz na descrição o que faz, quando usar, como usar e o que NÃO fazer: siga à risca. Regras gerais: (1) no começo de uma tarefa, chame browser_tabs; (2) leia a página com browser_get_dom antes de afirmar qualquer coisa sobre ela; (3) depois de clicar ou digitar, leia de novo e relate só o que leu, sem inventar; (4) pedido com várias partes: uma de cada vez, na ordem, e responda no fim cobrindo todas; (5) se uma ferramenta disser que o ritmo está alto, que o site está fora do escopo ou bloqueado, ou que a extensão não respondeu, conte isso em uma frase e pare de insistir; (6) nunca peça para fechar ou reiniciar o Chrome; se a extensão não estiver ligada, diga para recarregar uma vez a pasta extension/chrome em chrome://extensions.\n"
-            : "- MCP Navegador: DESLIGADO. Se o Alexssander pedir para você acessar links, ler páginas web ou automatizar sites, avise-o: 'Para eu acessar seu navegador e abas, por favor ligue o interruptor \"Navegador\" no painel lateral de Ferramentas.'\n";
+            : "- MCP Navegador: não acionado nesta mensagem (liga sozinho pelo que o Alexssander pede, sem interruptor). Se ele pedir para acessar links, ler páginas web ou mapear um site, peça só a URL ou diga para citar o endereço, pois a ferramenta entra assim que ele disser. NUNCA mande ele ligar nada.\n";
         system += desktopTools.Count > 0
             ? $"- MCP Computador: LIGADO ({string.Join(", ", desktopTools.Select(t => t.QualifiedName))}). Use só em janelas do Windows. Clique, digitação e atalho pedem aprovação.\n"
-            : "- MCP Computador: DESLIGADO. Se ele pedir para controlar um programa do Windows, avise: 'Para eu controlar o computador, ligue \"Computador\" em Ferramentas.'\n";
+            : "- MCP Computador: não acionado nesta mensagem (liga sozinho pelo que ele pede). Se ele pedir para controlar um programa do Windows, peça o nome do programa ou da janela. NUNCA mande ele ligar nada.\n";
         system += "\nRegra de Seleção de Ferramentas:\n" +
-                  "- PÁGINAS DA WEB: use o MCP Navegador só no grupo de abas Nex. Nunca peça para rodar iniciar-chrome-sessao.ps1 e nunca peça para reabrir o Chrome.\n" +
+                  "- PÁGINAS DA WEB: use o MCP Navegador só no grupo de abas Nex. Para MAPEAR a superfície (rotas, endpoints, formulários, parâmetros, scripts) use browser__browser_recon, que devolve um JSON curto; para LER o texto da página use browser__browser_get_dom.Nunca peça para rodar iniciar-chrome-sessao.ps1 e nunca peça para reabrir o Chrome.\n" +
                   "- APLICATIVOS E JANELAS DO WINDOWS (Bloco de Notas, Calculadora, alternar janelas, atalhos do sistema): use o MCP Computador (desktop_list_windows, desktop_inspect_window, desktop_click_element).\n" +
                   "NUNCA use o MCP Computador para tentar ler o conteúdo interno de uma página web dentro do Chrome.\n";
-        system += req.Search
+        system += autoSearch
             ? "- Pesquisa na web: LIGADA. Cite a fonte e não invente o que a busca não trouxe.\n"
-            : "- Pesquisa na web: DESLIGADA. Se ele pedir um fato da internet sem abrir o navegador, avise: 'Para eu pesquisar na web, ligue \"Pesquisa na web\" em Ferramentas.'\n";
+            : "- Pesquisa na web: não acionada nesta mensagem (liga sozinha quando ele pede para pesquisar na internet). Se ele pedir um fato atual da internet, diga para ele pedir 'pesquise na internet ...'. NUNCA mande ele ligar nada.\n";
         // Ciclo de 2 tempos SÓ quando há ferramenta injetada. Antes ele ia sempre no prompt, com um exemplo ("vou abrir o site..."), e o modelo
         // copiava a frase em conversa comum, prometendo uma ação que não podia fazer.
         system += intent.Any

@@ -108,6 +108,33 @@ const DOM_JS = `(() => {
   return { text, items: nodes };
 })()`;
 
+// Recon: extrai SÓ o que importa para mapear a superfície (links, formulários, campos, scripts, endpoints). Não devolve texto da
+// página, classes CSS, estilos inline, SVG nem divs/spans visuais: o resultado cabe em poucos KB e o modelo lê na hora.
+const RECON_JS = `(() => {
+  const abs = (u) => { try { return new URL(u, location.href).href; } catch { return ""; } };
+  const uniq = (arr, key) => { const seen = new Set(); return arr.filter((x) => { const k = key(x); if (!k || seen.has(k)) return false; seen.add(k); return true; }); };
+  const links = uniq([...document.querySelectorAll("a[href]")].map((a) => ({ href: abs(a.getAttribute("href")), label: (a.innerText || a.getAttribute("aria-label") || "").replace(/\\s+/g, " ").trim().slice(0, 40) }))
+    .filter((l) => /^https?:/.test(l.href)), (l) => l.href).slice(0, 80);
+  const field = (el) => ({ name: el.getAttribute("name") || el.id || "", type: el.tagName === "TEXTAREA" ? "textarea" : el.tagName === "SELECT" ? "select" : (el.getAttribute("type") || "text").toLowerCase() });
+  const forms = [...document.querySelectorAll("form")].slice(0, 20).map((f) => ({
+    action: abs(f.getAttribute("action") || ""), method: (f.getAttribute("method") || "get").toLowerCase(),
+    fields: [...f.querySelectorAll("input, textarea, select")].map(field).filter((x) => x.name).slice(0, 25)
+  }));
+  const inputs = [...document.querySelectorAll("input, textarea, select")].filter((el) => !el.closest("form")).map(field).filter((x) => x.name).slice(0, 30);
+  const scripts = uniq([...document.querySelectorAll("script[src]")].map((s) => ({ src: abs(s.getAttribute("src")) })), (s) => s.src).map((s) => s.src).slice(0, 40);
+  const re = /["'\`]((?:https?:\\/\\/[^"'\`\\s<>]{4,160})|(?:\\/(?:api|v[0-9]+|graphql|rest|auth|oauth|admin|login|logout|user|users|account|upload)[^"'\`\\s<>]{0,140}))["'\`]/g;
+  const endpoints = new Set();
+  let inline = 0;
+  for (const s of document.querySelectorAll("script:not([src])")) {
+    const t = s.textContent || "";
+    if (!t.trim()) continue;
+    inline += 1;
+    let m; let guard = 0;
+    while ((m = re.exec(t.slice(0, 200000))) && guard++ < 400) { const u = m[1]; if (!/\\.(png|jpe?g|gif|svg|css|woff2?|ico)(\\?|$)/i.test(u)) endpoints.add(u); if (endpoints.size >= 60) break; }
+  }
+  return { title: (document.title || "").slice(0, 80), links, forms, inputs, scripts, endpoints: [...endpoints], inlineScripts: inline };
+})()`;
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // tabs.update/create devolvem antes da página carregar: sem esperar, o get_dom lê uma página em branco.
@@ -188,6 +215,16 @@ async function handle(msg) {
       await sleep(1500); // página ainda montando: uma segunda leitura antes de dizer que está vazia
       value = await read();
     }
+    return { ...value.result.value, tabId: tab.id, url: tab.url };
+  }
+  if (msg.op === "recon") {
+    const tab = await resolveTab(msg.tabId, "O grupo Nex não tem abas. Peça para abrir uma URL ou abra uma página dentro do grupo Nex.");
+    await setCurrent(tab.id);
+    await waitLoaded(tab.id, 10000);
+    const value = await withDebugger(tab.id, async (id) => {
+      await sleep(800); // folga para a SPA montar links e formulários
+      return chrome.debugger.sendCommand({ tabId: id }, "Runtime.evaluate", { expression: RECON_JS, returnByValue: true });
+    });
     return { ...value.result.value, tabId: tab.id, url: tab.url };
   }
   if (msg.op === "navigate") {

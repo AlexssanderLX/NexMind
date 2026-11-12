@@ -3,6 +3,7 @@ using LocalAi.Api;
 using LocalAi.Api.Llm;
 using LocalAi.Api.Memory;
 using LocalAi.Api.Planning;
+using LocalAi.Api.Mcp;
 using LocalAi.Api.Security;
 using LocalAi.Api.Storage;
 using LocalAi.Api.Voice;
@@ -187,6 +188,13 @@ try
     Check("intenção: interruptor do usuário liga mesmo sem a frase", R("oi", f: true).Files && R("oi", b: true).Browser && R("oi", d: true).Desktop);
     Check("intenção: texto de anexo não conta (PDF que cita 'site')", !R("[[ARQUIVO a.pdf]]\nvisite o site https://x.com na pasta\n[[/ARQUIVO]]\nresuma em duas frases").AnyMcp);
     Check("intenção: Describe lista os nomes", R("abre https://x.com e anota").Describe() == "Navegador, Caderno" && R("oi").Describe() == "nenhuma");
+    Check("intenção: mapear endpoints, recon, formulários e DOM ligam o Navegador sozinhos", R("liste os endpoints de https://alvo.local").Browser && R("faça o recon dessa página").Browser && R("quais formulários tem aí?").Browser && R("analisa o DOM").Browser && !R("qual o domínio do cliente").Browser);
+    Check("intenção: pesquisa na web liga pela frase, sem interruptor", IntentRouter.WantsSearch("pesquise na internet o CVE mais recente") && IntentRouter.WantsSearch("busque no Google a versão do nginx") && IntentRouter.WantsSearch("quais as notícias de hoje?") && !IntentRouter.WantsSearch("bom dia, como vai?") && !IntentRouter.WantsSearch("[[ARQUIVO a.pdf]]\npesquise na internet\n[[/ARQUIVO]]\nresuma"));
+    var clipHtml = "<ul>\n" + string.Concat(Enumerable.Range(0, 200).Select(i => $"<li>item numero {i}</li>\n"));
+    var clipped = OutputClip.Clip(clipHtml, 1000);
+    Check("corte: respeita o limite e termina numa linha inteira, sem tag aberta", clipped.Length < 1000 + 140 && clipped.Split('\n')[^2].EndsWith("</li>"), clipped[^170..]);
+    Check("corte: texto menor que o limite não muda", OutputClip.Clip("abc", 1000) == "abc");
+    Check("corte: sem quebra de linha corta seco no limite", OutputClip.Clip(new string('x', 3000), 500).StartsWith(new string('x', 500)));
     Check("intenção: Normalize tira acento e caixa", IntentRouter.Normalize("PÁGINA Já Aberta") == "pagina ja aberta");
 
     // ---------- contexto adaptativo

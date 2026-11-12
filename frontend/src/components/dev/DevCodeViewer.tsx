@@ -113,8 +113,8 @@ export default function DevCodeViewer({
               </div>
             ))}
           </div>
-          <div className="relative min-w-0 flex-1">
-            <pre className="pointer-events-none whitespace-pre px-3 py-2" aria-hidden>
+          <div className="relative min-w-max self-start">
+            <pre className="pointer-events-none select-none whitespace-pre px-3 py-2 font-mono text-[12.5px] leading-5" aria-hidden>
               {lines.map((line, i) => (
                 <div key={i}>
                   {line.length === 0 ? " " : paint(line).map((p, j) => (
@@ -130,6 +130,11 @@ export default function DevCodeViewer({
               spellCheck={false}
               aria-label={tab.path}
               onChange={(e) => onChange(tab.path, e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+                  e.currentTarget.setSelectionRange(0, e.currentTarget.value.length);
+                }
+              }}
               onSelect={(e) => {
                 const el = e.currentTarget;
                 const text = el.value.slice(el.selectionStart, el.selectionEnd);
@@ -138,7 +143,7 @@ export default function DevCodeViewer({
                 const end = el.value.slice(0, el.selectionEnd).split("\n").length;
                 onSelection?.(text, start, end);
               }}
-              className="absolute inset-0 resize-none bg-transparent px-3 py-2 text-transparent caret-white outline-none"
+              className="absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre bg-transparent px-3 py-2 font-mono text-[12.5px] leading-5 text-transparent caret-white outline-none"
             />
           </div>
         </div>

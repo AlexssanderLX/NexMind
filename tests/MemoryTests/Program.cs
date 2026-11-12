@@ -84,6 +84,15 @@ try
     Check("dev: abrir a pasta escolhida define a raiz e a árvore traz os arquivos", devWs.Root == devOpened && devWs.Tree().Any(n => n.Directory && n.Name == "src" && n.Children.Any(c => c.Name == "a.cs")));
     Check("dev: pasta inexistente é recusada e a raiz anterior continua", Throws(() => devWs.Open(Path.Combine(root, "nao-existe"))) && devWs.Root == devOpened);
     Check("dev: leitura fica presa à raiz (../ recusado)", Throws(() => devWs.Read("../fora.txt")) && devWs.Read("src/a.cs") == "class A {}");
+    var sessionDir = Path.Combine(root, "sessao-dev");
+    devWs.OpenFolder(sessionDir, devDir);
+    devWs.SaveSession(sessionDir, new DevSession { RootPath = devOpened, OpenFiles = new List<string> { "src/a.cs" }, ActiveFile = "src/a.cs", Line = 1, Column = 1 });
+    var restored = new LocalAi.Api.Dev.WorkspaceManager().LoadSession(sessionDir);
+    Check("dev: a sessão da conversa guarda a pasta real e a aba", restored.RootPath == devOpened && restored.ActiveFile == "src/a.cs" && restored.OpenFiles.Contains("src/a.cs"));
+    File.WriteAllText(Path.Combine(devDir, "App.cs"), "public class PedidoController { [HttpGet(\"/pedidos\")] public void Get() {} }");
+    File.WriteAllText(Path.Combine(devDir, "proj.csproj"), "<Project><ItemGroup><PackageReference Include=\"Xunit\" /></ItemGroup></Project>");
+    var digest = LocalAi.Api.Dev.CodeScanner.Scan(devDir);
+    Check("dev: o mapa cabe em 1500 e cita tipo, rota e pacote", digest.Length <= 1500 && digest.Contains("PedidoController") && digest.Contains("/pedidos") && digest.Contains("Xunit"), digest);
 
     // ---------- segurança de caminho
     var sentinel = Path.Combine(root, "nao-apague");

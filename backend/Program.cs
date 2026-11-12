@@ -170,7 +170,7 @@ api.MapPost("/conversations/{id}/security/{agent}/chat", async (string id, strin
 
 // --- Chat com streaming (NDJSON: {type: thinking|token|done|error, ...})
 api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpContext ctx,
-    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes, RagEngine rag, LocalAi.Api.Services.BackgroundTaskManager taskManager, ReconEngine recon) =>
+    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes, RagEngine rag, LocalAi.Api.Services.BackgroundTaskManager taskManager, ReconEngine recon, WorkspaceManager workspace) =>
 {
     var conv = store.Get(id);
     if (conv is null) { ctx.Response.StatusCode = 404; return; }
@@ -366,6 +366,32 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         var scopeText = secNotes.ReadVault(conv.Id, "scope").Text;
         if (conv.Mode == "security" || kind != OperatorIntentKind.Other || !string.IsNullOrWhiteSpace(scopeText))
             system += "\n\n" + OperatorIntent.Directive(kind, scopeText) + "\n";
+        if (conv.Mode == "dev" && store.FolderFor(conv.Id) is { } devDir)
+        {
+            var session = workspace.LoadSession(devDir);
+            if (!string.IsNullOrWhiteSpace(session.RootPath) && Directory.Exists(session.RootPath))
+            {
+                workspace.Open(session.RootPath);
+                var digest = CodeScanner.Scan(session.RootPath);
+                var active = "";
+                var ext = "";
+                if (!string.IsNullOrWhiteSpace(session.ActiveFile))
+                {
+                    try
+                    {
+                        active = workspace.Read(session.ActiveFile);
+                        ext = Path.GetExtension(session.ActiveFile).TrimStart('.');
+                    }
+                    catch (InvalidOperationException) { active = ""; }
+                }
+                if (active.Length > 12_000) active = active[..12_000] + "\n…";
+                system += "\n\n[ESTADO ATUAL DA BANCADA DEV]\n" +
+                          $"Projeto: {session.RootPath}\nMapa Arquitetural do Projeto:\n{digest}\n\n" +
+                          $"Arquivo em Edição na Tela: {session.ActiveFile}\nConteúdo Completo do Arquivo Ativo:\n```{ext}\n{active}\n```\n";
+                if (!string.IsNullOrWhiteSpace(req.Selection))
+                    system += $"[Trecho selecionado pelo usuário nas linhas {req.SelectionStart}-{req.SelectionEnd}: {req.Selection}]\n";
+            }
+        }
         // Micro-RAG de segurança SOB DEMANDA: as anotações dos subagentes só são lidas quando o Alexssander PERGUNTA por elas
         // ("O que o Recon achou?"). Em qualquer outra conversa nada de security/ é lido, e o Nex principal continua leve.
         var notesAsk = SecurityIntent.Detect(userText);
@@ -561,7 +587,43 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
     await Send(error is null ? new { type = "done", stats } : new { type = "error", message = error });
 });
 
-// --- Dev Workbench: uma pasta por sessão, sempre presa à raiz aberta
+api.MapGet("/dev/workspace", (string id, ConversationStore store, WorkspaceManager ws) =>
+{
+    var dir = store.FolderFor(id);
+    if (dir is null) return Results.NotFound();
+    var session = ws.LoadSession(dir);
+    if (!string.IsNullOrWhiteSpace(session.RootPath) && Directory.Exists(session.RootPath)) ws.Open(session.RootPath);
+    return Results.Ok(session);
+});
+api.MapPost("/dev/workspace/open-folder", (DevOpenFolder body, ConversationStore store, WorkspaceManager ws) =>
+{
+    var dir = store.FolderFor(body.Id);
+    if (dir is null) return Results.NotFound();
+    try
+    {
+        var session = ws.OpenFolder(dir, body.Path);
+        return Results.Ok(new { path = session.RootPath, nodes = ws.Tree(), digest = CodeScanner.Scan(session.RootPath!) });
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+});
+api.MapPut("/dev/workspace/session", (string id, DevSession body, ConversationStore store, WorkspaceManager ws) =>
+{
+    var dir = store.FolderFor(id);
+    if (dir is null) return Results.NotFound();
+    if (!string.IsNullOrWhiteSpace(body.RootPath))
+    {
+        try { ws.Open(body.RootPath); }
+        catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+        body.RootPath = ws.Root;
+    }
+    ws.SaveSession(dir, body);
+    return Results.Ok(body);
+});
+api.MapPut("/dev/file", (WorkspaceFile body, WorkspaceManager ws) =>
+{
+    try { return Results.Ok(new { path = body.Path, bytes = ws.Write(body.Path, body.Content ?? "") }); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+});
 api.MapPost("/dev/workspace/open", (WorkspaceOpen body, WorkspaceManager ws) =>
 {
     try { return Results.Ok(new { path = ws.Open(body.Path) }); }

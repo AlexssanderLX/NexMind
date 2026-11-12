@@ -59,6 +59,7 @@ export default function DevCodeViewer({
   onClose,
   onChange,
   onSave,
+  onSelection,
 }: {
   core: NexCore;
   model?: string;
@@ -68,6 +69,7 @@ export default function DevCodeViewer({
   onClose: (path: string) => void;
   onChange: (path: string, content: string) => void;
   onSave: (path: string) => void;
+  onSelection?: (text: string, start: number, end: number) => void;
 }) {
   const tab = tabs.find((t) => t.path === active) ?? null;
   const lines = useMemo(() => (tab ? tab.content.split("\n") : []), [tab]);
@@ -128,6 +130,14 @@ export default function DevCodeViewer({
               spellCheck={false}
               aria-label={tab.path}
               onChange={(e) => onChange(tab.path, e.target.value)}
+              onSelect={(e) => {
+                const el = e.currentTarget;
+                const text = el.value.slice(el.selectionStart, el.selectionEnd);
+                if (!text) return;
+                const start = el.value.slice(0, el.selectionStart).split("\n").length;
+                const end = el.value.slice(0, el.selectionEnd).split("\n").length;
+                onSelection?.(text, start, end);
+              }}
               className="absolute inset-0 resize-none bg-transparent px-3 py-2 text-transparent caret-white outline-none"
             />
           </div>

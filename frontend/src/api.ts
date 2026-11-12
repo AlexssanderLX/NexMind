@@ -10,6 +10,7 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export type DevNode = { name: string; path: string; directory: boolean; children: DevNode[] };
+export type DevSession = { rootPath: string | null; openFiles: string[]; activeFile: string | null; line: number; column: number };
 
 export type ActiveTask = {
   id: string;
@@ -79,6 +80,19 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path, content }),
     }),
+  devSession: (id: string) => req<DevSession>(`/api/dev/workspace?id=${encodeURIComponent(id)}`),
+  devOpenFolder: (id: string, path: string) =>
+    req<{ path: string; nodes: DevNode[]; digest: string }>("/api/dev/workspace/open-folder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, path }),
+    }),
+  devSaveSession: (id: string, session: DevSession) =>
+    req<DevSession>(`/api/dev/workspace/session?id=${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(session),
+    }),
   devCommand: (command: string) =>
     req<{ command: string; exitCode: number; output: string }>("/api/dev/workspace/command", {
       method: "POST",
@@ -99,6 +113,7 @@ export async function streamChat(
   tools = false,
   browser = false,
   desktop = false,
+  selection?: { text: string; start: number; end: number },
 ) {
   const res = await fetch(`/api/conversations/${id}/chat`, {
     method: "POST",
@@ -113,6 +128,9 @@ export async function streamChat(
       tools,
       browser,
       desktop,
+      selection: selection?.text ?? null,
+      selectionStart: selection?.start ?? 0,
+      selectionEnd: selection?.end ?? 0,
     }),
     signal,
   });

@@ -1,4 +1,4 @@
-import { useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { api, type DevNode } from "../../api";
 import type { NexCore } from "../../hooks/useNexCore";
 import type { Settings } from "../../types";
@@ -19,6 +19,8 @@ export default function DevWorkspace({ settings, core }: { settings: Settings; c
   const [drawers] = useState(loadDrawers);
   const [explorerW, setExplorerW] = useState(260);
   const [copilotW, setCopilotW] = useState(400);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<{ text: string; start: number; end: number } | null>(null);
 
   function startDrag(which: "explorer" | "copilot", e: ReactPointerEvent<HTMLDivElement>) {
     e.preventDefault();
@@ -37,6 +39,51 @@ export default function DevWorkspace({ settings, core }: { settings: Settings; c
     window.addEventListener("pointerup", up);
   }
 
+  useEffect(() => {
+    const key = "nexDevConversation";
+    let cancelled = false;
+    (async () => {
+      let id = localStorage.getItem(key);
+      if (!id) {
+        id = (await api.create("dev")).id;
+        localStorage.setItem(key, id);
+      }
+      if (cancelled) return;
+      setConversationId(id);
+      try {
+        const session = await api.devSession(id);
+        if (!session.rootPath) return;
+        setRoot(session.rootPath);
+        setNodes((await api.devTree()).nodes);
+        const restored: DevTab[] = [];
+        for (const path of session.openFiles ?? []) {
+          try {
+            const file = await api.devRead(path);
+            restored.push({ path, content: file.content, dirty: false });
+          } catch { /* o arquivo saiu do disco */ }
+        }
+        if (!cancelled) {
+          setTabs(restored);
+          setActive(session.activeFile);
+        }
+      } catch {
+        localStorage.removeItem(key);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!conversationId || !root) return;
+    void api.devSaveSession(conversationId, {
+      rootPath: root,
+      openFiles: tabs.map((t) => t.path),
+      activeFile: active,
+      line: 1,
+      column: 1,
+    });
+  }, [conversationId, root, tabs, active]);
+
   /** Pasta nova: as abas da pasta anterior não valem mais. */
   function resetTabs() {
     setTabs([]);
@@ -46,14 +93,16 @@ export default function DevWorkspace({ settings, core }: { settings: Settings; c
   /** "Abrir Pasta": janela nativa do Windows; cancelar não muda nada. */
   async function pickFolder() {
     const picked = await api.devPick();
-    if (picked.cancelled || !picked.path) return;
-    setRoot(picked.path);
-    setNodes(picked.nodes ?? []);
+    if (picked.cancelled || !picked.path || !conversationId) return;
+    const opened = await api.devOpenFolder(conversationId, picked.path);
+    setRoot(opened.path);
+    setNodes(opened.nodes);
     resetTabs();
   }
 
   async function dropFolder(path: string) {
-    const opened = await api.devOpen(path);
+    if (!conversationId) return;
+    const opened = await api.devOpenFolder(conversationId, path);
     setRoot(opened.path);
     setNodes((await api.devTree()).nodes);
     resetTabs();
@@ -107,6 +156,7 @@ export default function DevWorkspace({ settings, core }: { settings: Settings; c
         }}
         onChange={change}
         onSave={(p) => void save(p)}
+        onSelection={(text, start, end) => setSelection({ text, start, end })}
       />
       <div
         role="separator"
@@ -116,7 +166,7 @@ export default function DevWorkspace({ settings, core }: { settings: Settings; c
         className="w-1.5 shrink-0 cursor-col-resize bg-white/5 transition-colors hover:bg-accent/40"
       />
       <div style={{ width: copilotW }} className="shrink-0">
-        <DevCopilotPanel settings={settings} workspace={root} drawers={drawers} />
+        <DevCopilotPanel settings={settings} workspace={root} drawers={drawers} conversationId={conversationId} selection={selection} />
       </div>
     </div>
   );

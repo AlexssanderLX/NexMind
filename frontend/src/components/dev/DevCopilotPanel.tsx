@@ -9,16 +9,19 @@ export default function DevCopilotPanel({
   settings,
   workspace,
   drawers,
+  conversationId,
+  selection,
 }: {
   settings: Settings;
   workspace: string | null;
   drawers: Record<DevDrawerKey, string>;
+  conversationId: string | null;
+  selection: { text: string; start: number; end: number } | null;
 }) {
   const [messages, setMessages] = useState<Line[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const conv = useRef<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,7 +36,7 @@ export default function DevCopilotPanel({
     setBusy(true);
     setMessages((m) => [...m, { role: "user", content: text }, { role: "assistant", content: "" }]);
     try {
-      if (!conv.current) conv.current = (await api.create()).id;
+      if (!conversationId) return;
       const memory = await api.metrics().catch(() => null);
       const ram = memory ? memory.machine.ramUsedMb / Math.max(1, memory.machine.ramTotalMb) : 0;
       const notes = (Object.entries(drawers) as [DevDrawerKey, string][])
@@ -50,7 +53,7 @@ export default function DevCopilotPanel({
         .filter(Boolean)
         .join("\n\n");
       const ctrl = new AbortController();
-      await streamChat(conv.current, text, DEV_MODEL, { ...settings, system }, (e) => {
+      await streamChat(conversationId, text, DEV_MODEL, { ...settings, system }, (e) => {
         if (e.type === "token") {
           setMessages((m) => {
             const copy = [...m];
@@ -61,7 +64,7 @@ export default function DevCopilotPanel({
         }
         if (e.type === "error") setError(e.message);
         if (e.type === "approval") void api.approve(e.id, false);
-      }, ctrl.signal);
+      }, ctrl.signal, false, false, false, false, selection ?? undefined);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha no copilot.");
     } finally {

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 
 namespace LocalAi.Api.Dev;
 
@@ -116,7 +117,10 @@ public sealed class WorkspaceManager
         if (!File.Exists(full)) throw new InvalidOperationException("Arquivo não encontrado.");
         var info = new FileInfo(full);
         if (info.Length > 1_000_000) throw new InvalidOperationException("Arquivo grande demais para o editor (limite de 1 MB).");
-        var text = File.ReadAllText(full);
+        var bytes = File.ReadAllBytes(full);
+        string text;
+        try { text = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(bytes); }
+        catch (DecoderFallbackException) { text = Encoding.Latin1.GetString(bytes); }
         if (text.Contains('\0')) throw new InvalidOperationException("Esse arquivo não é texto.");
         return text;
     }
@@ -127,7 +131,9 @@ public sealed class WorkspaceManager
         var parent = Path.GetDirectoryName(full);
         if (parent is null || !Directory.Exists(parent)) throw new InvalidOperationException("A pasta desse arquivo não existe.");
         if (content.Length > 1_000_000) throw new InvalidOperationException("Conteúdo grande demais.");
-        File.WriteAllText(full, content);
+        var tmp = full + ".nex.tmp";
+        File.WriteAllText(tmp, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        File.Move(tmp, full, overwrite: true);
         return content.Length;
     }
 
@@ -224,5 +230,32 @@ public sealed class WorkspaceManager
             if (nodes.Count >= 2000) break;
         }
         return nodes;
+    }
+
+    public DevSession LoadSession(string conversationDir)
+    {
+        var path = Path.Combine(conversationDir, "workspace.json");
+        if (!File.Exists(path)) return new DevSession();
+        try { return JsonSerializer.Deserialize<DevSession>(File.ReadAllText(path)) ?? new DevSession(); }
+        catch (JsonException) { return new DevSession(); }
+    }
+
+    public void SaveSession(string conversationDir, DevSession session)
+    {
+        Directory.CreateDirectory(conversationDir);
+        var path = Path.Combine(conversationDir, "workspace.json");
+        var tmp = path + ".tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(session));
+        File.Move(tmp, path, overwrite: true);
+    }
+
+    /// <summary>Abre a pasta real e grava o caminho na conversa. Não copia arquivo.</summary>
+    public DevSession OpenFolder(string conversationDir, string path, DevSession? current = null)
+    {
+        var full = Open(path);
+        var session = current ?? LoadSession(conversationDir);
+        session.RootPath = full;
+        SaveSession(conversationDir, session);
+        return session;
     }
 }

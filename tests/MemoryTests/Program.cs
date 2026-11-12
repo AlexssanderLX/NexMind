@@ -94,6 +94,64 @@ try
     var digest = LocalAi.Api.Dev.CodeScanner.Scan(devDir);
     Check("dev: o mapa cabe em 1500 e cita tipo, rota e pacote", digest.Length <= 1500 && digest.Contains("PedidoController") && digest.Contains("/pedidos") && digest.Contains("Xunit"), digest);
 
+    // ---------- ciclo de ferramentas: fallback de JSON cru, filtro do stream e nomes no planejamento
+    var regNames = new[] { "recon_target", "vault_read", "browser__browser_get_dom", "arquivos__read_file" };
+    var fb1 = ToolCallFallback.Extract("{\"name\": \"recon_target\", \"arguments\": {\"domain\": \"alvo.com\"}}", regNames, out var rest1);
+    Check("fallback: JSON {name, arguments} vira chamada de verdade e o texto restante fica vazio", fb1.Count == 1 && fb1[0].Name == "recon_target" && fb1[0].Arguments.GetProperty("domain").GetString() == "alvo.com" && rest1 == "", rest1);
+    var fb2 = ToolCallFallback.Extract("Vou rodar o recon agora.\n```json\n{\"name\":\"recon_target\",\"arguments\":{\"domain\":\"alvo.com\"}}\n```\nAguarde.", regNames, out var rest2);
+    Check("fallback: cerca ```json e a frase em volta são tratadas; só o bloco some", fb2.Count == 1 && rest2.Contains("Vou rodar o recon agora.") && rest2.Contains("Aguarde.") && !rest2.Contains("```") && !rest2.Contains("recon_target"), rest2);
+    var fb3 = ToolCallFallback.Extract("<tool_call>{\"name\":\"vault_read\",\"arguments\":{\"drawer\":\"scope\"}}</tool_call>", regNames, out var rest3);
+    Check("fallback: formato <tool_call> do Qwen", fb3.Count == 1 && fb3[0].Name == "vault_read" && rest3 == "", rest3);
+    var fb4 = ToolCallFallback.Extract("{\"function\":{\"name\":\"vault_read\",\"arguments\":\"{\\\"drawer\\\":\\\"surface\\\"}\"}}", regNames, out _);
+    Check("fallback: function aninhado e argumentos como texto JSON", fb4.Count == 1 && fb4[0].Arguments.GetProperty("drawer").GetString() == "surface");
+    var fb5 = ToolCallFallback.Extract("{\"name\":\"browser_get_dom\",\"parameters\":{\"tab_id\":0}}", regNames, out _);
+    Check("fallback: nome sem prefixo do servidor resolve para a ferramenta registrada (parameters também vale)", fb5.Count == 1 && fb5[0].Name == "browser__browser_get_dom");
+    var fb6 = ToolCallFallback.Extract("{\"name\":\"wappalyzer\",\"arguments\":{\"url\":\"https://alvo.com\"}}", regNames, out var rest6);
+    Check("fallback: ferramenta que NÃO está registrada nunca é executada (o texto fica como veio)", fb6.Count == 0 && rest6.Contains("wappalyzer"));
+    var fb7 = ToolCallFallback.Extract("[{\"name\":\"vault_read\",\"arguments\":{\"drawer\":\"scope\"}},{\"name\":\"recon_target\",\"arguments\":{\"domain\":\"a.com\"}}]", regNames, out var rest7);
+    Check("fallback: lista com duas chamadas", fb7.Count == 2 && fb7[0].Name == "vault_read" && fb7[1].Name == "recon_target" && rest7 == "", rest7);
+    var fb8 = ToolCallFallback.Extract("{\"name\":\"recon_target\",\"arguments\":{\"domain\":\"a}b.com\"}}", regNames, out _);
+    Check("fallback: chave dentro de string não quebra a leitura do bloco", fb8.Count == 1 && fb8[0].Arguments.GetProperty("domain").GetString() == "a}b.com");
+    Check("fallback: JSON qualquer, que não é chamada, não vira nada", ToolCallFallback.Extract("{\"nome\":\"x\",\"idade\":3}", regNames, out _).Count == 0 && ToolCallFallback.Extract("sem json", regNames, out _).Count == 0 && ToolCallFallback.Extract("{quebrado", regNames, out _).Count == 0);
+    Check("fallback: nome ambíguo por sufixo não é adivinhado", ToolCallFallback.ResolveName("read", new[] { "a__read", "b__read" }) is null && ToolCallFallback.ResolveName("a__read", new[] { "a__read", "b__read" }) == "a__read");
+
+    string SniffAll(ToolCallFallback.Sniffer sn, string text, int step, bool hasCalls, out List<ToolCall> got)
+    {
+        var shown = new System.Text.StringBuilder();
+        for (var i = 0; i < text.Length; i += step) shown.Append(sn.Push(text.Substring(i, Math.Min(step, text.Length - i))));
+        var (tail, calls2) = sn.Finish(hasCalls);
+        shown.Append(tail);
+        got = calls2;
+        return shown.ToString();
+    }
+    var rawCall = "{\"name\": \"recon_target\", \"arguments\": {\"domain\": \"alvo.com\"}}";
+    var shownRaw = SniffAll(new ToolCallFallback.Sniffer(regNames), rawCall, 3, false, out var gotRaw);
+    Check("filtro: o JSON cru chegando em pedaços de 3 caracteres NUNCA aparece para o usuário e vira chamada", shownRaw == "" && gotRaw.Count == 1 && gotRaw[0].Name == "recon_target", shownRaw);
+    var shownChars = SniffAll(new ToolCallFallback.Sniffer(regNames), "Rodando.\n" + rawCall, 1, false, out var gotChars);
+    Check("filtro: texto antes do JSON passa na hora, o JSON fica retido (um caractere por vez)", shownChars == "Rodando.\n" && gotChars.Count == 1, shownChars);
+    var shownFence = SniffAll(new ToolCallFallback.Sniffer(regNames), "```json\n" + rawCall + "\n```", 2, false, out var gotFence);
+    Check("filtro: cerca ```json de chamada fica retida e some do texto", shownFence == "" && gotFence.Count == 1, shownFence);
+    var codeAnswer = "Exemplo em C#:\n```csharp\nvar x = new { a = 1 };\nif (x.a > 0) { Console.WriteLine(\"ok\"); }\n```\nPronto.";
+    var shownCode = SniffAll(new ToolCallFallback.Sniffer(regNames), codeAnswer, 4, false, out var gotCode);
+    Check("filtro: resposta com código e chaves passa inteira, sem perder um caractere", shownCode == codeAnswer && gotCode.Count == 0, shownCode);
+    var plainJson = "Config: {\"nome\": \"x\", \"ativo\": true} fim";
+    var shownJson = SniffAll(new ToolCallFallback.Sniffer(regNames), plainJson, 5, false, out var gotJson);
+    Check("filtro: JSON comum numa resposta é devolvido como texto", shownJson == plainJson && gotJson.Count == 0, shownJson);
+    var shownDup = SniffAll(new ToolCallFallback.Sniffer(regNames), rawCall, 7, true, out var gotDup);
+    Check("filtro: se o Ollama já mandou a chamada de verdade, o JSON retido some e não executa duas vezes", shownDup == "" && gotDup.Count == 0, shownDup);
+    var shownNone = SniffAll(new ToolCallFallback.Sniffer(Array.Empty<string>()), rawCall, 4, false, out var gotNone);
+    Check("filtro: sem ferramentas registradas (última rodada) nada é retido nem interpretado", shownNone == rawCall && gotNone.Count == 0, shownNone);
+    var shownTick = SniffAll(new ToolCallFallback.Sniffer(regNames), "use `crase` e ``duas`` e ```", 1, false, out _);
+    Check("filtro: crases soltas e marcador incompleto no fim não somem", shownTick == "use `crase` e ``duas`` e ```", shownTick);
+
+    var defs = new List<object> { new { type = "function", function = new { name = "recon_target", description = "x" } }, new { type = "function", function = new { name = "vault_read", description = "y" } } };
+    var defNames = ToolTelemetry.ToolNames(defs);
+    Check("telemetria: nomes das definições enviadas ao Ollama", string.Join(",", defNames) == "recon_target,vault_read");
+    var plannedIntent = IntentRouter.Route("faça o recon", false, false, false, false);
+    var plannedBlock = ToolTelemetry.PlanningBlock(plannedIntent, new ContextPlan(8192, "ferramenta", "100% na GPU", null, 100), null, null, defNames);
+    Check("telemetria: o planejamento mostra [recon_target, vault_read] e não 'nenhuma'", plannedBlock.Contains("• Ferramentas: [recon_target, vault_read]") && !plannedBlock.Contains("nenhuma"), plannedBlock);
+    Check("telemetria: sem ferramentas diz nenhuma; muitas ferramentas mostram +N", ToolTelemetry.ToolsLabel(IntentRouter.Route("bom dia", false, false, false, false), []) == "nenhuma" && ToolTelemetry.ToolsLabel(IntentRouter.Route("bom dia", false, false, false, false), Enumerable.Range(1, 11).Select(n => "t" + n).ToList()) == "[t1, t2, t3, t4, t5, t6, t7, t8, +3]");
+
     // ---------- segurança de caminho
     var sentinel = Path.Combine(root, "nao-apague");
     Directory.CreateDirectory(sentinel);
@@ -463,9 +521,9 @@ try
         .All(t => FactExtractor.Extract(t, Args("{\"path\":\"x\",\"url\":\"y\"}"), "Aba [1] z") is null));
 
     // ---------- ferramentas nativas
-    var defs = NotebookTools.Definitions();
-    var defJson = JsonSerializer.Serialize(defs);
-    Check("há exatamente 2 ferramentas nativas: topic_read e topic_write", defs.Count == 2 && defJson.Contains("\"topic_read\"") && defJson.Contains("\"topic_write\""));
+    var toolDefs = NotebookTools.Definitions();
+    var defJson = JsonSerializer.Serialize(toolDefs);
+    Check("há exatamente 2 ferramentas nativas: topic_read e topic_write", toolDefs.Count == 2 && defJson.Contains("\"topic_read\"") && defJson.Contains("\"topic_write\""));
     Check("as 2 descrições têm o formato explícito", new[] { NotebookTools.ReadDescription, NotebookTools.WriteDescription }
         .All(d => new[] { "O QUE FAZ:", "QUANDO USAR:", "COMO USAR:", "NÃO FAÇA:", "RETORNA:" }.All(d.Contains) && d.Length <= 1100));
     Check("IsNotebookTool", NotebookTools.IsNotebookTool("topic_read") && NotebookTools.IsNotebookTool("topic_write") && !NotebookTools.IsNotebookTool("browser_tabs"));

@@ -40,8 +40,32 @@ public static class ToolTelemetry
         return $"[TELEMETRIA DE MEMÓRIA ATIVA: {plan.EstimatedTokens}/{plan.NumCtx} tokens ({pct}% ocupado) | Diretriz: se passar de 75%, {offload} e mantenha suas respostas diretas para preservar 100% da velocidade da GPU]";
     }
 
+    /// <summary>Nomes das ferramentas (function.name) numa lista de definições do Ollama, na ordem enviada.</summary>
+    public static List<string> ToolNames(IEnumerable<object> definitions)
+    {
+        var names = new List<string>();
+        foreach (var def in definitions)
+        {
+            var el = JsonSerializer.SerializeToElement(def);
+            if (el.TryGetProperty("function", out var fn) && fn.TryGetProperty("name", out var n) && n.GetString() is { Length: > 0 } name) names.Add(name);
+        }
+        return names;
+    }
+
+    /// <summary>"[recon_target, vault_read]" com as ferramentas REAIS enviadas ao modelo (até 8 nomes e "+N"); sem lista, cai nas famílias da intenção; senão "nenhuma".</summary>
+    public static string ToolsLabel(ToolIntent intent, IReadOnlyList<string>? activeToolNames)
+    {
+        if (activeToolNames is { Count: > 0 })
+        {
+            const int max = 8;
+            var shown = string.Join(", ", activeToolNames.Take(max));
+            return "[" + shown + (activeToolNames.Count > max ? $", +{activeToolNames.Count - max}" : "") + "]";
+        }
+        return intent.Any ? "[" + intent.Describe() + "]" : "nenhuma";
+    }
+
     /// <summary>O bloco que abre o raciocínio. Em OSINT, só as fases da investigação. Sem métrica de GPU.</summary>
-    public static string PlanningBlock(ToolIntent intent, ContextPlan plan, string? hint = null, string? osintTarget = null)
+    public static string PlanningBlock(ToolIntent intent, ContextPlan plan, string? hint = null, string? osintTarget = null, IReadOnlyList<string>? activeToolNames = null)
     {
         if (!string.IsNullOrWhiteSpace(osintTarget))
         {
@@ -55,7 +79,7 @@ public static class ToolTelemetry
         sb.AppendLine("💭 [Planejamento de Execução]");
         sb.AppendLine($"• Complexidade: {plan.Complexity}");
         sb.AppendLine($"• Contexto: {plan.NumCtx} ({plan.GpuNote})");
-        sb.AppendLine($"• Ferramentas: {(intent.Any ? "[" + intent.Describe() + "]" : "nenhuma")}");
+        sb.AppendLine($"• Ferramentas: {ToolsLabel(intent, activeToolNames)}");
         if (!string.IsNullOrWhiteSpace(hint)) sb.AppendLine($"• {hint}");
         if (plan.Warning is not null) sb.AppendLine($"⚠ {plan.Warning}");
         return sb.ToString();

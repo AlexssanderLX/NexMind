@@ -444,7 +444,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         // O planejamento abre o raciocínio da resposta: o usuário vê o que o Nex decidiu (contexto e ferramentas) antes de qualquer token.
         if (investigationTarget is null)
         {
-        var planning = ToolTelemetry.PlanningBlock(intent, plan, notesAsk is null ? null : SecurityIntent.Describe(notesAsk));
+        var planning = ToolTelemetry.PlanningBlock(intent, plan, notesAsk is null ? null : SecurityIntent.Describe(notesAsk), activeToolNames: ToolTelemetry.ToolNames(ollamaTools));
         thinking.Append(planning).Append('\n');
         await Send(new { type = "thinking", text = planning + "\n" });
         }
@@ -467,8 +467,10 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             List<ToolCall>? calls = null;
             var roundText = new StringBuilder();
             var replyCap = investigationTarget is null ? (int?)null : 1024;
+            var roundTools = round < MaxToolRounds && ollamaTools.Count > 0;
+            var sniffer = new ToolCallFallback.Sniffer(roundTools ? ToolTelemetry.ToolNames(ollamaTools) : []);
             await foreach (var chunk in ollama.ChatAsync(req.Model, system, history, numCtx, investigationTarget is null ? req.Think : false, numGpu,
-                               extra, investigationTarget is null && round < MaxToolRounds && ollamaTools.Count > 0 ? ollamaTools : null, replyCap, taskCt))
+                               extra, round < MaxToolRounds && ollamaTools.Count > 0 ? ollamaTools : null, replyCap, taskCt))
             {
                 if (!string.IsNullOrEmpty(chunk.Thinking))
                 {
@@ -477,13 +479,27 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                 }
                 if (!string.IsNullOrEmpty(chunk.Content))
                 {
-                    content.Append(chunk.Content);
-                    roundText.Append(chunk.Content);
-                    await Send(new { type = "token", text = chunk.Content });
+                    // um bloco que parece chamada de ferramenta escrita como texto fica retido até o fim da rodada (nunca vai cru ao usuário)
+                    var safe = sniffer.Push(chunk.Content);
+                    if (safe.Length > 0)
+                    {
+                        content.Append(safe);
+                        roundText.Append(safe);
+                        await Send(new { type = "token", text = safe });
+                    }
                 }
                 if (chunk.ToolCalls is { Count: > 0 }) calls = chunk.ToolCalls;
                 if (chunk.Stats is not null) stats = chunk.Stats;
             }
+            // fim da rodada: o bloco retido vira chamada de verdade (fallback) ou volta como texto comum
+            var (sniffText, sniffCalls) = sniffer.Finish(alreadyHasCalls: calls is not null);
+            if (sniffText.Length > 0)
+            {
+                content.Append(sniffText);
+                roundText.Append(sniffText);
+                await Send(new { type = "token", text = sniffText });
+            }
+            if (calls is null && sniffCalls.Count > 0) calls = sniffCalls;
             if (calls is null) break;
 
             extra.Add(new

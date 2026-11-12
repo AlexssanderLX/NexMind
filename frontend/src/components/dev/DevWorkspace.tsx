@@ -44,6 +44,10 @@ export default function DevWorkspace({ settings, core }: { settings: Settings; c
     let cancelled = false;
     (async () => {
       let id = localStorage.getItem(key);
+      if (id) {
+        try { await api.get(id); }
+        catch { id = null; }
+      }
       if (!id) {
         id = (await api.create("dev")).id;
         localStorage.setItem(key, id);

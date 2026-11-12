@@ -36,7 +36,17 @@ export default function DevCopilotPanel({
     setBusy(true);
     setMessages((m) => [...m, { role: "user", content: text }, { role: "assistant", content: "" }]);
     try {
-      if (!conversationId) return;
+      let chatId = conversationId;
+      if (!chatId) {
+        chatId = (await api.create("dev")).id;
+        localStorage.setItem("nexDevConversation", chatId);
+      } else {
+        try { await api.get(chatId); }
+        catch {
+          chatId = (await api.create("dev")).id;
+          localStorage.setItem("nexDevConversation", chatId);
+        }
+      }
       const memory = await api.metrics().catch(() => null);
       const ram = memory ? memory.machine.ramUsedMb / Math.max(1, memory.machine.ramTotalMb) : 0;
       const notes = (Object.entries(drawers) as [DevDrawerKey, string][])
@@ -53,7 +63,7 @@ export default function DevCopilotPanel({
         .filter(Boolean)
         .join("\n\n");
       const ctrl = new AbortController();
-      await streamChat(conversationId, text, DEV_MODEL, { ...settings, system }, (e) => {
+      await streamChat(chatId, text, DEV_MODEL, { ...settings, system }, (e) => {
         if (e.type === "token") {
           setMessages((m) => {
             const copy = [...m];

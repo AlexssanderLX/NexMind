@@ -70,7 +70,7 @@ export default function DevCopilotPanel({
   }
 
   return (
-    <aside className="flex w-[400px] shrink-0 flex-col border-l border-white/10 bg-[#0c1424]">
+    <aside className="flex h-full w-full flex-col border-l border-white/5 bg-[#0b0f19]">
       <div className="border-b border-white/10 px-3 py-2">
         <p className="text-[11px] uppercase tracking-wide text-mute">Nex</p>
         <p className="truncate text-xs text-fg" title={DEV_MODEL}>

@@ -35,7 +35,7 @@ export default function DevCodeViewer({
   const [saved, setSaved] = useState<string | null>(null);
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col bg-[#0a1020]">
+    <section className="flex min-w-0 flex-1 flex-col bg-[#0f1420]">
       <div className="flex items-center gap-1 overflow-x-auto border-b border-white/10 px-2">
         {tabs.length === 0 && <span className="px-2 py-2 text-xs text-mute">Nenhum arquivo aberto</span>}
         {tabs.map((t) => (
@@ -65,7 +65,7 @@ export default function DevCodeViewer({
       </div>
       {tab ? (
         <div className="flex min-h-0 flex-1 overflow-auto font-mono text-[12.5px] leading-5">
-          <div className="sticky left-0 select-none border-r border-white/5 bg-[#0a1020] py-2 text-right text-mute/70">
+          <div className="sticky left-0 select-none border-r border-white/5 bg-[#0f1420] py-2 text-right text-mute">
             {lines.map((_, i) => (
               <div key={i} className="px-2">
                 {i + 1}

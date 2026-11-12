@@ -489,11 +489,6 @@ export default function App() {
 
       {/* sem z-index aqui: um z-index criaria um contexto de empilhamento isolado e o canvas do núcleo (mix-blend-mode: screen) não conseguiria se misturar com o fundo da página */}
       <main className="relative flex min-w-0 flex-1 flex-col">
-        {microApp === "dev" && (
-          <div className="absolute inset-0 z-20 flex min-h-0 flex-col bg-[#070d1a]">
-            <DevWorkspace settings={settings} />
-          </div>
-        )}
         <header className="flex items-center justify-between gap-3 px-6 py-3">
           <div className="flex min-w-0 items-center gap-3">
             <WorkspaceSwitcher mode={microApp} onChange={changeMode} disabled={streaming} />
@@ -536,6 +531,10 @@ export default function App() {
           </div>
         </header>
 
+        {microApp === "dev" ? (
+          <DevWorkspace settings={settings} />
+        ) : (
+        <>
         {microApp === "security" && <SecurityTaskPanel counts={vaultCounts} onOpen={setVaultOpen} />}
         {microApp === "security" && vaultOpen && (
           <SecurityVaultModal
@@ -799,6 +798,8 @@ export default function App() {
             ceiling={settings.numCtx}
             glass={bgAnim}
           />
+        )}
+        </>
         )}
       </main>
 

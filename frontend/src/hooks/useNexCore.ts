@@ -65,8 +65,7 @@ export function useNexCore({ streaming, bgAnim, mic }: { streaming: boolean; bgA
   const [flash, setFlash] = useState<"success" | "error" | null>(null);
   const [external, setExternal] = useState<CoreState | null>(null);
   const [panels, setPanels] = useState<Record<PanelId, boolean>>(() => {
-    const open = !window.matchMedia("(max-width: 767px)").matches;
-    return { activity: open, tools: open, runs: open };
+    return { activity: false, tools: false, runs: false };
   });
 
   const demoAudioRef = useRef<AudioSource | null>(null);

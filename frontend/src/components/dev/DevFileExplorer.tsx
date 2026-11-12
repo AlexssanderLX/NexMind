@@ -4,15 +4,11 @@ import type { DevNode } from "../../api";
 export default function DevFileExplorer({
   root,
   nodes,
-  collapsed,
-  onToggle,
   onOpenFolder,
   onOpenFile,
 }: {
   root: string | null;
   nodes: DevNode[];
-  collapsed: boolean;
-  onToggle: () => void;
   onOpenFolder: (path: string) => Promise<void>;
   onOpenFile: (path: string) => void;
 }) {
@@ -32,19 +28,9 @@ export default function DevFileExplorer({
     }
   }
 
-  if (collapsed) {
-    return (
-      <div className="flex w-10 shrink-0 flex-col items-center border-r border-white/10 bg-[#0c1424] py-2">
-        <button type="button" title="Mostrar arquivos" onClick={onToggle} className="rounded p-1 text-mute hover:text-fg">
-          ›
-        </button>
-      </div>
-    );
-  }
-
   return (
     <aside
-      className="flex w-[280px] shrink-0 flex-col border-r border-white/10 bg-[#0c1424]"
+      className="flex h-full w-full flex-col border-r border-white/5 bg-[#0b0f19]"
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
@@ -53,12 +39,7 @@ export default function DevFileExplorer({
         else setError("O navegador não entrega o caminho da pasta. Cole o caminho completo.");
       }}
     >
-      <div className="flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-mute">
-        <span>Explorador</span>
-        <button type="button" title="Recolher" onClick={onToggle} className="hover:text-fg">
-          ‹
-        </button>
-      </div>
+      <div className="px-3 py-2 text-[11px] uppercase tracking-wide text-mute">Explorador</div>
       <form
         className="space-y-2 px-3 pb-2"
         onSubmit={(e) => {
@@ -74,7 +55,7 @@ export default function DevFileExplorer({
           className="w-full rounded border border-white/10 bg-black/30 px-2 py-1 text-xs text-fg outline-none focus:border-accent"
         />
         <button type="submit" disabled={busy} className="w-full rounded border border-accent/30 px-2 py-1 text-xs text-accent hover:bg-accent/10 disabled:opacity-40">
-          Abrir Pasta Local
+          Abrir Pasta
         </button>
       </form>
       {error && <p className="px-3 pb-2 text-[11px] text-red-300">{error}</p>}

@@ -1,19 +1,40 @@
-import { useState } from "react";
+import { useState, type PointerEvent as ReactPointerEvent } from "react";
 import { api, type DevNode } from "../../api";
 import type { Settings } from "../../types";
-import { loadDrawers, saveDrawers, type DevDrawerKey } from "../../lib/devPrompt";
+import { loadDrawers } from "../../lib/devPrompt";
 import DevCodeViewer, { type DevTab } from "./DevCodeViewer";
 import DevCopilotPanel from "./DevCopilotPanel";
 import DevFileExplorer from "./DevFileExplorer";
-import DevTaskPanel from "./DevTaskPanel";
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n));
+}
 
 export default function DevWorkspace({ settings }: { settings: Settings }) {
   const [root, setRoot] = useState<string | null>(null);
   const [nodes, setNodes] = useState<DevNode[]>([]);
-  const [collapsed, setCollapsed] = useState(false);
   const [tabs, setTabs] = useState<DevTab[]>([]);
   const [active, setActive] = useState<string | null>(null);
-  const [drawers, setDrawers] = useState(loadDrawers);
+  const [drawers] = useState(loadDrawers);
+  const [explorerW, setExplorerW] = useState(260);
+  const [copilotW, setCopilotW] = useState(400);
+
+  function startDrag(which: "explorer" | "copilot", e: ReactPointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const start = which === "explorer" ? explorerW : copilotW;
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      if (which === "explorer") setExplorerW(clamp(start + dx, 180, 400));
+      else setCopilotW(clamp(start - dx, 320, 600));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
 
   async function openFolder(path: string) {
     const opened = await api.devOpen(path);
@@ -23,8 +44,7 @@ export default function DevWorkspace({ settings }: { settings: Settings }) {
   }
 
   async function openFile(path: string) {
-    const existing = tabs.find((t) => t.path === path);
-    if (existing) {
+    if (tabs.some((t) => t.path === path)) {
       setActive(path);
       return;
     }
@@ -44,23 +64,37 @@ export default function DevWorkspace({ settings }: { settings: Settings }) {
     setTabs((t) => t.map((item) => (item.path === path ? { ...item, dirty: false } : item)));
   }
 
-  function setDrawer(key: DevDrawerKey, text: string) {
-    setDrawers((d) => {
-      const next = { ...d, [key]: text };
-      saveDrawers(next);
-      return next;
-    });
-  }
-
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <DevTaskPanel drawers={drawers} onChange={setDrawer} />
-      <div className="flex min-h-0 flex-1">
-        <DevFileExplorer root={root} nodes={nodes} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} onOpenFolder={openFolder} onOpenFile={(p) => void openFile(p)} />
-        <DevCodeViewer tabs={tabs} active={active} onSelect={setActive} onClose={(p) => {
+    <div className="flex min-h-0 flex-1 bg-[#0b0f19]">
+      <div style={{ width: explorerW }} className="shrink-0">
+        <DevFileExplorer root={root} nodes={nodes} onOpenFolder={openFolder} onOpenFile={(p) => void openFile(p)} />
+      </div>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Redimensionar explorador"
+        onPointerDown={(e) => startDrag("explorer", e)}
+        className="w-1.5 shrink-0 cursor-col-resize bg-white/5 transition-colors hover:bg-accent/40"
+      />
+      <DevCodeViewer
+        tabs={tabs}
+        active={active}
+        onSelect={setActive}
+        onClose={(p) => {
           setTabs((t) => t.filter((tab) => tab.path !== p));
           setActive((cur) => (cur === p ? null : cur));
-        }} onChange={change} onSave={(p) => void save(p)} />
+        }}
+        onChange={change}
+        onSave={(p) => void save(p)}
+      />
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Redimensionar o Nex"
+        onPointerDown={(e) => startDrag("copilot", e)}
+        className="w-1.5 shrink-0 cursor-col-resize bg-white/5 transition-colors hover:bg-accent/40"
+      />
+      <div style={{ width: copilotW }} className="shrink-0">
         <DevCopilotPanel settings={settings} workspace={root} drawers={drawers} />
       </div>
     </div>

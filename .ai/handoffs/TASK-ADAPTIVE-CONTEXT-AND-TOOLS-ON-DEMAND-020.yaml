@@ -1,0 +1,31 @@
+task_id: TASK-ADAPTIVE-CONTEXT-AND-TOOLS-ON-DEMAND-020
+title: Implementacao de Contexto Adaptativo e Ativacao de Tools sob Demanda com Streaming no Thinking
+assigned_by: Antigravity
+assigned_to: Cursor / Claude
+status: READY
+created_at: "2026-11-12T11:28:30Z"
+context:
+  goal: Evitar que o Nex inicie com ferramentas ativas (bloat no prompt de 3500 tokens) e permitir que o backend avalie a complexidade da mensagem, ative apenas a ferramenta necessaria, selecione o contexto ideal (4k, 8k, 16k, 32k) e transmita todo esse planejamento em tempo real no ThinkingCard.
+  worktree: .worktrees/develop
+  reference_files:
+    - frontend/src/App.tsx
+    - frontend/src/components/ThinkingCard.tsx
+    - backend/Program.cs
+    - .ai/knowledge/security/ARQUITETURA_CONTEXTO_ADAPTATIVO.md
+
+requirements:
+  - id: REQ-01
+    description: Na inicializacao do frontend (`App.tsx`), as ferramentas (`searchOn`, `browserOn`, `desktopOn`) devem iniciar DESLIGADAS por padrao (`false` ou `0`), sem forcar injeção de schemas desnecessarios no chat inicial.
+  - id: REQ-02
+    description: No backend (`Program.cs`), antes de chamar o `ollama.ChatAsync`, emitir eventos NDJSON `{ type: "thinking", text: "..." }` informando o planejamento de execucao (Complexidade, Ferramentas acionadas e Contexto alocado na GPU).
+  - id: REQ-03
+    description: Injetar em `ollamaTools` SOMENTE as ferramentas necessarias para a intencao atual (ex: se o usuario so pediu para ver um site, injetar apenas `browserTools`; se for pergunta conceitual, injetar lista vazia de tools).
+  - id: REQ-04
+    description: Definir `numCtx` adaptativo iniciando em 4096 para tarefas diretas (100% GPU, 0 MiB RAM), subindo para 8192 para tarefas de ferramentas leves e apenas alcancando 16k/32k com aviso de performance no thinking quando houver anexos extensos.
+  - id: REQ-05
+    description: Assegurar que `npm --prefix frontend run build` e `dotnet build backend -c Release` finalizem com 0 erros.
+
+acceptance_criteria:
+  - test: Enviar "Bom dia Nex" gera resposta em menos de 1 segundo em 4096 ctx sem carregar schemas de MCP.
+  - test: O card de raciocinio (ThinkingCard) exibe o bloco de planejamento com a decisao de contexto e ferramentas antes da resposta.
+  - test: Pedir uma acao de navegador ou arquivo ativa especificamente aquela ferramenta e ajusta o contexto dinamicamente.

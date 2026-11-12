@@ -26,3 +26,4 @@ acceptance_criteria:
   - test: Respostas do Nex soam como um parceiro tecnico sênior e amigo, sem frases feitas nem enrolacao.
   - test: O agente declara o que vai fazer antes de disparar as ferramentas.
   - test: A barra de progresso da tarefa exibe os micropassos em tempo real enquanto a acao ocorre.
+

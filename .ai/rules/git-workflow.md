@@ -57,6 +57,7 @@ Branch `main` / Push para o GitHub
 8. **Proibição de build sujo:** Nunca rodar `npm run build` ou `dotnet build` em `develop` com a working tree suja.
 9. **Reinicialização econômica da porta 5080:** Mudança de frontend = `npm run build` na pasta `develop` e F5 no navegador. Mudança de backend = reiniciar só a API. Não rodar o atalho inteiro sem necessidade, porque isso reinicia o Ollama e gasta cerca de 7 s de VRAM.
 10. **Diretório raiz dos MCPs:** O host MCP em C# roda a partir da raiz da solução. Os caminhos em `mcp_servers.json` são relativos a essa raiz.
+11. **Diretriz de Geração de Prompts do Auditor:** Ao gerar qualquer prompt de execução para outros agentes (Cursor, Claude Code), o Auditor (Antigravity) DEVE OBRIGATORIAMENTE instruir a criação de branch temporária a partir de `develop` (`git checkout -b <tipo>/<nome>`), execução na branch e merge limpo de volta para `develop` com deleção imediata (`git branch -d`). Nunca instruir commits diretos em `develop`.
 
 ## 3. Estratégia de Rollback
 

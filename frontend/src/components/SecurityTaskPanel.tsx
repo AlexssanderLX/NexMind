@@ -1,67 +1,44 @@
-/** Os 6 estágios do ciclo de segurança (skill security-workbench): escopo primeiro, evidência por último. */
-export const SECURITY_STAGES = [
-  "Escopo & Autorização",
-  "Mapear Superfície",
-  "Formular Hipótese",
-  "Teste Mínimo Seguro",
-  "Interpretar Efeito",
-  "Evidência & Relatório",
-] as const;
-
-type StageState = "done" | "active" | "pending";
-
-const CARD: Record<StageState, string> = {
-  active: "border-accent bg-accent/10 text-fg shadow-[0_0_20px_rgba(34,211,238,0.35),inset_0_0_14px_rgba(34,211,238,0.12)]",
-  done: "border-emerald-400/40 bg-emerald-400/5 text-emerald-100 hover:border-emerald-300/70",
-  pending: "border-white/10 bg-black/25 text-mute hover:border-accent/40 hover:text-fg",
-};
-
-const BADGE: Record<StageState, string> = {
-  active: "bg-accent text-bg",
-  done: "bg-emerald-400/20 text-emerald-300",
-  pending: "bg-white/10 text-mute",
-};
-
-const LABEL: Record<StageState, string> = { done: "concluída", active: "em andamento", pending: "pendente" };
+import { VAULTS, vaultBadge, type VaultKey } from "../lib/vaults";
 
 /**
- * Barra dos 6 estágios, na largura TOTAL da área de conversa: grade de 6 colunas (3 em telas médias, 2 nas pequenas),
- * um cartão por estágio com o número em destaque, borda luminosa no ativo e ✓ nos já concluídos.
- * Clicar num cartão marca aquele estágio como o atual (os anteriores ficam concluídos).
+ * As 6 Gavetas de Dados da Investigação, na largura TOTAL da área de conversa (6 colunas; 3 em telas médias, 2 nas pequenas).
+ * Pentest não é linear: não há etapa atual nem "pendente". Cada cartão mostra o ícone, o nome e quantos itens a gaveta tem;
+ * clicar em qualquer um, a qualquer momento, abre a gaveta para ver, editar e salvar (o que ele edita é o que os agentes consultam).
  * A fila de tarefas dos multi-agentes ainda é um stub: entra com a integração do board.json de sessão.
  */
 export default function SecurityTaskPanel({
-  stage = 0,
-  onSelectStage,
+  counts = {},
+  onOpen,
   queue = [],
 }: {
-  stage?: number;
-  onSelectStage?: (index: number) => void;
+  counts?: Partial<Record<VaultKey, number>>;
+  onOpen?: (key: VaultKey) => void;
   queue?: { id: string; title: string; state: string }[];
 }) {
   return (
-    <section aria-label="Sessão de segurança" className="w-full px-4 pb-2">
-      <ol className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
-        {SECURITY_STAGES.map((name, i) => {
-          const state: StageState = i < stage ? "done" : i === stage ? "active" : "pending";
+    <section aria-label="Gavetas da investigação" className="w-full px-4 pb-2">
+      <ul className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
+        {VAULTS.map((v) => {
+          const count = counts[v.key] ?? 0;
           return (
-            <li key={name} aria-current={state === "active" ? "step" : undefined} data-stage-state={state}>
+            <li key={v.key} data-vault={v.key} data-count={count}>
               <button
                 type="button"
-                onClick={() => onSelectStage?.(i)}
-                title={`Marcar "${name}" como a etapa atual`}
-                className={`flex h-full w-full flex-col items-start gap-1.5 rounded-xl border px-3 py-3 text-left backdrop-blur-md transition-all ${CARD[state]}`}
+                onClick={() => onOpen?.(v.key)}
+                title={`Abrir "${v.name}" para ver e editar (${v.hint})`}
+                className="group flex h-full w-full flex-col items-start gap-1.5 rounded-xl border border-white/10 bg-black/25 px-3 py-3 text-left text-fg backdrop-blur-md transition-all hover:-translate-y-0.5 hover:border-accent/60 hover:bg-accent/5 hover:shadow-[0_0_20px_rgba(34,211,238,0.25)] focus-visible:border-accent focus-visible:outline-none"
               >
-                <span className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${BADGE[state]}`}>
-                  {state === "done" ? "✓" : i}
+                <span className="text-xl leading-none" aria-hidden>
+                  {v.icon}
                 </span>
-                <span className="text-[13px] font-medium leading-tight">{name}</span>
-                <span className="text-[10px] uppercase tracking-wide opacity-70">{LABEL[state]}</span>
+                <span className="text-[13px] font-medium leading-tight">{v.name}</span>
+                <span className={`text-[10px] uppercase tracking-wide ${count ? "text-accent" : "text-mute opacity-70"}`}>{vaultBadge(v.key, count)}</span>
+                <span className="text-[10px] text-mute opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">clique para editar</span>
               </button>
             </li>
           );
         })}
-      </ol>
+      </ul>
       <p className="mt-2 text-xs text-mute">
         {queue.length === 0 ? "Bancada pronta: mapeie superfícies, formule hipóteses ou inspecione parâmetros livremente." : `Fila de tarefas dos agentes: ${queue.length}`}
       </p>

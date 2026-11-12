@@ -90,36 +90,45 @@ test("barra lateral recolhida tem o botão de escudo que alterna o modo", () => 
   assert.match(html.sidebarCollapsedSecurity, /Micro App: Security/);
 });
 
-test("barra de etapas: ocupa 100% da largura em grade de 6 colunas (2, 3 e 6 conforme a tela)", () => {
+test("gavetas: ocupam 100% da largura em grade de 6 colunas (2, 3 e 6 conforme a tela)", () => {
   assert.match(html.taskPanel0, /<section[^>]*class="w-full px-4 pb-2"/);
-  assert.match(html.taskPanel0, /<ol class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">/);
+  assert.match(html.taskPanel0, /<ul class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">/);
   assert.equal((html.taskPanel0.match(/<li /g) ?? []).length, 6);
 });
 
-test("barra de etapas: cada estágio vira um cartão com o número em destaque e o nome", () => {
-  assert.equal(html.stages.length, 6);
-  for (const [i, name] of html.stages.entries()) assert.ok(html.taskPanel0.includes(name.replaceAll("&", "&amp;")), name);
-  assert.match(html.taskPanel0, /h-7 w-7 [^>]*>0</, "o número do estágio 0 em destaque");
-  assert.match(html.taskPanel0, /rounded-xl border px-3 py-3/);
+test("gavetas: cada uma é um cartão com ícone, nome e o selo da contagem", () => {
+  assert.equal(html.vaults.length, 6);
+  for (const v of html.vaults) {
+    assert.ok(html.taskPanel0.includes(v.name.replaceAll("&", "&amp;")), v.name);
+    assert.ok(html.taskPanel0.includes(v.icon), v.icon);
+  }
+  assert.equal((html.taskPanel0.match(/>Vazio</g) ?? []).length, 6, "sem dados, todas dizem Vazio");
+  assert.match(html.taskPanelCounts, /3 rotas/);
+  assert.match(html.taskPanelCounts, /1 hipótese</);
+  assert.match(html.taskPanelCounts, /data-vault="surface" data-count="3"/);
 });
 
-test("barra de etapas: estágio ativo com borda luminosa, concluídos com ✓, pendentes apagados", () => {
-  const states = (h) => [...h.matchAll(/data-stage-state="(\w+)"/g)].map((m) => m[1]);
-  assert.deepEqual(states(html.taskPanel0), ["active", "pending", "pending", "pending", "pending", "pending"]);
-  assert.deepEqual(states(html.taskPanel3), ["done", "done", "done", "active", "pending", "pending"]);
-  assert.equal((html.taskPanel3.match(/>✓</g) ?? []).length, 3, "três concluídos com ✓");
-  assert.match(html.taskPanel3, /aria-current="step"/);
-  assert.match(html.taskPanel3, /border-accent bg-accent\/10 [^"]*shadow-\[0_0_20px/, "borda iluminada na etapa ativa");
-  assert.match(html.taskPanel3, /concluída/);
-  assert.match(html.taskPanel3, /em andamento/);
-  assert.match(html.taskPanel3, /pendente/);
+test("gavetas: sem esteira (nada de pendente, em andamento ou concluída) e com dica de hover", () => {
+  for (const h of [html.taskPanel0, html.taskPanelCounts]) {
+    assert.doesNotMatch(h, /pendente|em andamento|concluída|aria-current|data-stage-state/i);
+  }
+  assert.match(html.taskPanel0, /clique para editar/);
+  assert.match(html.taskPanel0, /hover:border-accent\/60/);
 });
 
-test("barra de etapas: clicar num cartão é possível (botão) e a fila vazia aparece", () => {
+test("gavetas: todo cartão é um botão clicável e a mensagem de bancada aparece", () => {
   assert.equal((html.taskPanel0.match(/<button type="button"/g) ?? []).length, 6);
   assert.match(html.taskPanel0, /Bancada pronta: mapeie superfícies/);
   assert.match(html.taskPanelQueue, /Fila de tarefas dos agentes: 1/);
   assert.match(html.taskPanelQueue, /Mapear \/api/);
+});
+
+test("modal da gaveta: renderiza as notas formatadas (títulos, itens, parágrafos) e o estado vazio", () => {
+  assert.match(html.vaultFormatted, /<h3[^>]*>Rotas<\/h3>/);
+  assert.equal((html.vaultFormatted.match(/•/g) ?? []).length, 2, "dois itens com marcador");
+  assert.match(html.vaultFormatted, /GET \/api\/users\/\{id\}/);
+  assert.match(html.vaultFormatted, /Texto solto/);
+  assert.match(html.vaultEmpty, /Gaveta vazia/);
 });
 
 test("botão do robô: bolinha 🤖 arrastável quando fechado", () => {

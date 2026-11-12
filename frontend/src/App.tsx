@@ -6,6 +6,8 @@ import MetricsModal, { loadColor, loadPercent } from "./components/MetricsModal"
 import NexStage from "./components/NexStage";
 import SecurityAgentsLayer from "./components/SecurityAgentsLayer";
 import SecurityTaskPanel from "./components/SecurityTaskPanel";
+import SecurityVaultModal from "./components/SecurityVaultModal";
+import type { VaultKey } from "./lib/vaults";
 import SettingsModal from "./components/SettingsModal";
 import Sidebar from "./components/Sidebar";
 import { useNexCore } from "./hooks/useNexCore";
@@ -131,14 +133,18 @@ export default function App() {
     localStorage.setItem("nexMicroApp", microApp);
   }, [microApp]);
 
-  // etapa atual do ciclo de segurança (0..5): a barra de estágios do modo Security mostra concluídas, atual e pendentes
-  const [secStage, setSecStage] = useState(() => {
-    const n = Number(localStorage.getItem("nexSecStage"));
-    return Number.isInteger(n) && n >= 0 && n <= 5 ? n : 0;
-  });
+  // as 6 gavetas da investigação (modo Security): contagem de itens de cada uma e qual está aberta no modal
+  const [vaultCounts, setVaultCounts] = useState<Partial<Record<VaultKey, number>>>({});
+  const [vaultOpen, setVaultOpen] = useState<VaultKey | null>(null);
   useEffect(() => {
-    localStorage.setItem("nexSecStage", String(secStage));
-  }, [secStage]);
+    setVaultCounts({});
+    if (microApp !== "security" || !activeId) return;
+    let alive = true;
+    api.vaultCounts(activeId).then((c) => alive && setVaultCounts(c)).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [activeId, microApp]);
 
   useEffect(() => {
     api.voiceStatus().then(setVoiceStatus).catch(() => setVoiceStatus(null));
@@ -507,7 +513,16 @@ export default function App() {
           </div>
         </header>
 
-        {microApp === "security" && <SecurityTaskPanel stage={secStage} onSelectStage={setSecStage} />}
+        {microApp === "security" && <SecurityTaskPanel counts={vaultCounts} onOpen={setVaultOpen} />}
+        {microApp === "security" && vaultOpen && (
+          <SecurityVaultModal
+            vaultKey={vaultOpen}
+            conversationId={activeId}
+            ensureConversation={ensureConversation}
+            onClose={() => setVaultOpen(null)}
+            onSaved={(key, count) => setVaultCounts((c) => ({ ...c, [key]: count }))}
+          />
+        )}
 
         <NexStage
           core={nex}

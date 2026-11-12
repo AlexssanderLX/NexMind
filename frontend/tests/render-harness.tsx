@@ -3,7 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import MessageView from "../src/components/MessageView";
 import FloatingPanel from "../src/components/panels/FloatingPanel";
 import { AgentMenu, RobotOrb } from "../src/components/SecurityAgentsLayer";
-import SecurityTaskPanel, { SECURITY_STAGES } from "../src/components/SecurityTaskPanel";
+import SecurityTaskPanel from "../src/components/SecurityTaskPanel";
+import { VaultFormatted } from "../src/components/SecurityVaultModal";
+import { VAULTS } from "../src/lib/vaults";
 import SubagentChat from "../src/components/SubagentChat";
 import Sidebar from "../src/components/Sidebar";
 import TaskThinkingPill from "../src/components/TaskThinkingPill";
@@ -39,9 +41,11 @@ export function render() {
   const recon = { id: "recon" as const, name: "Recon Specialist" };
 
   return {
-    taskPanel0: renderToStaticMarkup(<SecurityTaskPanel stage={0} />),
-    taskPanel3: renderToStaticMarkup(<SecurityTaskPanel stage={3} />),
-    taskPanelQueue: renderToStaticMarkup(<SecurityTaskPanel stage={1} queue={[{ id: "1", title: "Mapear /api", state: "rodando" }]} />),
+    taskPanel0: renderToStaticMarkup(<SecurityTaskPanel />),
+    taskPanelCounts: renderToStaticMarkup(<SecurityTaskPanel counts={{ surface: 3, hypotheses: 1 }} />),
+    vaultFormatted: renderToStaticMarkup(<VaultFormatted text={"# Rotas\n- GET /api/users/{id}\n- POST /api/login\nTexto solto"} />),
+    vaultEmpty: renderToStaticMarkup(<VaultFormatted text="" />),
+    taskPanelQueue: renderToStaticMarkup(<SecurityTaskPanel queue={[{ id: "1", title: "Mapear /api", state: "rodando" }]} />),
     fabClosed: renderToStaticMarkup(
       <FloatingPanel title="Subagentes de Security" icon="🤖" orb={<RobotOrb />} open={false} pos={{ x: 900, y: 400 }} {...panelBase}>
         <AgentMenu open={[]} onPick={noop} />
@@ -87,6 +91,6 @@ export function render() {
     sidebarSecurity: sidebar("security"),
     sidebarCollapsedSecurity: sidebar("security", true),
     panel: renderToStaticMarkup(<SecurityTaskPanel />),
-    stages: [...SECURITY_STAGES],
+    vaults: [...VAULTS],
   };
 }

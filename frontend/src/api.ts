@@ -18,6 +18,16 @@ export const api = {
     req<{ agent: string; messages: { role: "user" | "assistant"; content: string }[]; notes: string }>(
       `/api/conversations/${conversationId}/security/${agent}`,
     ),
+  /** As 6 gavetas da investigação: contagens, leitura e gravação (o que ele edita é o que os subagentes consultam). */
+  vaultCounts: (conversationId: string) => req<Record<string, number>>(`/api/conversations/${conversationId}/security-vault`),
+  vaultGet: (conversationId: string, key: string) =>
+    req<{ key: string; text: string; updatedAt: string | null; count: number }>(`/api/conversations/${conversationId}/security-vault/${key}`),
+  vaultPut: (conversationId: string, key: string, text: string) =>
+    req<{ key: string; text: string; updatedAt: string | null; count: number }>(`/api/conversations/${conversationId}/security-vault/${key}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }),
   rename: (id: string, title: string) =>
     req<{ id: string; title: string }>(`/api/conversations/${id}`, {
       method: "PATCH",

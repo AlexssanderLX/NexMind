@@ -139,6 +139,70 @@ public sealed partial class SecurityNotes
         WriteAtomic(Path.Combine(dir, "INDEX.md"), sb.ToString());
     }
 
+    // ---------- as 6 gavetas da investigação (editadas pelo Alexssander; os agentes leem a versão dele)
+
+    public static readonly string[] VaultKeys = ["scope", "surface", "hypotheses", "tests", "effects", "evidence"];
+    private const int MaxVaultChars = 40_000;
+
+    private static readonly Dictionary<string, string> VaultNames = new()
+    {
+        ["scope"] = "Escopo & Alvos", ["surface"] = "Superfície Mapeada", ["hypotheses"] = "Hipóteses OWASP",
+        ["tests"] = "Testes Executados", ["effects"] = "Efeitos & Respostas", ["evidence"] = "Evidências & PoCs",
+    };
+
+    private static string VaultFile(string dir, string key) => Path.Combine(dir, "vault", key + ".md");
+
+    /// <summary>Texto da gaveta e quando foi salvo pela última vez (null se ainda não existe).</summary>
+    public (string Text, DateTime? UpdatedAt) ReadVault(string conversationId, string key)
+    {
+        var dir = VaultKeys.Contains(key) ? Folder(conversationId, create: false) : null;
+        if (dir is null) return ("", null);
+        lock (_lock)
+        {
+            var path = VaultFile(dir, key);
+            return File.Exists(path) ? (File.ReadAllText(path), File.GetLastWriteTimeUtc(path)) : ("", null);
+        }
+    }
+
+    /// <summary>Substitui o conteúdo da gaveta (o que o Alexssander editou vira a versão oficial). Devolve null se deu certo, ou o erro.</summary>
+    public string? WriteVault(string conversationId, string key, string? text)
+    {
+        if (!VaultKeys.Contains(key)) return $"Gaveta '{key}' não existe.";
+        var clean = (text ?? "").Replace("\r\n", "\n");
+        if (clean.Length > MaxVaultChars) return $"A gaveta passa de {MaxVaultChars} caracteres.";
+        var dir = Folder(conversationId, create: true);
+        if (dir is null) return "Conversa não encontrada.";
+        lock (_lock)
+        {
+            var path = VaultFile(dir, key);
+            if (clean.Trim().Length == 0) { if (File.Exists(path)) File.Delete(path); return null; } // gaveta esvaziada: some o arquivo
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            WriteAtomic(path, clean);
+        }
+        return null;
+    }
+
+    /// <summary>Quantos itens cada gaveta tem (linhas com texto que não são títulos). Gaveta vazia = 0.</summary>
+    public Dictionary<string, int> VaultCounts(string conversationId) =>
+        VaultKeys.ToDictionary(k => k, k => CountItems(ReadVault(conversationId, k).Text));
+
+    public static int CountItems(string text) =>
+        text.Split('\n').Count(l => { var t = l.Trim(); return t.Length > 0 && !t.StartsWith('#'); });
+
+    /// <summary>As gavetas preenchidas, em bloco curto, para os subagentes consultarem. Vazio se o Alexssander não anotou nada.</summary>
+    public string VaultPromptBlock(string conversationId, int perDrawerChars)
+    {
+        var sb = new StringBuilder();
+        foreach (var key in VaultKeys)
+        {
+            var text = ReadVault(conversationId, key).Text.Trim();
+            if (text.Length == 0) continue;
+            if (text.Length > perDrawerChars) text = "[início cortado]\n" + text[^perDrawerChars..];
+            sb.AppendLine($"[{VaultNames[key]}]").AppendLine(text).AppendLine();
+        }
+        return sb.ToString().Trim();
+    }
+
     // ---------- histórico do micro-chat (exclusivo de cada especialista)
 
     public List<ChatEntry> LoadChat(string conversationId, string agentId)

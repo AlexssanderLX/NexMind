@@ -91,6 +91,23 @@ api.MapGet("/conversations/{id}/security/{agent}", (string id, string agent, Con
     if (SubagentCatalog.Find(agent) is not { } a || store.FolderFor(id) is null) return Results.NotFound();
     return Results.Ok(new { agent = a.Id, messages = notes.LoadChat(id, a.Id), notes = notes.Read(id, a.Id, 20_000) });
 });
+// as 6 gavetas da investigação: contagens, leitura e gravação (o que o Alexssander edita é o que os agentes consultam)
+api.MapGet("/conversations/{id}/security-vault", (string id, ConversationStore store, SecurityNotes notes) =>
+    store.FolderFor(id) is null ? Results.NotFound() : Results.Ok(notes.VaultCounts(id)));
+api.MapGet("/conversations/{id}/security-vault/{key}", (string id, string key, ConversationStore store, SecurityNotes notes) =>
+{
+    if (!SecurityNotes.VaultKeys.Contains(key) || store.FolderFor(id) is null) return Results.NotFound();
+    var (text, updatedAt) = notes.ReadVault(id, key);
+    return Results.Ok(new { key, text, updatedAt, count = SecurityNotes.CountItems(text) });
+});
+api.MapPut("/conversations/{id}/security-vault/{key}", (string id, string key, VaultWrite body, ConversationStore store, SecurityNotes notes) =>
+{
+    if (!SecurityNotes.VaultKeys.Contains(key) || store.FolderFor(id) is null) return Results.NotFound();
+    var error = notes.WriteVault(id, key, body.Text);
+    if (error is not null) return Results.BadRequest(new { error });
+    var (text, updatedAt) = notes.ReadVault(id, key);
+    return Results.Ok(new { key, text, updatedAt, count = SecurityNotes.CountItems(text) });
+});
 api.MapPost("/conversations/{id}/security/{agent}/chat", async (string id, string agent, SubagentRequest req, HttpContext ctx,
     ConversationStore store, SubagentRunner runner) =>
 {

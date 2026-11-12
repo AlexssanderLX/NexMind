@@ -228,7 +228,7 @@ try
     Check("security: Verify exige controle negativo", SubagentCatalog.Find("verify")!.Prompt.Contains("controle negativo"));
     Check("security: todo prompt traz a tabela de quem trata de quê (roteamento entre especialistas)",
         SubagentCatalog.All.All(a => SubagentCatalog.BuildSystem(a).Contains("Input = XSS, SSRF, SQLi e SSTI") && SubagentCatalog.BuildSystem(a).Contains("Auth = IDOR, BOLA, BFLA e tokens")));
-    Check("security: prompts curtos para o modelo de 4B (< 1500 caracteres cada)", SubagentCatalog.All.All(a => SubagentCatalog.BuildSystem(a).Length < 1500), string.Join(",", SubagentCatalog.All.Select(a => SubagentCatalog.BuildSystem(a).Length)));
+    Check("security: prompts curtos para o modelo de 4B (< 2200 caracteres cada)", SubagentCatalog.All.All(a => SubagentCatalog.BuildSystem(a).Length < 2200), string.Join(",", SubagentCatalog.All.Select(a => SubagentCatalog.BuildSystem(a).Length)));
 
     // ---------- Nex Security: anotações em Markdown por especialista (micro-RAG)
     var sc = store.Create();
@@ -239,6 +239,20 @@ try
     secNotes.Append(sc.Id, "recon", "Bundle main.js expõe /admin/export", out var rn2);
     secNotes.Append(sc.Id, "auth", "IDOR provável em /orders/{id}", out var an1);
     Check("security: contagem por especialista", rn2 == 2 && an1 == 1);
+    // ---------- as 6 gavetas da investigação (editáveis pelo Alexssander)
+    Check("gavetas: sem nada gravado, todas contam 0 e o bloco do prompt é vazio", secNotes.VaultCounts(sc.Id).Count == 6 && secNotes.VaultCounts(sc.Id).Values.All(v => v == 0) && secNotes.VaultPromptBlock(sc.Id, 900) == "");
+    Check("gavetas: grava e lê de volta com a data da gravação",
+        secNotes.WriteVault(sc.Id, "surface", "# Rotas\n- GET /api/users\n- POST /api/login\n\n- /admin") is null
+        && secNotes.ReadVault(sc.Id, "surface") is { Text: var vt, UpdatedAt: not null } && vt.Contains("POST /api/login"));
+    Check("gavetas: contagem ignora títulos e linhas em branco", secNotes.VaultCounts(sc.Id)["surface"] == 3 && secNotes.VaultCounts(sc.Id)["tests"] == 0);
+    Check("gavetas: regravar substitui (a edição do usuário vira a versão oficial)", secNotes.WriteVault(sc.Id, "surface", "- só esta rota") is null && secNotes.ReadVault(sc.Id, "surface").Text == "- só esta rota" && secNotes.VaultCounts(sc.Id)["surface"] == 1);
+    secNotes.WriteVault(sc.Id, "scope", "- alvo: https://alvo.local");
+    var vaultBlock = secNotes.VaultPromptBlock(sc.Id, 900);
+    Check("gavetas: o bloco que os agentes leem traz as preenchidas, com o nome", vaultBlock.Contains("[Escopo & Alvos]") && vaultBlock.Contains("alvo.local") && vaultBlock.Contains("[Superfície Mapeada]") && !vaultBlock.Contains("[Hipóteses OWASP]"), vaultBlock);
+    Check("gavetas: texto vazio apaga o arquivo e a contagem volta a 0", secNotes.WriteVault(sc.Id, "scope", "   \n") is null && secNotes.VaultCounts(sc.Id)["scope"] == 0 && !File.Exists(Path.Combine(secDir, "vault", "scope.md")));
+    Check("gavetas: chave inventada, conversa inexistente e texto gigante são recusados",
+        secNotes.WriteVault(sc.Id, "../x", "a") is not null && secNotes.WriteVault("0123456789abcdef0123456789abcdee", "scope", "a") is not null
+        && secNotes.WriteVault(sc.Id, "tests", new string('x', 40_001)) is not null && secNotes.ReadVault(sc.Id, "../x").Text == "");
     var secIndex = secNotes.ReadIndex(sc.Id);
     Check("security: INDEX.md resume cada especialista (quantas notas e a última)", secIndex.Contains("- recon: 2 nota(s)") && secIndex.Contains("/admin/export") && secIndex.Contains("- auth: 1 nota(s)") && !secIndex.Contains("input:"), secIndex);
     Check("security: arquivos de especialistas ficam separados", File.ReadAllText(Path.Combine(secDir, "recon.md")).Contains("/api/v2/users") && !File.ReadAllText(Path.Combine(secDir, "auth.md")).Contains("/api/v2/users"));

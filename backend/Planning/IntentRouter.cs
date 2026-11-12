@@ -31,11 +31,11 @@ public sealed record ToolIntent(bool Files, bool Browser, bool Desktop, bool Not
 public static partial class IntentRouter
 {
     // Palavras inteiras, sem acento e em minúsculas (o texto é normalizado antes). \b evita casar "aba" dentro de "abacaxi".
-    [GeneratedRegex(@"https?://|\bwww\.|\bnavegador\b|\babas?\b|\bsites?\b|\bpaginas?\b|\bgithub\b|\bgmail\b|\blinkedin\b|\burl\b|\bchrome\b|\bendpoints?\b|\brecon\b|\bformularios?\b|\bdom\b")]
+    [GeneratedRegex(@"https?://|\bwww\.|\bnavegador\b|\babas?\b|\bsites?\b|\bpaginas?\b|\bgithub\b|\bgmail\b|\blinkedin\b|\burl\b|\bchrome\b|\bendpoints?\b|\brecon\b|\bformularios?\b|\bdom\b|\bosint\b")]
     private static partial Regex BrowserWords();
 
-    // Pesquisa na web liga pela frase, sem interruptor: "pesquise na internet", "busque no google", "notícias de hoje".
-    [GeneratedRegex(@"\b(pesquis(a|e|ar)|busc(a|ar)|busque|procur(a|e|ar))\b.{0,40}\b(na (web|internet)|no google|online)\b|\bpesquisa na web\b|\bnoticias\b|\bna internet\b")]
+    // Pesquisa na web liga pela frase, sem interruptor: pesquisas na internet, notícias, ou OSINT/reconhecimento passivo.
+    [GeneratedRegex(@"\b(pesquis(a|e|ar)|busc(a|ar)|busque|procur(a|e|ar))\b.{0,40}\b(na (web|internet)|no google|online)\b|\bpesquisa na web\b|\bnoticias\b|\bna internet\b|\bosint\b|\bwhois\b|\bsubdominios?\b|\bdorks?\b|\bshodan\b|\bvazamentos?\b|\breconhecimento passivo\b|\bcve-\d+")]
     private static partial Regex SearchWords();
 
     /// <summary>A frase pede uma pesquisa na web? O texto dos anexos não conta.</summary>

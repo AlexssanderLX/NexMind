@@ -124,34 +124,49 @@ export default function SettingsPanel({
     <div className="grid gap-3 sm:grid-cols-2">
       <label className="text-xs text-mute">
         Modelo de conversa (rápido)
-        <input
+        <select
           className={field}
-          list="installed-models"
           value={settings.chatModel}
           onChange={(e) => set("chatModel", e.target.value)}
-          placeholder="qwen3:4b-instruct"
-        />
+        >
+          {status?.models.map((m) => (
+            <option key={m.name} value={m.name}>
+              {m.name} ({m.sizeMb} MB)
+            </option>
+          ))}
+          {status?.models.length === 0 && (
+            <option value={settings.chatModel}>{settings.chatModel}</option>
+          )}
+          {!installed(settings.chatModel) && (
+            <option value={settings.chatModel}>{settings.chatModel} (não instalado)</option>
+          )}
+        </select>
         {!installed(settings.chatModel) && (
           <span className="text-red-400">Não instalado: ollama pull {settings.chatModel}</span>
         )}
       </label>
       <label className="text-xs text-mute">
         Modelo de raciocínio
-        <input
+        <select
           className={field}
-          list="installed-models"
           value={settings.reasoningModel}
           onChange={(e) => set("reasoningModel", e.target.value)}
-          placeholder="qwen3:4b"
-        />
+        >
+          {status?.models.map((m) => (
+            <option key={m.name} value={m.name}>
+              {m.name} ({m.sizeMb} MB)
+            </option>
+          ))}
+          {status?.models.length === 0 && (
+            <option value={settings.reasoningModel}>{settings.reasoningModel}</option>
+          )}
+          {!installed(settings.reasoningModel) && (
+            <option value={settings.reasoningModel}>{settings.reasoningModel} (não instalado)</option>
+          )}
+        </select>
         {!installed(settings.reasoningModel) && (
           <span className="text-red-400">Não instalado: ollama pull {settings.reasoningModel}</span>
         )}
-        <datalist id="installed-models">
-          {status?.models.map((m) => (
-            <option key={m.name} value={m.name} />
-          ))}
-        </datalist>
       </label>
       <label className="text-xs text-mute">
         Contexto (tokens)

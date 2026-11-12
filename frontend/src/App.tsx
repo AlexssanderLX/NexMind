@@ -40,8 +40,8 @@ function loadVoice(): VoiceSettings {
 }
 
 const DEFAULTS: Settings = {
-  chatModel: "qwen3:4b-instruct",
-  reasoningModel: "qwen3:4b",
+  chatModel: "nex-unfiltered:latest",
+  reasoningModel: "nex-unfiltered:latest",
   numCtx: 32768,
   system: "",
 };

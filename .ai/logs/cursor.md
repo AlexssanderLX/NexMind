@@ -20,3 +20,4 @@
 | 2026-11-12 | TASK-OSINT-VECTORS | `c7f0e20` | OSINT em quatro vetores paralelos, dorks no balão e sumário limitado aos URLs devolvidos | N/A |
 | 2026-11-12 | TASK-EVIDENCE-INTENT | `2274c0f` | Classificação da frase em capacidade, escopo ou execução, e Recon limitado a evidência real | N/A |
 | 2026-11-12 | TASK-BENCH-DISCIPLINE | `b13d819` | Alvo da gaveta Escopo entra sem perguntar de novo, e o recon grava na Superfície só o que a busca devolveu | N/A |
+| 2026-11-12 | TASK-DEV-REAL-FOLDER | `9d6c8b3` | Dev grava a pasta real na conversa, restaura as abas e injeta o arquivo aberto no chat | N/A |

@@ -6,6 +6,7 @@ using LocalAi.Api.Mcp;
 using LocalAi.Api.Memory;
 using LocalAi.Api.Metrics;
 using LocalAi.Api.Planning;
+using LocalAi.Api.Security;
 using LocalAi.Api.Storage;
 using LocalAi.Api.Tools;
 using LocalAi.Api.Voice;
@@ -39,6 +40,8 @@ builder.Services.AddSingleton<Research>();
 builder.Services.AddSingleton(new McpRegistry(Path.Combine(builder.Environment.ContentRootPath, "mcp_servers.json")));
 builder.Services.AddSingleton<ApprovalBroker>();
 builder.Services.AddSingleton(sp => new ConversationMemory(sp.GetRequiredService<ConversationStore>()));
+builder.Services.AddSingleton(sp => new SecurityNotes(sp.GetRequiredService<ConversationStore>()));
+builder.Services.AddTransient<SubagentRunner>();
 
 var app = builder.Build();
 var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -80,9 +83,37 @@ api.MapGet("/conversations/{id}/memory", (string id, ConversationMemory m) =>
     return Results.Ok(new { systemIndex, agentIndex, topics });
 });
 
+// --- Nex Security: subagentes especialistas (micro-chat) e as anotações deles (micro-RAG sob demanda)
+api.MapGet("/security/agents", () => SubagentCatalog.All.Select(a => new { a.Id, a.Name, a.Emoji, a.Summary }));
+// histórico do micro-chat de um especialista e o índice das anotações (a tela abre o modal com isto)
+api.MapGet("/conversations/{id}/security/{agent}", (string id, string agent, ConversationStore store, SecurityNotes notes) =>
+{
+    if (SubagentCatalog.Find(agent) is not { } a || store.FolderFor(id) is null) return Results.NotFound();
+    return Results.Ok(new { agent = a.Id, messages = notes.LoadChat(id, a.Id), notes = notes.Read(id, a.Id, 20_000) });
+});
+api.MapPost("/conversations/{id}/security/{agent}/chat", async (string id, string agent, SubagentRequest req, HttpContext ctx,
+    ConversationStore store, SubagentRunner runner) =>
+{
+    if (SubagentCatalog.Find(agent) is not { } a || store.FolderFor(id) is null) { ctx.Response.StatusCode = 404; return; }
+    if (string.IsNullOrWhiteSpace(req.Content) || string.IsNullOrWhiteSpace(req.Model) || req.NumCtx < 256)
+    {
+        ctx.Response.StatusCode = 400;
+        await ctx.Response.WriteAsync("Conteúdo, modelo e contexto (>= 256) são obrigatórios.");
+        return;
+    }
+    var ct = ctx.RequestAborted;
+    ctx.Response.ContentType = "application/x-ndjson";
+    async Task Send(object o)
+    {
+        await ctx.Response.WriteAsync(JsonSerializer.Serialize(o, json) + "\n", ct);
+        await ctx.Response.Body.FlushAsync(ct);
+    }
+    await runner.RunAsync(id, a, req.Content.Trim(), req.Model, req.NumCtx, Send, ct);
+});
+
 // --- Chat com streaming (NDJSON: {type: thinking|token|done|error, ...})
 api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpContext ctx,
-    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory) =>
+    ConversationStore store, OllamaClient ollama, Research research, McpRegistry mcp, ApprovalBroker approvals, ConversationMemory memory, SecurityNotes secNotes) =>
 {
     var ct = ctx.RequestAborted;
     var conv = store.Get(id);
@@ -178,9 +209,6 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             "Texto curto e denso: vá ao ponto, dê a recomendação e o motivo em uma ou duas frases, com termos de engenharia. " +
             "Se discordar ou enxergar um risco, diga com franqueza e proponha a alternativa; se não souber, diga que não sabe. " +
             "Em conversa conceitual aprofunde com parceria, sem enrolar.\n\n" +
-            "CICLO DE 2 TEMPOS (sempre que for usar uma ferramenta): TEMPO 1, antes de chamar qualquer ferramenta, escreva UMA frase dizendo ao Alexssander o que vai fazer (exemplo: 'Vou abrir o site e ler a página.'). " +
-            "TEMPO 2, só então chame a ferramenta; a cada resultado, relate o micropasso em poucas palavras e, no fim, entregue a conclusão. " +
-            "Sem ferramentas, responda direto: nada de plano nem de anúncio.\n\n" +
             "Arquitetura de Ferramentas (MCP - Model Context Protocol):\n" +
             "- Você tem acesso a servidores MCP que expandem seu poder além do chat.\n" +
             "- NUNCA PROMETA O QUE NÃO TEM FERRAMENTA: só diga que vai fazer algo se existir uma ferramenta na lista para isso. Se não existir, diga com clareza que não consegue e, se fizer sentido, mostre o comando para o Alexssander executar. Não peça confirmação para uma ação que você não tem como executar.\n" +
@@ -208,6 +236,11 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         system += req.Search
             ? "- Pesquisa na web: LIGADA. Cite a fonte e não invente o que a busca não trouxe.\n"
             : "- Pesquisa na web: DESLIGADA. Se ele pedir um fato da internet sem abrir o navegador, avise: 'Para eu pesquisar na web, ligue \"Pesquisa na web\" em Ferramentas.'\n";
+        // Ciclo de 2 tempos SÓ quando há ferramenta injetada. Antes ele ia sempre no prompt, com um exemplo ("vou abrir o site..."), e o modelo
+        // copiava a frase em conversa comum, prometendo uma ação que não podia fazer.
+        system += intent.Any
+            ? "\nCICLO DE 2 TEMPOS (você tem ferramentas nesta resposta): TEMPO 1, antes de chamar uma ferramenta, escreva UMA frase dizendo ao Alexssander qual ação vai executar agora. TEMPO 2, só então chame a ferramenta; a cada resultado, relate o micropasso em poucas palavras e, no fim, entregue a conclusão.\n"
+            : "\nNesta resposta você NÃO tem ferramentas: responda direto, sem anunciar nem prometer ações como abrir sites, ler arquivos ou clicar.\n";
         // Micro-RAG da conversa: só os dois índices compactos (~120 tokens). O detalhe fica em disco, atrás de topic_read.
         var (systemIndex, agentIndex) = memory.Indexes(conv.Id);
         system += "\nSUA MEMÓRIA (existe e funciona; nunca diga que não tem memória): cada conversa tem uma pasta em disco que sobrevive a fechar e reabrir o Nex. Ela guarda: (1) o histórico das mensagens; (2) o ÍNDICE DO SISTEMA, com o objetivo da conversa e os fatos que as ferramentas comprovaram (você só lê); (3) o SEU CADERNO (scratchpad), onde você anota hipóteses, planos e pendências com topic_write e relê com topic_read. Cada conversa tem a sua memória: o que foi anotado numa conversa não aparece em outra. Quando o Alexssander perguntar sobre a sua memória, explique isso em poucas linhas, diga o que já está guardado nesta conversa (veja os índices abaixo) e ofereça anotar algo. Se ele disser para lembrar ou anotar algo, chame topic_write na hora.\n" +
@@ -215,6 +248,15 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
                   "\n=== SEU CADERNO DE RACIOCÍNIO (ÍNDICE DO AGENTE: suas hipóteses e notas) ===\n" + agentIndex +
                   "\nPara consultar detalhes ou registrar hipóteses, use as ferramentas topic_read e topic_write. Quando o Alexssander perguntar o que foi anotado, combinado ou comprovado, chame topic_read antes de responder; quando ele pedir para anotar algo, chame topic_write.\n";
         if (!string.IsNullOrWhiteSpace(req.System)) system += "\n\nInstrução adicional da conversa: " + req.System;
+        // Micro-RAG de segurança SOB DEMANDA: as anotações dos subagentes só são lidas quando o Alexssander PERGUNTA por elas
+        // ("O que o Recon achou?"). Em qualquer outra conversa nada de security/ é lido, e o Nex principal continua leve.
+        var notesAsk = SecurityIntent.Detect(userText);
+        if (notesAsk is not null)
+        {
+            system += "\n\n=== ANOTAÇÕES DOS SUBAGENTES DE SECURITY (lidas agora, porque o Alexssander perguntou por elas) ===\n" +
+                      secNotes.BuildPromptBlock(conv.Id, notesAsk.AgentId, 3500) +
+                      "\n=== fim das anotações ===\nResponda com base SÓ nelas: não invente achados que não estão escritos.\n";
+        }
         system += searchAddon;
         var ollamaTools = mcpTools.Select(t => (object)new
         {
@@ -240,7 +282,7 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
         // Qwen3 4B tem 36 camadas. Acima de 16 mil tokens, 24 ficam na GPU e 12 na RAM desde o carregamento.
         int? numGpu = numCtx > 16384 ? 24 : null;
         // O planejamento abre o raciocínio da resposta: o usuário vê o que o Nex decidiu (contexto e ferramentas) antes de qualquer token.
-        var planning = ToolTelemetry.PlanningBlock(intent, plan);
+        var planning = ToolTelemetry.PlanningBlock(intent, plan, notesAsk is null ? null : SecurityIntent.Describe(notesAsk));
         thinking.Append(planning).Append('\n');
         await Send(new { type = "thinking", text = planning + "\n" });
 
@@ -437,3 +479,6 @@ api.MapPost("/voice/speak", async (SpeakRequest req, VoiceEngine voice, HttpCont
 
 app.MapFallbackToFile("index.html");
 app.Run();
+
+// Exposto para os testes de ponta a ponta (tests/SecurityE2E), que rodam o app em memória.
+public partial class Program { }

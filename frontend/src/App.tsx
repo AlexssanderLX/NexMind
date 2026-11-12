@@ -4,12 +4,14 @@ import Background from "./components/Background";
 import MessageView from "./components/MessageView";
 import MetricsModal, { loadColor, loadPercent } from "./components/MetricsModal";
 import NexStage from "./components/NexStage";
+import SecurityAgentsLayer from "./components/SecurityAgentsLayer";
 import SecurityTaskPanel from "./components/SecurityTaskPanel";
 import SettingsModal from "./components/SettingsModal";
 import Sidebar from "./components/Sidebar";
 import { useNexCore } from "./hooks/useNexCore";
 import { usePolling } from "./hooks/usePolling";
 import { useVoice } from "./hooks/useVoice";
+import { composeSystem } from "./lib/securityAgents";
 import { createTokenBuffer } from "./lib/tokenBuffer";
 import type { ConversationSummary, Message, Metrics, MicroAppMode, OllamaStatus, Settings, VoiceSettings, VoiceStatus, VoiceTimings } from "./types";
 
@@ -129,6 +131,15 @@ export default function App() {
     localStorage.setItem("nexMicroApp", microApp);
   }, [microApp]);
 
+  // etapa atual do ciclo de segurança (0..5): a barra de estágios do modo Security mostra concluídas, atual e pendentes
+  const [secStage, setSecStage] = useState(() => {
+    const n = Number(localStorage.getItem("nexSecStage"));
+    return Number.isInteger(n) && n >= 0 && n <= 5 ? n : 0;
+  });
+  useEffect(() => {
+    localStorage.setItem("nexSecStage", String(secStage));
+  }, [secStage]);
+
   useEffect(() => {
     api.voiceStatus().then(setVoiceStatus).catch(() => setVoiceStatus(null));
   }, [showSettings]);
@@ -206,6 +217,16 @@ export default function App() {
     } catch (e) {
       setChatError(`Não foi possível abrir a conversa: ${(e as Error).message}`);
     }
+  }
+
+  /** O micro-chat do subagente precisa de uma conversa (as anotações ficam na pasta dela): cria uma se ainda não há. */
+  async function ensureConversation(): Promise<string> {
+    if (activeId) return activeId;
+    const c = await api.create();
+    setActiveId(c.id);
+    setMessages([]);
+    refreshList();
+    return c.id;
   }
 
   async function newConversation() {
@@ -318,7 +339,8 @@ export default function App() {
         id,
         text,
         activeModel,
-        settings,
+        // no modo Security o Nex recebe a instrução de domínio (Nex Security: pentest e bug bounty, WSTG v4.2) e a base do app
+        { ...settings, system: composeSystem(settings.system, microApp) },
         (ev) => {
           if (firstEvent) {
             firstEvent = false;
@@ -485,7 +507,7 @@ export default function App() {
           </div>
         </header>
 
-        {microApp === "security" && <SecurityTaskPanel />}
+        {microApp === "security" && <SecurityTaskPanel stage={secStage} onSelectStage={setSecStage} />}
 
         <NexStage
           core={nex}
@@ -786,6 +808,17 @@ export default function App() {
             </p>
           )}
         </div>
+
+        {/* modo Security: botão do robô (arrastável) e janela de micro-chat do subagente, na mesma tela */}
+        {microApp === "security" && (
+          <SecurityAgentsLayer
+            conversationId={activeId}
+            ensureConversation={ensureConversation}
+            model={activeModel}
+            ceiling={settings.numCtx}
+            glass={bgAnim}
+          />
+        )}
       </main>
 
       {showMetrics && <MetricsModal metrics={metrics} onClose={() => setShowMetrics(false)} />}

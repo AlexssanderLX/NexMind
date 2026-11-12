@@ -27,6 +27,9 @@ export default function FloatingPanel({
   mobile,
   glass,
   badge,
+  width = PANEL_W,
+  closeGlyph = "–",
+  closeTitle,
   children,
 }: {
   title: string;
@@ -43,6 +46,11 @@ export default function FloatingPanel({
   mobile: boolean;
   glass: boolean;
   badge?: string;
+  /** largura do painel aberto (padrão 288). Janelas de conversa usam mais. */
+  width?: number;
+  /** glifo do botão do cabeçalho: "–" recolhe em bolinha; janelas sem bolinha usam "✕". */
+  closeGlyph?: string;
+  closeTitle?: string;
   children: ReactNode;
 }) {
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
@@ -85,7 +93,7 @@ export default function FloatingPanel({
   });
 
   // painel aberto: não passa da borda direita (a bolinha continua no ponto salvo)
-  const shown = clamp(pos.x, pos.y, PANEL_W);
+  const shown = clamp(pos.x, pos.y, width);
 
   if (!open) {
     return (
@@ -114,12 +122,12 @@ export default function FloatingPanel({
       className={`pointer-events-auto absolute z-30 w-72 max-w-[calc(100%-2rem)] rounded-2xl border border-accent/30 p-4 max-md:inset-x-4 max-md:bottom-4 max-md:top-auto max-md:w-auto max-md:max-w-none ${
         glass ? "bg-[#0a1424]/55 backdrop-blur-md" : "bg-[#0a1424]/95"
       } shadow-[0_0_32px_rgba(34,211,238,0.14),inset_0_1px_0_rgba(255,255,255,0.06)]`}
-      style={mobile ? undefined : { left: shown.x, top: shown.y }}
+      style={mobile ? undefined : { left: shown.x, top: shown.y, width }}
     >
       <span className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-accent/70 to-transparent" />
       <header
         className={`mb-3 flex touch-none select-none items-center justify-between gap-2 ${mobile ? "" : "cursor-grab active:cursor-grabbing"}`}
-        {...(mobile ? {} : dragProps(undefined, PANEL_W))}
+        {...(mobile ? {} : dragProps(undefined, width))}
       >
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <span className="text-accent">{icon}</span>
@@ -134,10 +142,10 @@ export default function FloatingPanel({
           onPointerDown={(e) => e.stopPropagation()}
           onClick={onToggle}
           className="rounded-lg px-2 text-mute hover:bg-white/5 hover:text-fg"
-          title="Recolher em bolinha"
-          aria-label={`Recolher ${title}`}
+          title={closeTitle ?? "Recolher em bolinha"}
+          aria-label={closeTitle ? `${closeTitle} ${title}` : `Recolher ${title}`}
         >
-          –
+          {closeGlyph}
         </button>
       </header>
       <div className="text-xs">{children}</div>

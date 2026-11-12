@@ -3,6 +3,7 @@ using LocalAi.Api;
 using LocalAi.Api.Llm;
 using LocalAi.Api.Memory;
 using LocalAi.Api.Planning;
+using LocalAi.Api.Security;
 using LocalAi.Api.Storage;
 using LocalAi.Api.Voice;
 
@@ -215,6 +216,80 @@ try
     var blockTools = ToolTelemetry.PlanningBlock(R("abre https://x.com"), p1);
     Check("planejamento: com navegador mostra Ferramentas: [Navegador] e contexto 8192", blockTools.Contains("Ferramentas: [Navegador]") && blockTools.Contains("Contexto: 8192"), blockTools);
     Check("planejamento: o aviso de desempenho aparece no bloco", ToolTelemetry.PlanningBlock(R("oi"), p2).Contains("⚠"));
+
+    // ---------- Nex Security: catálogo dos subagentes
+    var ids = SubagentCatalog.All.Select(a => a.Id).ToList();
+    Check("security: 5 especialistas, na ordem Recon, Auth, Input, Logic, Verify", string.Join(",", ids) == "recon,auth,input,logic,verify", string.Join(",", ids));
+    Check("security: cada especialista tem nome, emoji, resumo e prompt de foco", SubagentCatalog.All.All(a => a.Name.Length > 0 && a.Emoji.Length > 0 && a.Summary.Length > 0 && a.Prompt.Contains("ESPECIALIDADE")));
+    Check("security: Find aceita maiúscula e espaço e recusa o desconhecido", SubagentCatalog.Find(" Recon ")?.Id == "recon" && SubagentCatalog.Find("hacker") is null && SubagentCatalog.Find("../x") is null && SubagentCatalog.Find(null) is null);
+    var reconSys = SubagentCatalog.BuildSystem(SubagentCatalog.Find("recon")!);
+    Check("security: prompt do Recon é focado, cita os outros e a ferramenta de notas", reconSys.Contains("Recon Specialist") && reconSys.Contains("Auth Specialist") && reconSys.Contains("note_write") && reconSys.Contains("SÓ fala da sua especialidade") && !reconSys.Contains("ESPECIALIDADE: Auth"));
+    Check("security: prompts pedem escopo autorizado e marcadores inertes", reconSys.Contains("AUTORIZADOS") && SubagentCatalog.Find("input")!.Prompt.Contains("marcadores inertes"));
+    Check("security: Verify exige controle negativo", SubagentCatalog.Find("verify")!.Prompt.Contains("controle negativo"));
+    Check("security: todo prompt traz a tabela de quem trata de quê (roteamento entre especialistas)",
+        SubagentCatalog.All.All(a => SubagentCatalog.BuildSystem(a).Contains("Input = XSS, SSRF, SQLi e SSTI") && SubagentCatalog.BuildSystem(a).Contains("Auth = IDOR, BOLA, BFLA e tokens")));
+    Check("security: prompts curtos para o modelo de 4B (< 1500 caracteres cada)", SubagentCatalog.All.All(a => SubagentCatalog.BuildSystem(a).Length < 1500), string.Join(",", SubagentCatalog.All.Select(a => SubagentCatalog.BuildSystem(a).Length)));
+
+    // ---------- Nex Security: anotações em Markdown por especialista (micro-RAG)
+    var sc = store.Create();
+    var secNotes = new SecurityNotes(store);
+    var secDir = Path.Combine(convDir, sc.Id, "security");
+    Check("security: a pasta security/ só nasce quando há o que gravar", !Directory.Exists(secDir) && secNotes.ReadIndex(sc.Id) == "" && secNotes.Read(sc.Id, "recon", 1000) == "");
+    Check("security: nota do Recon grava recon.md e INDEX.md", secNotes.Append(sc.Id, "recon", "Rota /api/v2/users aceita GET sem auth", out var rn1) is null && rn1 == 1 && File.Exists(Path.Combine(secDir, "recon.md")) && File.Exists(Path.Combine(secDir, "INDEX.md")));
+    secNotes.Append(sc.Id, "recon", "Bundle main.js expõe /admin/export", out var rn2);
+    secNotes.Append(sc.Id, "auth", "IDOR provável em /orders/{id}", out var an1);
+    Check("security: contagem por especialista", rn2 == 2 && an1 == 1);
+    var secIndex = secNotes.ReadIndex(sc.Id);
+    Check("security: INDEX.md resume cada especialista (quantas notas e a última)", secIndex.Contains("- recon: 2 nota(s)") && secIndex.Contains("/admin/export") && secIndex.Contains("- auth: 1 nota(s)") && !secIndex.Contains("input:"), secIndex);
+    Check("security: arquivos de especialistas ficam separados", File.ReadAllText(Path.Combine(secDir, "recon.md")).Contains("/api/v2/users") && !File.ReadAllText(Path.Combine(secDir, "auth.md")).Contains("/api/v2/users"));
+    Check("security: nota vazia, especialista inventado e conversa inexistente são recusados",
+        secNotes.Append(sc.Id, "recon", "  ", out _) is not null && secNotes.Append(sc.Id, "../etc", "x", out _) is not null
+        && secNotes.Append(sc.Id, "hacker", "x", out _) is not null && secNotes.Append("0000000000000000000000000000dead", "recon", "x", out _) is not null);
+    Check("security: id de conversa malicioso não escapa da pasta", secNotes.Append("../..", "recon", "x", out _) is not null && secNotes.Read("../..", "recon", 100) == "" && !File.Exists(Path.Combine(root, "security", "recon.md")));
+    secNotes.Append(sc.Id, "input", "linha 1\nlinha 2", out _);
+    Check("security: várias linhas viram uma nota só", secNotes.Read(sc.Id, "input", 5000).Contains("linha 1 ⏎ linha 2"));
+    for (var i = 0; i < 30; i++) secNotes.Append(sc.Id, "logic", $"nota grande {i} " + new string('x', 1800), out _);
+    var logicFile = File.ReadAllText(Path.Combine(secDir, "logic.md"));
+    Check("security: arquivo respeita o teto de 20 mil, mantém o título e as notas mais novas", logicFile.Length <= 20_500 && logicFile.StartsWith("# Notas do Logic") && logicFile.Contains("nota grande 29") && !logicFile.Contains("nota grande 0 "), logicFile.Length.ToString());
+    Check("security: Read longo devolve só o FIM, com aviso", secNotes.Read(sc.Id, "logic", 300).StartsWith("[início cortado]") && secNotes.Read(sc.Id, "logic", 300).Length <= 320 && secNotes.Read(sc.Id, "logic", 3000).Contains("nota grande 29"));
+
+    // bloco que o Nex principal recebe quando o usuário PERGUNTA
+    var blockRecon = secNotes.BuildPromptBlock(sc.Id, "recon", 3500);
+    Check("security: leitura pontual do Recon traz só o Recon", blockRecon.Contains("/api/v2/users") && !blockRecon.Contains("IDOR provável"));
+    var blockAll = secNotes.BuildPromptBlock(sc.Id, null, 3500);
+    Check("security: leitura de todos traz o índice e as notas de cada um", blockAll.Contains("ÍNDICE:") && blockAll.Contains("/api/v2/users") && blockAll.Contains("IDOR provável") && blockAll.Contains("linha 1"));
+    Check("security: sem notas, o bloco diz que não há (o modelo não inventa)", secNotes.BuildPromptBlock(sc.Id, "verify", 3500) == "Ainda não há anotações do Verify Specialist nesta conversa."
+        && secNotes.BuildPromptBlock(store.Create().Id, null, 3500).Contains("nenhum subagente"));
+    Check("security: bloco de especialista inexistente é vazio", secNotes.BuildPromptBlock(sc.Id, "hacker", 3500) == "");
+
+    // histórico exclusivo do micro-chat
+    secNotes.AppendChat(sc.Id, "recon", "[[ARQUIVO req.txt]]\nGET /api/x HTTP/1.1\nAuthorization: Bearer SEGREDO\n[[/ARQUIVO]]\nmapeie isto", "Achei 1 rota.");
+    secNotes.AppendChat(sc.Id, "auth", "teste de auth", "ok");
+    var reconChat = secNotes.LoadChat(sc.Id, "recon");
+    Check("security: histórico guarda a troca do especialista", reconChat.Count == 2 && reconChat[0].Role == "user" && reconChat[1].Content == "Achei 1 rota.");
+    Check("security: o CONTEÚDO do anexo não fica no histórico (só o nome)", reconChat[0].Content.Contains("[[ARQUIVO req.txt]]") && !reconChat[0].Content.Contains("SEGREDO") && reconChat[0].Content.Contains("mapeie isto"));
+    Check("security: o histórico de um especialista não mistura com o de outro", secNotes.LoadChat(sc.Id, "auth").Count == 2 && secNotes.LoadChat(sc.Id, "auth")[0].Content == "teste de auth" && secNotes.LoadChat(sc.Id, "input").Count == 0);
+    for (var i = 0; i < 40; i++) secNotes.AppendChat(sc.Id, "verify", $"pergunta {i}", $"resposta {i}");
+    var verifyChat = secNotes.LoadChat(sc.Id, "verify");
+    Check("security: histórico guarda só as 60 mensagens mais recentes", verifyChat.Count == 60 && verifyChat[^1].Content == "resposta 39" && verifyChat[0].Content == "pergunta 10", verifyChat.Count.ToString());
+    File.WriteAllText(Path.Combine(secDir, "input.chat.json"), "{ isto não é json");
+    Check("security: histórico corrompido não derruba o micro-chat (recomeça vazio)", secNotes.LoadChat(sc.Id, "input").Count == 0);
+    Check("security: LoadChat/AppendChat de especialista ou conversa inválidos são inofensivos", secNotes.LoadChat(sc.Id, "x").Count == 0 && secNotes.LoadChat("../..", "recon").Count == 0);
+    secNotes.AppendChat("../..", "recon", "x", "y");
+    secNotes.AppendChat(sc.Id, "hacker", "x", "y");
+    Check("security: gravar com ids inválidos não cria arquivo fora da pasta", !Directory.Exists(Path.Combine(root, "security")) && !File.Exists(Path.Combine(secDir, "hacker.chat.json")));
+    Check("security: apagar a conversa apaga security/ junto", store.Delete(sc.Id) && !Directory.Exists(Path.Combine(convDir, sc.Id)));
+
+    // ---------- Nex Security: o Nex principal só lê as notas quando o usuário PERGUNTA
+    foreach (var frase in new[] { "O que o Recon achou?", "o que o recon descobriu no alvo", "Mostre as anotações do Auth", "mostra as anotacoes do input", "quais as notas do Logic?", "o que o verify concluiu", "resultado do verificador" })
+        Check($"security: pergunta por anotações é detectada: '{frase}'", SecurityIntent.Detect(frase) is { AgentId: not null });
+    Check("security: agente certo em cada pergunta", SecurityIntent.Detect("O que o Recon achou?")!.AgentId == "recon" && SecurityIntent.Detect("anotações do Auth")!.AgentId == "auth" && SecurityIntent.Detect("o que a lógica encontrou")!.AgentId == "logic");
+    Check("security: 'subagentes' ou vários nomes = ler todos", SecurityIntent.Detect("O que os subagentes acharam?") is { AgentId: null } && SecurityIntent.Detect("o que o recon e o auth acharam") is { AgentId: null } && SecurityIntent.Detect("resumo das anotações dos especialistas") is { AgentId: null });
+    foreach (var normal in new[] { "Bom dia Nex", "O que é recon?", "faça o recon do site", "explique BOLA e IDOR", "quero saber o que esse app faz", "anote no scratchpad que a hipótese 1 é X", "teste o auth do login", "o resultado da soma é 4?" })
+        Check($"security: conversa normal NÃO lê anotações: '{normal}'", SecurityIntent.Detect(normal) is null);
+    Check("security: texto de anexo não dispara a leitura", SecurityIntent.Detect("[[ARQUIVO a.txt]]\no que o recon achou e as anotações do auth\n[[/ARQUIVO]]\nresuma em duas frases") is null);
+    Check("security: Describe para o planejamento", SecurityIntent.Describe(new NotesRequest("recon")) == "Leitura pontual: notas do Recon Specialist" && SecurityIntent.Describe(new NotesRequest(null)).Contains("todos os subagentes"));
+    Check("security: o planejamento mostra a leitura pontual", ToolTelemetry.PlanningBlock(R("oi"), p0, SecurityIntent.Describe(new NotesRequest("auth"))).Contains("• Leitura pontual: notas do Auth Specialist"));
 
     // ---------- Delete leva a micropasta inteira
     Check("Delete remove a micropasta inteira", store.Delete(c2.Id) && !Directory.Exists(Path.Combine(convDir, c2.Id)) && store.Get(c2.Id) is null);

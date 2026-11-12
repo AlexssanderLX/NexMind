@@ -1,0 +1,69 @@
+// Nex Security: os subagentes especialistas e o prompt do modo. Funções puras, com testes em frontend/tests.
+import type { MicroAppMode } from "../types";
+
+export type AgentId = "recon" | "auth" | "input" | "logic" | "verify";
+
+/** Espelha backend/Security/SubagentCatalog.cs (o backend é quem define o prompt de cada especialista). */
+export const SECURITY_AGENTS: { id: AgentId; name: string; emoji: string; summary: string }[] = [
+  { id: "recon", name: "Recon Specialist", emoji: "🧭", summary: "Mapeamento de superfícies, rotas, DOM, formulários e scripts JS" },
+  { id: "auth", name: "Auth Specialist", emoji: "🔑", summary: "BOLA/IDOR, BFLA, tokens e Contas A/B" },
+  { id: "input", name: "Input Specialist", emoji: "💉", summary: "XSS, SSRF, SQLi com marcadores inertes" },
+  { id: "logic", name: "Logic Specialist", emoji: "⚙️", summary: "Workflows, limites numéricos e uploads" },
+  { id: "verify", name: "Verify Specialist", emoji: "🛡️", summary: "Contra-provas e evidências" },
+];
+
+/** A instrução de domínio do modo Security. */
+export const SECURITY_DOMAIN_PROMPT =
+  "Você está operando como o Nex Security (Pentest & Bug Bounty Workbench). Seu objetivo é atuar como especialista sênior de segurança ofensiva ética, " +
+  "auxiliando o Alexssander em testes autorizados, mapeamento de superfícies web/APIs, formulação de hipóteses com base no OWASP WSTG v4.2 e validação de " +
+  "vulnerabilidades sem falsos positivos. Quando ele perguntar o que este app faz ou sobre a metodologia, explique o Workbench, os 6 estágios e as " +
+  "ferramentas disponíveis com maestria.";
+
+/**
+ * O que o modelo de 4B precisa SABER para explicar o app com propriedade (ele não tem como inventar isto). Cabe em ~450 tokens
+ * e só entra no modo Security: no modo Geral o prompt continua enxuto.
+ */
+export const SECURITY_KNOWLEDGE = [
+  "BASE DO NEX SECURITY (use ao explicar o app e a metodologia):",
+  "- Os 6 estágios: 0 Escopo & Autorização (nenhum teste sem escopo confirmado: domínios autorizados, fora de escopo, limites de taxa, contas de teste); " +
+    "1 Mapear Superfície (rotas, parâmetros, DOM, bundles JS, fronteiras de confiança); " +
+    "2 Formular Hipótese (refutável, ligada a um ID do OWASP WSTG v4.2; nunca afirmar vulnerabilidade antes do teste); " +
+    "3 Teste Mínimo Seguro (uma variável, menor payload, marcadores inertes); " +
+    "4 Interpretar Efeito (o que a resposta prova e o que não prova); " +
+    "5 Evidência & Relatório (reprodutível e com contraprova).",
+  '- OWASP Workbench: o atlas do OWASP WSTG v4.2 em /workbench.html (botão "OWASP Workbench" no topo, abre em nova aba).',
+  "- Subagentes especialistas (botão do robô 🤖, arrastável, abre um micro-chat flutuante sem sair desta conversa): " +
+    "Recon (superfícies, rotas, DOM, formulários, scripts JS), Auth (BOLA/IDOR, BFLA, tokens, contas A/B), Input (XSS, SSRF, SQLi com marcadores inertes), " +
+    "Logic (workflows, limites numéricos, uploads) e Verify (contraprovas e evidências).",
+  "- Cada subagente anota suas descobertas em arquivos Markdown da conversa (recon.md, auth.md, input.md, logic.md, verify.md e INDEX.md). " +
+    'Você NÃO lê essas notas por conta própria: só quando o Alexssander perguntar ("O que o Recon achou?"), e então elas aparecem aqui no prompt.',
+  "- Ferramentas do app: navegador no grupo de abas Nex (ler páginas, DOM e scripts), arquivos, computador, pesquisa na web e o caderno. Ações que alteram algo pedem a aprovação dele.",
+  "- Regras de ouro: só alvos autorizados; hipótese não é vulnerabilidade; menor intervenção possível; separe o fato observado da suspeita.",
+].join("\n");
+
+/** O `system` enviado ao backend: o das Configurações, mais o do modo Security quando ele está ativo. */
+export function composeSystem(base: string, mode: MicroAppMode): string {
+  const clean = base.trim();
+  if (mode !== "security") return clean;
+  return [clean, SECURITY_DOMAIN_PROMPT, SECURITY_KNOWLEDGE].filter(Boolean).join("\n\n");
+}
+
+/** Separa os anexos ([[ARQUIVO nome]] … [[/ARQUIVO]]) do texto digitado, para mostrar só um chip por arquivo. */
+export function splitAttachments(content: string): { files: { name: string; chars: number }[]; body: string } {
+  const files: { name: string; chars: number }[] = [];
+  const body = content
+    .replace(/\[\[ARQUIVO ([^\]]*)\]\]\n?([\s\S]*?)\n?\[\[\/ARQUIVO\]\]\n*/g, (_, name: string, text: string) => {
+      files.push({ name, chars: text.length });
+      return "";
+    })
+    .trim();
+  return { files, body };
+}
+
+/** Mantém uma janela de largura `w` e altura `h` inteira dentro da área, sem cortar a borda. */
+export function clampWindow(pos: { x: number; y: number }, bounds: { w: number; h: number }, size: { w: number; h: number }) {
+  return {
+    x: Math.max(0, Math.min(pos.x, Math.max(0, bounds.w - size.w))),
+    y: Math.max(0, Math.min(pos.y, Math.max(0, bounds.h - size.h))),
+  };
+}

@@ -13,6 +13,11 @@ export const api = {
   create: () => req<Conversation>("/api/conversations", { method: "POST" }),
   get: (id: string) => req<Conversation>(`/api/conversations/${id}`),
   remove: (id: string) => req<void>(`/api/conversations/${id}`, { method: "DELETE" }),
+  /** Histórico do micro-chat de um especialista de Security e as notas dele. */
+  subagent: (conversationId: string, agent: string) =>
+    req<{ agent: string; messages: { role: "user" | "assistant"; content: string }[]; notes: string }>(
+      `/api/conversations/${conversationId}/security/${agent}`,
+    ),
   rename: (id: string, title: string) =>
     req<{ id: string; title: string }>(`/api/conversations/${id}`, {
       method: "PATCH",
@@ -65,8 +70,12 @@ export async function streamChat(
     }),
     signal,
   });
-  if (!res.ok || !res.body) throw new Error(`Backend respondeu ${res.status}: ${await res.text()}`);
+  await readNdjson(res, onEvent);
+}
 
+/** Lê uma resposta NDJSON (uma linha de JSON por evento) e entrega cada evento. */
+async function readNdjson(res: Response, onEvent: (e: StreamEvent) => void) {
+  if (!res.ok || !res.body) throw new Error(`Backend respondeu ${res.status}: ${await res.text()}`);
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -81,4 +90,23 @@ export async function streamChat(
       if (line) onEvent(JSON.parse(line) as StreamEvent);
     }
   }
+}
+
+/** Micro-chat de um subagente de Security: o mesmo modelo local, com o prompt focado na especialidade dele. */
+export async function streamSubagent(
+  conversationId: string,
+  agent: string,
+  content: string,
+  model: string,
+  numCtx: number,
+  onEvent: (e: StreamEvent) => void,
+  signal: AbortSignal,
+) {
+  const res = await fetch(`/api/conversations/${conversationId}/security/${agent}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content, model, numCtx }),
+    signal,
+  });
+  await readNdjson(res, onEvent);
 }

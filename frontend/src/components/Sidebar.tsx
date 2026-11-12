@@ -246,7 +246,8 @@ export default function Sidebar({
               <ul className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-mute">
                 <li>o histórico das mensagens;</li>
                 <li>o objetivo da conversa e os fatos comprovados;</li>
-                <li>o caderno do Nex (hipóteses, planos e anotações).</li>
+                <li>o caderno do Nex (hipóteses, planos e anotações);</li>
+                <li>o histórico e as anotações dos subagentes de Security.</li>
               </ul>
               <p className="mt-3 text-sm font-medium text-red-300">Não tem como desfazer.</p>
               <div className="mt-5 flex justify-end gap-2">

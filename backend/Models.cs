@@ -30,3 +30,6 @@ public record ChatRequest(string Content, string Model, int NumCtx, bool? Think,
 public record SpeakRequest(string? Text, string? Engine, string? Voice, double Rate);
 
 public record ApprovalDecision(bool Approve);
+
+/// <param name="NumCtx">Teto de contexto (Configurações); o contexto real é adaptativo, como no chat principal.</param>
+public record SubagentRequest(string Content, string Model, int NumCtx);

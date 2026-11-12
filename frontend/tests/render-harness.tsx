@@ -1,7 +1,10 @@
 // Renderiza os componentes novos em HTML estático (react-dom/server) para o teste render.test.mjs conferir. Sem navegador, sem porta.
 import { renderToStaticMarkup } from "react-dom/server";
 import MessageView from "../src/components/MessageView";
+import FloatingPanel from "../src/components/panels/FloatingPanel";
+import { AgentMenu, RobotOrb } from "../src/components/SecurityAgentsLayer";
 import SecurityTaskPanel, { SECURITY_STAGES } from "../src/components/SecurityTaskPanel";
+import SubagentChat from "../src/components/SubagentChat";
 import Sidebar from "../src/components/Sidebar";
 import TaskThinkingPill from "../src/components/TaskThinkingPill";
 import type { Message, MicroAppMode, ToolRun } from "../src/types";
@@ -32,7 +35,33 @@ export function render() {
       />,
     );
 
+  const panelBase = { bounds: { w: 1200, h: 800 }, onMove: noop, onMoveEnd: noop, mobile: false, glass: true, onToggle: noop };
+  const recon = { id: "recon" as const, name: "Recon Specialist" };
+
   return {
+    taskPanel0: renderToStaticMarkup(<SecurityTaskPanel stage={0} />),
+    taskPanel3: renderToStaticMarkup(<SecurityTaskPanel stage={3} />),
+    taskPanelQueue: renderToStaticMarkup(<SecurityTaskPanel stage={1} queue={[{ id: "1", title: "Mapear /api", state: "rodando" }]} />),
+    fabClosed: renderToStaticMarkup(
+      <FloatingPanel title="Subagentes de Security" icon="🤖" orb={<RobotOrb />} open={false} pos={{ x: 900, y: 400 }} {...panelBase}>
+        <AgentMenu active={null} onPick={noop} />
+      </FloatingPanel>,
+    ),
+    fabMenu: renderToStaticMarkup(
+      <FloatingPanel title="Subagentes de Security" icon="🤖" orb={<RobotOrb />} open pos={{ x: 900, y: 400 }} {...panelBase}>
+        <AgentMenu active="auth" onPick={noop} />
+      </FloatingPanel>,
+    ),
+    subWindow: renderToStaticMarkup(
+      <FloatingPanel title={recon.name} icon="🧭" orb={null} open pos={{ x: 100, y: 70 }} width={380} closeGlyph="✕" closeTitle="Fechar" {...panelBase}>
+        <SubagentChat agent={recon} conversationId={null} ensureConversation={async () => "x"} model="qwen3:4b-instruct" ceiling={32768} />
+      </FloatingPanel>,
+    ),
+    plainPanel: renderToStaticMarkup(
+      <FloatingPanel title="Atividade do Nex" icon="i" orb={null} open pos={{ x: 16, y: 56 }} {...panelBase}>
+        <p>corpo</p>
+      </FloatingPanel>,
+    ),
     direct: renderToStaticMarkup(<MessageView m={msg({ content: "Bom dia, Alexssander. Em que ajudo?", thinking: planning })} />),
     withTool: renderToStaticMarkup(
       <MessageView

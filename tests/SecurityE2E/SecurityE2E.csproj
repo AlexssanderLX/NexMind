@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- Teste de ponta a ponta do Nex Security com o Ollama REAL, mas SEM abrir porta: o app roda em memória (TestServer).
+       Rodar com o comando dotnet run apontando para a pasta tests/SecurityE2E (o Ollama precisa estar de pé). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <!-- o repositório não tem .sln: diz ao WebApplicationFactory onde fica a raiz do backend (appsettings, mcp_servers.json, data) -->
+  <ItemGroup>
+    <WebApplicationFactoryContentRootAttribute Include="LocalAi.Api" AssemblyName="LocalAi.Api" ContentRootPath="$(MSBuildProjectDirectory)\..\..\backend" ContentRootTest="LocalAi.Api.csproj" Priority="0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.15" />
+    <ProjectReference Include="..\..\backend\LocalAi.Api.csproj" />
+  </ItemGroup>
+
+</Project>

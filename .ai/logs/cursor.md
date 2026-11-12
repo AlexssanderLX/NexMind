@@ -18,3 +18,4 @@
 | 2026-11-12 | TASK-OSINT-VRAM | `8dc625b` | Maestria em OSINT no Security e contexto preso em 4k/8k enquanto o texto couber na GPU | N/A |
 | 2026-11-12 | TASK-OSINT-PIPELINE | `d073994` | Esteira passiva de OSINT: crt.sh e dorks no backend, fatos em facts.md e balão sem métrica de GPU | N/A |
 | 2026-11-12 | TASK-OSINT-VECTORS | `c7f0e20` | OSINT em quatro vetores paralelos, dorks no balão e sumário limitado aos URLs devolvidos | N/A |
+| 2026-11-12 | TASK-EVIDENCE-INTENT | `2274c0f` | Classificação da frase em capacidade, escopo ou execução, e Recon limitado a evidência real | N/A |

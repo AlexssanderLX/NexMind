@@ -223,6 +223,12 @@ try
     Check("planejamento: conversa direta mostra contexto 4096 e nenhuma ferramenta", blockDirect.Contains("[Planejamento de Execução]") && blockDirect.Contains("Contexto: 4096 (100% na GPU)") && blockDirect.Contains("Ferramentas: nenhuma"), blockDirect);
     var blockTools = ToolTelemetry.PlanningBlock(R("abre https://x.com"), p1);
     Check("planejamento: com navegador mostra Ferramentas: [Navegador] e contexto 8192", blockTools.Contains("Ferramentas: [Navegador]") && blockTools.Contains("Contexto: 8192"), blockTools);
+    var mem0 = ToolTelemetry.MemoryTelemetry(p0, notebookAvailable: false);
+    Check("memória ativa: mostra tokens usados, contexto e a porcentagem", mem0.Contains($"{p0.EstimatedTokens}/4096 tokens") && mem0.Contains("% ocupado") && p0.EstimatedTokens == 1820, mem0);
+    var memHot = ToolTelemetry.MemoryTelemetry(new ContextPlan(4096, "direta", "100% na GPU", null, 3700), notebookAvailable: true);
+    Check("memória ativa: 90% de ocupação e a diretriz de descarregar no caderno", memHot.Contains("(90% ocupado)") && memHot.Contains("75%") && memHot.Contains("topic_write"), memHot);
+    Check("memória ativa: sem caderno a diretriz não promete uma ferramenta que não existe", !mem0.Contains("topic_write") && mem0.Contains("resuma os achados"));
+    Check("memória ativa: porcentagem fica entre 1 e 100", ToolTelemetry.MemoryTelemetry(new ContextPlan(4096, "d", "g", null, 0), true).Contains("(1% ocupado)") && ToolTelemetry.MemoryTelemetry(new ContextPlan(4096, "d", "g", null, 99999), true).Contains("(100% ocupado)"));
     Check("planejamento: o aviso de desempenho aparece no bloco", ToolTelemetry.PlanningBlock(R("oi"), p2).Contains("⚠"));
 
     // ---------- Nex Security: catálogo dos subagentes

@@ -16,7 +16,7 @@ test("selo: 'Vazio', singular e plural próprios de cada gaveta", () => {
   assert.equal(vaultBadge("surface", 3), "3 rotas");
   assert.equal(vaultBadge("hypotheses", 1), "1 hipótese");
   assert.equal(vaultBadge("hypotheses", 2), "2 hipóteses");
-  assert.equal(vaultBadge("evidence", 1), "1 evidência");
+  assert.equal(vaultBadge("evidence", 1), "1 PoC");
 });
 
 test("contagem: igual ao backend (ignora títulos e linhas em branco)", () => {

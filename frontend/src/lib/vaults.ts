@@ -9,7 +9,7 @@ export const VAULTS: { key: VaultKey; icon: string; name: string; hint: string; 
   { key: "hypotheses", icon: "🧪", name: "Hipóteses OWASP", hint: "hipóteses ligadas ao WSTG", one: "hipótese", many: "hipóteses" },
   { key: "tests", icon: "🚀", name: "Testes Executados", hint: "payloads inertes, requisições enviadas", one: "teste", many: "testes" },
   { key: "effects", icon: "📡", name: "Efeitos & Respostas", hint: "anomalias e comportamentos observados", one: "efeito", many: "efeitos" },
-  { key: "evidence", icon: "🧾", name: "Evidências & PoCs", hint: "provas validadas e resumo de impacto", one: "evidência", many: "evidências" },
+  { key: "evidence", icon: "🧾", name: "Evidências & PoCs", hint: "provas validadas e resumo de impacto", one: "PoC", many: "PoCs" },
 ];
 
 export function findVault(key: VaultKey) {

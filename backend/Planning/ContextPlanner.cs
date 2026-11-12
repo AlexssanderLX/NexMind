@@ -3,7 +3,8 @@ namespace LocalAi.Api.Planning;
 /// <param name="Complexity">direta (conversa), ferramenta (usa MCP) ou extensa (muito texto ou anexos grandes).</param>
 /// <param name="GpuNote">Onde o modelo roda neste contexto, para mostrar no planejamento.</param>
 /// <param name="Warning">Aviso de desempenho ou de corte, quando houver.</param>
-public sealed record ContextPlan(int NumCtx, string Complexity, string GpuNote, string? Warning);
+/// <param name="EstimatedTokens">Tokens já ocupados no contexto (prompt, ferramentas e histórico), sem a reserva da resposta.</param>
+public sealed record ContextPlan(int NumCtx, string Complexity, string GpuNote, string? Warning, int EstimatedTokens = 0);
 
 /// <summary>
 /// Contexto adaptativo. Medido na RTX 3050 de 6 GB: 4k e 8k ficam 100% na GPU (~41 tok/s), 16k manda 12 das 36 camadas
@@ -48,7 +49,7 @@ public static class ContextPlanner
         if (pick >= 16384)
             warning ??= $"Contexto de {pick}: parte das camadas vai para a RAM e a resposta fica mais lenta ({(pick >= 32768 ? "~14" : "~25")} tok/s).";
 
-        return new ContextPlan(pick, complexity, GpuNote(pick), warning);
+        return new ContextPlan(pick, complexity, GpuNote(pick), warning, promptTokens + conversationTokens);
     }
 
     public static string GpuNote(int numCtx) => numCtx switch

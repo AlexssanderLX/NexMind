@@ -322,6 +322,8 @@ api.MapPost("/conversations/{id}/chat", async (string id, ChatRequest req, HttpC
             attachmentChars,
             loadedCtx);
         var numCtx = plan.NumCtx;
+        // consciência de recursos: o modelo vê quanto do contexto já está ocupado e se autorregula
+        system = ToolTelemetry.MemoryTelemetry(plan, intent.Notebook) + "\n\n" + system;
         // Qwen3 4B tem 36 camadas. Acima de 16 mil tokens, 24 ficam na GPU e 12 na RAM desde o carregamento.
         int? numGpu = numCtx > 16384 ? 24 : null;
         // O planejamento abre o raciocínio da resposta: o usuário vê o que o Nex decidiu (contexto e ferramentas) antes de qualquer token.

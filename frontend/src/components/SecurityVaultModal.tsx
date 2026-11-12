@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { countItems, findVault, lastSavedLabel, parseVault, type VaultKey } from "../lib/vaults";
+import { VAULTS, countItems, findVault, lastSavedLabel, parseVault, type VaultKey } from "../lib/vaults";
 
 /** Corpo da visualização formatada (separado do modal para renderizar em testes). */
 export function VaultFormatted({ text }: { text: string }) {
@@ -48,6 +48,7 @@ export default function SecurityVaultModal({
   onSaved: (key: VaultKey, count: number) => void;
 }) {
   const vault = findVault(vaultKey);
+  const index = VAULTS.findIndex((v) => v.key === vaultKey);
   const [saved, setSaved] = useState("");
   const [draft, setDraft] = useState("");
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -117,14 +118,14 @@ export default function SecurityVaultModal({
         role="dialog"
         aria-modal="true"
         aria-label={`Gaveta ${vault.name}`}
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl border border-accent/30 bg-[#0a1424]/95 shadow-[0_0_40px_rgba(34,211,238,0.18)]"
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl border border-white/10 bg-bg/95 shadow-2xl backdrop-blur-xl"
       >
         <header className="flex items-center gap-3 border-b border-white/10 px-5 py-3">
           <span className="text-2xl" aria-hidden>
             {vault.icon}
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold text-fg">{vault.name}</h2>
+            <h2 className="text-sm font-semibold text-fg">{index}. {vault.name}</h2>
             <p className="truncate text-[11px] text-mute">{vault.hint}</p>
           </div>
           <div role="tablist" aria-label="Modo" className="flex rounded-lg border border-white/10 p-0.5 text-xs">

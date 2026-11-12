@@ -29,6 +29,17 @@ public static class ToolTelemetry
         return text.Length > max ? text[..max] + "…" : text;
     }
 
+    /// <summary>
+    /// "Bateria de memória ativa": diz ao modelo quanto do contexto já está ocupado, para ele se autorregular. Passou de 75%, ele
+    /// grava os achados no caderno (se a ferramenta está disponível) e responde direto, preservando a velocidade da GPU.
+    /// </summary>
+    public static string MemoryTelemetry(ContextPlan plan, bool notebookAvailable)
+    {
+        var pct = Math.Clamp(plan.EstimatedTokens * 100 / Math.Max(plan.NumCtx, 1), 1, 100);
+        var offload = notebookAvailable ? "descarregue os achados em disco com topic_write" : "não há caderno nesta mensagem: resuma os achados na resposta";
+        return $"[TELEMETRIA DE MEMÓRIA ATIVA: {plan.EstimatedTokens}/{plan.NumCtx} tokens ({pct}% ocupado) | Diretriz: se passar de 75%, {offload} e mantenha suas respostas diretas para preservar 100% da velocidade da GPU]";
+    }
+
     /// <summary>O bloco que abre o raciocínio de cada resposta: o que o Nex decidiu antes de falar.</summary>
     public static string PlanningBlock(ToolIntent intent, ContextPlan plan, string? hint = null)
     {

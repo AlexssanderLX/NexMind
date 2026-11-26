@@ -10,3 +10,16 @@ frontend/node_modules/
 tests/**/bin/
 tests/**/obj/
 frontend/*.tsbuildinfo
+
+# Nex V2 foundation (hermes-agent, vendored as a subtree) — its own
+# node_modules/build artifacts, never the source itself.
+hermes/**/node_modules/
+hermes/**/*.egg-info/
+hermes/**/dist/
+hermes/**/tui_dist/
+hermes/**/.venv/
+hermes/**/.pytest_cache/
+hermes/**/.ruff_cache/
+hermes/**/.mypy_cache/
+hermes/**/.hermes/
+hermes/**/*.tsbuildinfo

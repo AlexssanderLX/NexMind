@@ -1952,6 +1952,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               profile={scopedProfile}
               onPicked={() => { closeMobilePanel(); setSessionStarted(true); }}
               onNewChat={() => { startFreshDashboardChat(); setSessionStarted(true); }}
+              draftPlaceholder={sessionStarted && deskMsgs.length === 0}
             />
           </div>
         </div>
@@ -2245,6 +2246,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                 profile={scopedProfile}
                 onNewChat={() => { startFreshDashboardChat(); setSessionStarted(true); }}
                 onPicked={() => setSessionStarted(true)}
+                draftPlaceholder={sessionStarted && deskMsgs.length === 0}
               />
             </div>
           </div>

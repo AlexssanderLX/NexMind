@@ -58,6 +58,14 @@ interface ChatSessionListProps {
    */
   workspaceCwd?: string;
   onWorkspaceChange?: (cwd: string) => void;
+  /**
+   * A session was just started but hasn't exchanged its first message yet,
+   * so the backend hasn't persisted a real row (deliberate: an id is
+   * "minted" but only materialized in the session store once actually
+   * used). Shows a dim placeholder row so starting a session reads as
+   * immediate, even though the real row lands a moment later once you type.
+   */
+  draftPlaceholder?: boolean;
 }
 
 function rowLabel(session: SessionInfo, untitled: string): string {
@@ -77,6 +85,7 @@ export function ChatSessionList({
   onNewChat,
   workspaceCwd,
   onWorkspaceChange,
+  draftPlaceholder = false,
 }: ChatSessionListProps) {
   const { t } = useI18n();
   const [, setSearchParams] = useSearchParams();
@@ -184,55 +193,88 @@ export function ChatSessionList({
   // the session that's active in the terminal also starts a fresh one, since
   // its PTY would otherwise be left pointing at a resume target that's gone.
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const askRemove = useCallback((id: string, event: MouseEvent) => {
+    event.stopPropagation();
+    setDeleteError(null);
+    setPendingDelete(id);
+  }, []);
   const remove = useCallback(
-    (id: string, event: MouseEvent) => {
-      event.stopPropagation();
+    (id: string) => {
       if (deletingId) return;
       setDeletingId(id);
       api
         .deleteSession(id, profile)
         .then(() => {
           setSessions((prev) => prev?.filter((s) => s.id !== id) ?? prev);
+          setPendingDelete(null);
           if (id === activeSessionId) startNew();
         })
-        .catch(() => {
-          /* best-effort, like the rest of this panel */
+        .catch((err: unknown) => {
+          setDeleteError(err instanceof Error ? err.message : "Não foi possível apagar esta sessão.");
         })
         .finally(() => setDeletingId(null));
     },
     [activeSessionId, deletingId, profile, startNew],
   );
 
+  const draftRow = draftPlaceholder ? (
+    <div
+      key="__draft"
+      className="flex flex-col items-start gap-0.5 rounded px-2 py-1.5 text-text-tertiary"
+      aria-live="polite"
+    >
+      <span className="flex w-full items-center gap-1.5 text-sm font-medium">
+        <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary/70" />
+        Nova sessão…
+      </span>
+      <span className="w-full truncate text-[0.6875rem] text-text-tertiary">
+        aguardando a primeira mensagem
+      </span>
+    </div>
+  ) : null;
+
   const content = useMemo(() => {
     if (loading && sessions === null) {
       return (
-        <div className="flex items-center justify-center gap-2 px-2 py-6 text-xs text-text-secondary">
-          <Spinner /> {t.common.loading}
+        <div className="flex flex-col gap-0.5">
+          {draftRow}
+          <div className="flex items-center justify-center gap-2 px-2 py-6 text-xs text-text-secondary">
+            <Spinner /> {t.common.loading}
+          </div>
         </div>
       );
     }
     if (error) {
       return (
-        <div className="flex flex-col items-start gap-2 px-2 py-4 text-xs">
-          <div className="flex items-start gap-2 text-destructive">
-            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span className="wrap-break-word">{error}</span>
+        <div className="flex flex-col gap-0.5">
+          {draftRow}
+          <div className="flex flex-col items-start gap-2 px-2 py-4 text-xs">
+            <div className="flex items-start gap-2 text-destructive">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span className="wrap-break-word">{error}</span>
+            </div>
+            <Button size="sm" outlined onClick={reload} prefix={<RefreshCw />}>
+              {t.common.retry}
+            </Button>
           </div>
-          <Button size="sm" outlined onClick={reload} prefix={<RefreshCw />}>
-            {t.common.retry}
-          </Button>
         </div>
       );
     }
     if (!sessions || sessions.length === 0) {
       return (
-        <div className="px-2 py-6 text-center text-xs text-text-secondary">
-          {t.sessions.noSessions}
+        <div className="flex flex-col gap-0.5">
+          {draftRow}
+          <div className="px-2 py-6 text-center text-xs text-text-secondary">
+            {t.sessions.noSessions}
+          </div>
         </div>
       );
     }
     return (
       <div className="flex flex-col gap-0.5">
+        {draftRow}
         {sessions.map((s) => {
           const isActive = s.id === activeSessionId;
           return (
@@ -271,15 +313,14 @@ export function ChatSessionList({
                   nested button is invalid HTML and breaks hydration. */}
               <button
                 type="button"
-                onClick={(event) => remove(s.id, event)}
+                onClick={(event) => askRemove(s.id, event)}
                 disabled={deletingId === s.id}
-                aria-label="Delete session"
-                title="Delete session"
+                aria-label="Apagar sessão"
+                title="Apagar sessão"
                 className={cn(
                   "absolute right-1.5 top-1.5 rounded p-1 text-text-tertiary",
-                  "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-                  "hover:bg-destructive/10 hover:text-destructive transition-opacity",
-                  deletingId === s.id && "opacity-100",
+                  "hover:bg-destructive/10 hover:text-destructive",
+                  deletingId === s.id && "opacity-60",
                 )}
               >
                 <Trash2 className="h-3 w-3" />
@@ -289,9 +330,10 @@ export function ChatSessionList({
         })}
       </div>
     );
-  }, [activeSessionId, error, loading, pick, reload, sessions, t]);
+  }, [activeSessionId, askRemove, deletingId, draftRow, error, loading, pick, reload, sessions, t]);
 
   return (
+    <>
     <aside
       className={cn(
         "flex h-full w-full min-w-0 shrink-0 flex-col overflow-hidden",
@@ -336,5 +378,28 @@ export function ChatSessionList({
         {content}
       </div>
     </aside>
+    {pendingDelete && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="w-full max-w-sm rounded-lg border border-white/15 bg-zinc-950 p-4 text-sm text-zinc-100">
+          <p className="mb-2 font-medium">Apagar esta sessão?</p>
+          <p className="mb-4 text-zinc-400">O histórico e os dados desta conversa serão perdidos. Não há como reverter.</p>
+          {deleteError && <p className="mb-3 text-red-400">{deleteError}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" className="rounded-md border border-white/20 px-3 py-1.5" onClick={() => setPendingDelete(null)}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-red-600 px-3 py-1.5 font-medium text-white disabled:opacity-60"
+              disabled={deletingId === pendingDelete}
+              onClick={() => remove(pendingDelete)}
+            >
+              Apagar
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 
 import { api } from "@/lib/api";
 import { TERMINAL_FONT_FAMILY } from "@/lib/terminal-font-refit";
@@ -25,11 +25,23 @@ function profileOf(kind: ShellKind) {
 
 export const ShellDesk = forwardRef<
   ShellDeskHandle,
-  { initialCwd: string; accent: string; onEmpty: () => void; boot?: ShellKind | null }
+  {
+    initialCwd: string;
+    accent: string;
+    onEmpty: () => void;
+    boot?: ShellKind | null;
+    /**
+     * Pinned, non-closable first tab rendered in the SAME card as the other
+     * shells — Nex talks to the agent through this one "PowerShell" tab
+     * (the real agent PTY), while Kali/CMD/extra PowerShell tabs opened via
+     * "+"/the dropdown are plain OS shells for hands-on pentest work.
+     */
+    primaryTab?: { title: string; mark: string; content: ReactNode };
+  }
 >(
-  function ShellDesk({ initialCwd, accent, onEmpty, boot = null }, ref) {
+  function ShellDesk({ initialCwd, accent, onEmpty, boot = null, primaryTab }, ref) {
     const [tabs, setTabs] = useState<Tab[]>(() => boot ? [{ id: "boot", kind: boot, title: profileOf(boot).title, cwd: initialCwd }] : []);
-    const [active, setActive] = useState(boot ? "boot" : "");
+    const [active, setActive] = useState(() => (primaryTab ? "primary" : boot ? "boot" : ""));
     const [menu, setMenu] = useState(false);
     const [renaming, setRenaming] = useState<string | null>(null);
     const panes = useRef(new Map<string, { sendLine: (text: string) => void }>());
@@ -75,6 +87,22 @@ export const ShellDesk = forwardRef<
         }}
       >
         <div className="flex h-[38px] shrink-0 items-end gap-1 px-1">
+          {primaryTab && (
+            <button
+              type="button"
+              onClick={() => setActive("primary")}
+              className="flex h-[38px] min-w-[8rem] max-w-[14rem] items-center gap-2 rounded-t-lg px-3 text-left text-xs"
+              style={{
+                background: active === "primary" ? "rgba(8,11,17,0.72)" : "transparent",
+                color: accent,
+              }}
+            >
+              <span className="grid h-4 w-4 place-items-center rounded-full border text-[9px]" style={{ borderColor: accent }}>
+                {primaryTab.mark}
+              </span>
+              <span className="truncate">{primaryTab.title}</span>
+            </button>
+          )}
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -141,6 +169,11 @@ export const ShellDesk = forwardRef<
           )}
         </div>
         <div className="relative min-h-0 flex-1">
+          {primaryTab && (
+            <div className="absolute inset-0 overflow-hidden" style={{ display: active === "primary" ? "block" : "none" }}>
+              {primaryTab.content}
+            </div>
+          )}
           {tabs.map((tab) => (
             <ShellPane
               key={tab.id}

@@ -280,7 +280,12 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
 
     next.delete("resume");
     freshAfterRef.current = Date.now() / 1000;
-    setPtyArmed(false);
+    // A brand-new chat (no prior session to resume) still needs to connect
+    // its PTY — `ptyArmed` used to only flip true when a `resume` id was
+    // already in the URL, so a truly first-ever chat (no history at all)
+    // could never open its WebSocket: a dead end, since connecting is what
+    // gets the backend to assign a session id in the first place.
+    setPtyArmed(true);
     pendingSendRef.current = "";
     setDeskMsgs([]);
     forceFreshPtyRef.current = true;
@@ -2005,17 +2010,36 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               onSphereClick={() => setPalette((p) => (p + 1) % PALETTES.length)}
               onUnavailable={() => setCoreKey((k) => k + 1)}
             />
-            {/* Nex talks to the agent ONLY through PowerShell/Kali/CMD — there
-                is no separate chat surface. A workspace must be explicitly
-                started (see the "Iniciar sessão" gate below) before any
-                shell opens, so different jobs never bleed into each other. */}
+            {/* Nex talks to the agent through the "PowerShell" tab itself —
+                it's the real agent PTY (same connection/session logic as
+                before), not a raw OS shell. Kali/CMD/extra PowerShell tabs
+                opened via "+"/the dropdown are plain OS shells for hands-on
+                pentest work. A workspace must be explicitly started (see the
+                "Iniciar sessão" gate below) so different jobs never bleed
+                into each other. */}
             {sessionStarted ? (
               <ShellDesk
                 ref={shellDeskRef}
                 initialCwd={workspaceCwd}
                 accent={PALETTES[palette]?.accent ?? "#00f0ff"}
-                boot="powershell"
                 onEmpty={() => {}}
+                primaryTab={{
+                  title: "PowerShell",
+                  mark: "PS",
+                  content: (
+                    <div
+                      ref={hostRef}
+                      role="region"
+                      className="hermes-chat-xterm-host h-full w-full"
+                      style={{
+                        // No background layer here on purpose — the NeuralCore sphere
+                        // is the only backdrop. The drop-shadow keeps the glyphs
+                        // readable over it without painting a solid box behind them.
+                        filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.9))",
+                      }}
+                    />
+                  ),
+                }}
               />
             ) : (
               <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4">
@@ -2024,23 +2048,12 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                   type="button"
                   className="rounded-md px-4 py-2 text-sm font-semibold"
                   style={{ backgroundColor: PALETTES[palette]?.accent ?? "#00f0ff", color: "#080b11" }}
-                  onClick={() => setSessionStarted(true)}
+                  onClick={() => { startFreshDashboardChat(); setSessionStarted(true); }}
                 >
                   Iniciar sessão
                 </button>
               </div>
             )}
-            <div
-              ref={hostRef}
-              role="region"
-              className="hermes-chat-xterm-host hidden"
-              style={{
-                // No background layer here on purpose — the NeuralCore sphere
-                // is the only backdrop. The drop-shadow keeps the glyphs
-                // readable over it without painting a solid box behind them.
-                filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.9))",
-              }}
-            />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <button

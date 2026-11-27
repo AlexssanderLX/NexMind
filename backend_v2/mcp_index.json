@@ -1,0 +1,8 @@
+[
+  {"name": "nex", "tags": "nex chat agente", "run": "nex \"pedido\" no shell da sessão. Lê a tela desta aba."},
+  {"name": "nmap", "tags": "nmap porta varredura rede", "run": "nmap <alvo> no Kali (aba wsl). Não inventar flags: usar as que o operador já passou."},
+  {"name": "ghidra", "tags": "ghidra reversing binário", "run": "Abrir o binário no Ghidra local. Não colar o manual inteiro no prompt."},
+  {"name": "rea", "tags": "rea mcp engenharia reversa", "run": "start-rea-mcp.cmd na raiz do Nex sobe o MCP do REA."},
+  {"name": "powershell", "tags": "powershell shell windows", "run": "Aba padrão. cwd da sessão em sessions/<id>/workspace."},
+  {"name": "kali", "tags": "kali wsl linux shell", "run": "wsl.exe -d kali-linux. O comando nex usa o gateway do Windows."}
+]

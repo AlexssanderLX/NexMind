@@ -198,29 +198,21 @@ def _workspace(sid: str) -> Path | None:
     return space if space.is_dir() else None
 
 
-def _inside_workspace(sid: str, raw: str) -> Path | None:
-    space = _workspace(sid)
-    if space is None:
-        return None
-    candidate = (space / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
-    try:
-        candidate.relative_to(space.resolve())
-    except ValueError:
-        return None
-    return candidate
-
-
-def execute_powershell_command(command: str, sid: str = "") -> tuple[str, int]:
+def execute_powershell_command(command: str, sid: str = "", cwd: str = "") -> tuple[str, int]:
     text = (command or "").strip()
     if not text:
         return "comando vazio", 2
-    cwd = str(_workspace(sid) or Path.cwd())
+    # Prioridade de diretório:
+    # 1. cwd explícito do operador no terminal onde executou o comando (investigar qualquer pasta do host)
+    # 2. workspace físico da sessão
+    # 3. Path.cwd() do processo
+    target_cwd = cwd if (cwd and Path(cwd).is_dir()) else str(_workspace(sid) or Path.cwd())
     try:
         proc = subprocess.run(
             ["powershell.exe", "-NoProfile", "-Command", text],
             capture_output=True,
             timeout=60,
-            cwd=cwd,
+            cwd=target_cwd,
             encoding="utf-8",
             errors="replace",
         )
@@ -263,18 +255,41 @@ def web_search(query: str) -> tuple[str, int]:
     return _clip("\n".join(lines), 0)
 
 
-def read_file(path: str, sid: str = "") -> str:
-    target = _inside_workspace(sid, path)
+def _resolve_file_path(path: str, sid: str = "", cwd: str = "") -> Path | None:
+    """Prioridade: absoluto existente -> dentro do cwd do operador -> dentro do workspace da sessão."""
+    p = Path(path)
+    if p.is_absolute() and p.exists():
+        return p
+    if cwd and (Path(cwd) / path).exists():
+        return (Path(cwd) / path).resolve()
+    space = _workspace(sid)
+    if space and (space / path).exists():
+        return (space / path).resolve()
+    return None
+
+
+def read_file(path: str, sid: str = "", cwd: str = "") -> str:
+    target = _resolve_file_path(path, sid, cwd)
     if target is None or not target.is_file():
-        return "arquivo fora do workspace da sessão"
-    data = target.read_text(encoding="utf-8", errors="replace")
-    return data[:4000]
+        return f"arquivo '{path}' não encontrado no diretório atual nem no workspace da sessão"
+    try:
+        data = target.read_text(encoding="utf-8", errors="replace")
+        return data[:4000]
+    except Exception as exc:
+        return f"erro ao ler arquivo: {exc}"
 
 
-def write_file(path: str, content: str, sid: str = "") -> str:
-    target = _inside_workspace(sid, path)
-    if target is None:
-        return "caminho fora do workspace da sessão"
+def write_file(path: str, content: str, sid: str = "", cwd: str = "") -> str:
+    p = Path(path)
+    if p.is_absolute():
+        target = p
+    elif cwd and Path(cwd).is_dir():
+        target = (Path(cwd) / path).resolve()
+    else:
+        space = _workspace(sid)
+        if space is None:
+            return "caminho fora do workspace da sessão"
+        target = (space / path).resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return f"gravado {target.name}"

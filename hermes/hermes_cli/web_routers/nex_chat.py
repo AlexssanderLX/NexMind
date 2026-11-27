@@ -505,7 +505,7 @@ def _command_line(name: str, args: dict) -> str:
     return ""
 
 
-def _run_tool(name: str, args: dict, sid: str, text: str) -> tuple[str, int]:
+def _run_tool(name: str, args: dict, sid: str, text: str, cwd: str = "") -> tuple[str, int]:
     if name in _SHELL_TOOLS:
         command = str(args.get("command") or "")
         missing = _shell_brake(text, command)
@@ -514,15 +514,15 @@ def _run_tool(name: str, args: dict, sid: str, text: str) -> tuple[str, int]:
     if name == "execute_kali_command":
         return execute_kali_command(str(args.get("command") or ""))
     if name == "execute_powershell_command":
-        return execute_powershell_command(str(args.get("command") or ""), sid)
+        return execute_powershell_command(str(args.get("command") or ""), sid, cwd)
     if name == "web_search":
         if _about_session(text):
             return "Isso está no histórico desta sessão. Não pesquisei na web.", 0
         return web_search(str(args.get("query") or ""))
     if name == "read_file":
-        return read_file(str(args.get("path") or ""), sid), 0
+        return read_file(str(args.get("path") or ""), sid, cwd), 0
     if name == "write_file":
-        return write_file(str(args.get("path") or ""), str(args.get("content") or ""), sid), 0
+        return write_file(str(args.get("path") or ""), str(args.get("content") or ""), sid, cwd), 0
     if name == "search_mcp_rag":
         names = _mounted_mcp()
         query = str(args.get("query") or text)
@@ -844,7 +844,7 @@ def ask_model(
             if sid and not refused:
                 note_activity(sid, "run", name, detail)
             try:
-                result, code = _run_tool(name, args, sid, text)
+                result, code = _run_tool(name, args, sid, text, cwd)
             except Exception as exc:
                 if sid:
                     note_activity(sid, "error", name, str(exc))

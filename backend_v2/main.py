@@ -22,12 +22,15 @@ from dotenv import dotenv_values
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 HERE = Path(__file__).resolve().parent
 ENV_FILE = Path(os.environ.get("NEX_ENV_FILE") or HERE.parent / ".env")
 DATA_FILE = Path(os.environ.get("NEX_DATA_FILE") or HERE / "data" / "conversations.json")
 SKILLS_DIR = Path(os.environ.get("NEX_SKILLS_DIR") or HERE.parent / "skills")
+SESSIONS_DIR = Path(os.environ.get("NEX_SESSIONS_DIR") or HERE / "sessions")
 HISTORY_MESSAGES = 24
+DEFAULT_NUM_CTX = 8192
 MODES = ("general", "security", "dev")
 
 # Pacote soberano: 6 skills de raciocinio em skills/*.md (assumption_audit,
@@ -67,6 +70,11 @@ _SOVEREIGN_SKILL_DIGEST = {
         "tecnica/AppSec. Se o operador propuser algo vulneravel ou ineficiente, aponte o contraponto "
         "tecnico e sugira o vetor melhor."
     ),
+    "search_intelligence.md": (
+        "INTELIGÊNCIA DE BUSCA: nunca busque perguntas conversacionais — use âncoras técnicas "
+        "(\"site:github.com\", RFCs, nomes de ferramentas em inglês). Priorize fonte primária "
+        "e documentação oficial. Triangule em 2 saltos antes de cravar uma ferramenta ou autor."
+    ),
 }
 _SOVEREIGN_SKILLS_CHAR_BUDGET = 2000  # ~500 tokens a 4 chars/token
 
@@ -99,7 +107,8 @@ CANONICAL_SYSTEM_PROMPT = (
     "- mcp_ghidra: rea_decompile, rea_analyze (análise de binários em standby) "
     "- memory: topic_read, topic_write (Micro-RAG da sessão) "
     "Quando o usuário perguntar sobre suas ferramentas ou MCPs, cite seu índice de capacidades com precisão. "
-    "Responda sempre em português do Brasil de forma concisa e técnica.\n\n"
+    "Responda sempre em português do Brasil de forma concisa e técnica. "
+    "Seja direto e objetivo. Entregue soluções funcionais, código validado e análise técnica sem divagações internas.\n\n"
     + SOVEREIGN_SKILLS
 )
 
@@ -207,14 +216,26 @@ def save_conversations() -> None:
 def new_conversation(mode: str | None) -> dict[str, Any]:
     m = (mode or "").strip().lower()
     conv = {"id": uuid.uuid4().hex, "title": "Novo Teste", "titleEdited": False, "mode": m if m in MODES else "general",
-            "model": None, "createdAt": now_iso(), "updatedAt": now_iso(), "messages": []}
+            "model": None, "createdAt": now_iso(), "updatedAt": now_iso(), "messages": [], "num_ctx": DEFAULT_NUM_CTX}
     conversations[conv["id"]] = conv
     save_conversations()
     return conv
 
 
+def tokens_active(conv: dict[str, Any]) -> int:
+    """Tokens ativos no contexto: do stats real da ultima resposta, ou estimado pelo tamanho do historico."""
+    last = conv["messages"][-1] if conv["messages"] else None
+    if last and last.get("stats") and last["stats"].get("promptTokens"):
+        return int(last["stats"]["promptTokens"])
+    chars = sum(len(m.get("content") or "") for m in conv["messages"]) + len(CANONICAL_SYSTEM_PROMPT)
+    return est_tokens(chars)
+
+
 def public(conv: dict[str, Any]) -> dict[str, Any]:
-    return {"id": conv["id"], "title": conv["title"], "model": conv.get("model"), "mode": conv.get("mode", "general"), "messages": conv["messages"]}
+    return {
+        "id": conv["id"], "title": conv["title"], "model": conv.get("model"), "mode": conv.get("mode", "general"),
+        "messages": conv["messages"], "numCtx": conv.get("num_ctx", DEFAULT_NUM_CTX), "tokensActive": tokens_active(conv),
+    }
 
 
 def get_conv(cid: str) -> dict[str, Any]:
@@ -297,6 +318,23 @@ class ThinkSplitter:
 
 def est_tokens(chars: int) -> int:
     return max(1, round(chars / 3.5)) if chars else 0
+
+
+def trim_history_by_ctx(history: list[dict[str, str]], system: str, num_ctx: int) -> list[dict[str, str]]:
+    """Mantem o fim do historico dentro do perfil de contexto ativo (Sprint/Dev/Deep Audit), reservando
+    espaco para a resposta do modelo - sem isso o perfil escolhido no modal nao muda nada na pratica."""
+    reserve = max(512, round(num_ctx * 0.25))
+    budget = max(256, num_ctx - reserve - est_tokens(len(system)))
+    kept: list[dict[str, str]] = []
+    used = 0
+    for m in reversed(history[-HISTORY_MESSAGES:]):
+        cost = est_tokens(len(m["content"]))
+        if kept and used + cost > budget:
+            break
+        used += cost
+        kept.append(m)
+    kept.reverse()
+    return kept
 
 
 async def stream_chat(p: dict[str, Any], model: str, messages: list[dict[str, str]]) -> AsyncIterator[dict[str, Any]]:
@@ -470,6 +508,75 @@ def ndjson(event: dict[str, Any]) -> bytes:
     return (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
 
 
+# ---------- snapshot de memoria + reset de contexto (modal "Contexto & Memoria")
+
+_URL_RE = re.compile(r"https?://[^\s)\]}'\"]+")
+_PATH_RE = re.compile(r"(?:[A-Za-z]:\\|/)[\w.\-\\/]{3,}")
+
+
+def snapshot_path(cid: str) -> Path:
+    return SESSIONS_DIR / cid / "memory_snapshot.json"
+
+
+def generate_session_summary(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    """Resumo executivo rapido e heuristico (sem nova chamada ao modelo, pra nao pesar o reset):
+    decisoes, endpoints/urls e arquivos citados na conversa que vai ser zerada."""
+    user_turns = [m.get("content") or "" for m in messages if m.get("role") == "user" and m.get("content")]
+    assistant_turns = [m.get("content") or "" for m in messages if m.get("role") == "assistant" and m.get("content")]
+    full_text = "\n".join(m.get("content") or "" for m in messages)
+    return {
+        "generatedAt": now_iso(),
+        "messageCount": len(messages),
+        "estimatedTokens": est_tokens(sum(len(m.get("content") or "") for m in messages)),
+        "firstQuestion": user_turns[0][:400] if user_turns else "",
+        "lastQuestion": user_turns[-1][:400] if len(user_turns) > 1 else "",
+        "lastAnswer": assistant_turns[-1][:800] if assistant_turns else "",
+        "endpointsAndUrls": sorted(set(_URL_RE.findall(full_text)))[:20],
+        "filesAndPaths": sorted(set(_PATH_RE.findall(full_text)))[:20],
+    }
+
+
+def memory_snapshot_block(cid: str) -> str:
+    """Bloco (~100 tokens) injetado so na 1a mensagem apos um reset, pra nao perder quem e o
+    operador e o que ja foi decidido sem carregar o peso do chat antigo."""
+    try:
+        data = json.loads(snapshot_path(cid).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    bits = [f"{data.get('messageCount', 0)} mensagens antes do reset."]
+    if data.get("lastAnswer"):
+        bits.append(f"Ultima decisao: {data['lastAnswer'][:220]}")
+    if data.get("endpointsAndUrls"):
+        bits.append("Endpoints: " + ", ".join(data["endpointsAndUrls"][:5]))
+    if data.get("filesAndPaths"):
+        bits.append("Arquivos: " + ", ".join(data["filesAndPaths"][:5]))
+    text = " ".join(bits)[:420]
+    return "[MEMORIA CONSOLIDADA DA SESSAO ANTERIOR] " + text
+
+
+class ContextResetRequest(BaseModel):
+    save_snapshot: bool = True
+    new_profile_ctx: int = DEFAULT_NUM_CTX
+
+
+@app.post("/api/conversations/{cid}/context/snapshot-reset")
+def snapshot_and_reset_context(cid: str, req: ContextResetRequest) -> dict[str, Any]:
+    conv = get_conv(cid)
+    saved = req.save_snapshot and len(conv.get("messages", [])) > 1
+    if saved:
+        data = generate_session_summary(conv["messages"])
+        path = snapshot_path(cid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    conv["messages"] = []
+    conv["num_ctx"] = req.new_profile_ctx
+    conv["updatedAt"] = now_iso()
+    save_conversations()
+
+    return {"status": "success", "tokens_active": 0, "num_ctx": req.new_profile_ctx, "snapshot_saved": saved}
+
+
 @app.post("/api/conversations/{cid}/chat")
 async def chat(cid: str, request: Request) -> StreamingResponse:
     conv = get_conv(cid)
@@ -477,8 +584,15 @@ async def chat(cid: str, request: Request) -> StreamingResponse:
     content = str(body.get("content") or "").strip()
     model_name = str(body.get("model") or "")
     system = (body.get("system") or "").strip() if isinstance(body.get("system"), str) else ""
+    num_ctx = int(body.get("numCtx") or conv.get("num_ctx") or DEFAULT_NUM_CTX)
+    conv["num_ctx"] = num_ctx
+    was_empty = not conv["messages"]
     if not system:
         system = CANONICAL_SYSTEM_PROMPT
+        if was_empty:
+            mem = memory_snapshot_block(cid)
+            if mem:
+                system = system + "\n\n" + mem
 
     async def events() -> AsyncIterator[bytes]:
         parsed = split_model(model_name)
@@ -495,7 +609,8 @@ async def chat(cid: str, request: Request) -> StreamingResponse:
         if conv["title"] == "Novo Teste" and not conv.get("titleEdited"):
             conv["title"] = (content[:40] + ("…" if len(content) > 40 else "")).replace("\n", " ")
         conv["model"], conv["updatedAt"] = model_name, now_iso()
-        history = [{"role": m["role"], "content": m["content"]} for m in conv["messages"] if m["content"]][-HISTORY_MESSAGES:]
+        history = [{"role": m["role"], "content": m["content"]} for m in conv["messages"] if m["content"]]
+        history = trim_history_by_ctx(history, system, num_ctx)
         messages = ([{"role": "system", "content": system}] if system else []) + history
 
         answer, thinking, stats, failed = [], [], None, False

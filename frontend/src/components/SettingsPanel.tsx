@@ -146,29 +146,6 @@ export default function SettingsPanel({
         )}
       </label>
       <label className="text-xs text-mute">
-        Modelo de raciocínio
-        <select
-          className={field}
-          value={settings.reasoningModel}
-          onChange={(e) => set("reasoningModel", e.target.value)}
-        >
-          {status?.models.map((m) => (
-            <option key={m.name} value={m.name}>
-              {m.name} ({m.sizeMb} MB)
-            </option>
-          ))}
-          {status?.models.length === 0 && (
-            <option value={settings.reasoningModel}>{settings.reasoningModel}</option>
-          )}
-          {!installed(settings.reasoningModel) && (
-            <option value={settings.reasoningModel}>{settings.reasoningModel} (não instalado)</option>
-          )}
-        </select>
-        {!installed(settings.reasoningModel) && (
-          <span className="text-red-400">Não instalado: ollama pull {settings.reasoningModel}</span>
-        )}
-      </label>
-      <label className="text-xs text-mute">
         Contexto (tokens)
         <input
           className={field}

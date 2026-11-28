@@ -53,6 +53,16 @@ export const api = {
       body: JSON.stringify({ title }),
     }),
   voiceStatus: () => req<VoiceStatus>("/api/voice/status"),
+  /** Consolida um resumo executivo da conversa (se houver histórico) e zera o contexto ativo para o perfil escolhido. */
+  snapshotReset: (id: string, saveSnapshot: boolean, newProfileCtx: number) =>
+    req<{ status: string; tokens_active: number; num_ctx: number; snapshot_saved: boolean }>(
+      `/api/conversations/${id}/context/snapshot-reset`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ save_snapshot: saveSnapshot, new_profile_ctx: newProfileCtx }),
+      },
+    ),
   /** Resposta do usuário a uma ferramenta que pede aprovação (Autorizar/Rejeitar). */
   approve: (id: string, approve: boolean) =>
     req<void>(`/api/approvals/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve }) }),
@@ -114,6 +124,7 @@ export async function streamChat(
   browser = false,
   desktop = false,
   selection?: { text: string; start: number; end: number },
+  cleanMode = false,
 ) {
   const res = await fetch(`/api/conversations/${id}/chat`, {
     method: "POST",
@@ -131,6 +142,7 @@ export async function streamChat(
       selection: selection?.text ?? null,
       selectionStart: selection?.start ?? 0,
       selectionEnd: selection?.end ?? 0,
+      cleanMode,
     }),
     signal,
   });

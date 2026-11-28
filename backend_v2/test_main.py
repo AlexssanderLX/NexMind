@@ -29,6 +29,7 @@ _TMP = Path(tempfile.mkdtemp(prefix="nexv2-"))
 os.environ["NEX_ENV_FILE"] = str(_TMP / ".env")
 os.environ["NEX_DATA_FILE"] = str(_TMP / "data" / "c.json")
 os.environ["NEX_FRONTEND_DIST"] = str(_TMP / "sem-frontend")
+os.environ["NEX_SESSIONS_DIR"] = str(_TMP / "sessions")
 
 import httpx  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -290,6 +291,48 @@ class Errors(Base):
         msgs = self.client.get(f"/api/conversations/{self.cid}").json()["messages"]
         self.assertEqual([m["role"] for m in msgs], ["user", "assistant"])
         self.assertEqual(msgs[1]["content"], "comecou")
+
+
+class ContextMemory(Base):
+    def test_reset_zera_mensagens_troca_perfil_e_salva_snapshot(self):
+        self.chat(GQ, "primeira pergunta sobre https://alvo.test/api/login e C:\\dados\\relatorio.txt")
+        self.chat(GQ, "segunda pergunta")
+        r = self.client.post(f"/api/conversations/{self.cid}/context/snapshot-reset", json={"new_profile_ctx": 65536})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), {"status": "success", "tokens_active": 0, "num_ctx": 65536, "snapshot_saved": True})
+        conv = self.client.get(f"/api/conversations/{self.cid}").json()
+        baseline = main.est_tokens(len(main.CANONICAL_SYSTEM_PROMPT))  # so o prompt de sistema fixo, sem historico
+        self.assertEqual((conv["messages"], conv["numCtx"], conv["tokensActive"]), ([], 65536, baseline))
+        snap = json.loads(main.snapshot_path(self.cid).read_text(encoding="utf-8"))
+        self.assertEqual(snap["messageCount"], 4)
+        self.assertIn("https://alvo.test/api/login", snap["endpointsAndUrls"])
+        self.assertTrue(any("relatorio.txt" in p for p in snap["filesAndPaths"]))
+
+    def test_reset_sem_historico_suficiente_nao_salva_snapshot(self):
+        r = self.client.post(f"/api/conversations/{self.cid}/context/snapshot-reset", json={})
+        self.assertEqual(r.json()["snapshot_saved"], False)
+        self.assertFalse(main.snapshot_path(self.cid).exists())
+        self.assertEqual(r.json()["num_ctx"], main.DEFAULT_NUM_CTX)
+
+    def test_reset_com_save_snapshot_false_nao_grava_arquivo(self):
+        self.chat(GQ, "primeira")
+        self.chat(GQ, "segunda")
+        self.client.post(f"/api/conversations/{self.cid}/context/snapshot-reset", json={"save_snapshot": False})
+        self.assertFalse(main.snapshot_path(self.cid).exists())
+
+    def test_memoria_consolidada_injetada_so_na_1a_mensagem_apos_reset(self):
+        self.chat(GQ, "primeira")
+        self.chat(GQ, "segunda")
+        self.client.post(f"/api/conversations/{self.cid}/context/snapshot-reset", json={})
+        self.chat(GQ, "terceira")
+        system_sent = self.fake.calls[-1]["body"]["messages"][0]["content"]
+        self.assertIn("[MEMORIA CONSOLIDADA DA SESSAO ANTERIOR]", system_sent)
+        self.chat(GQ, "quarta")
+        self.assertNotIn("[MEMORIA CONSOLIDADA DA SESSAO ANTERIOR]", self.fake.calls[-1]["body"]["messages"][0]["content"])
+
+    def test_numCtx_do_pedido_persiste_na_conversa(self):
+        self.chat(GQ, "oi", numCtx=65536)
+        self.assertEqual(self.client.get(f"/api/conversations/{self.cid}").json()["numCtx"], 65536)
 
 
 class ThinkSplitterUnit(unittest.TestCase):

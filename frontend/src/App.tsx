@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, streamChat, type ActiveTask } from "./api";
 import Background from "./components/Background";
+import ContextMemoryModal from "./components/ContextMemoryModal";
 import MessageView from "./components/MessageView";
 import MetricsModal, { loadColor, loadPercent } from "./components/MetricsModal";
 import NexStage from "./components/NexStage";
@@ -43,7 +44,6 @@ function loadVoice(): VoiceSettings {
 
 const DEFAULTS: Settings = {
   chatModel: "nex-unfiltered:latest",
-  reasoningModel: "nex-unfiltered:latest",
   numCtx: 32768,
   system: "",
 };
@@ -51,10 +51,9 @@ const DEFAULTS: Settings = {
 function loadSettings(): Settings {
   try {
     const saved = JSON.parse(localStorage.getItem("settings") ?? "{}");
-    // só as chaves atuais: configurações antigas (model/think) são ignoradas
+    // só as chaves atuais: configurações antigas (model/think/reasoningModel) são ignoradas
     return {
       chatModel: saved.chatModel ?? DEFAULTS.chatModel,
-      reasoningModel: saved.reasoningModel ?? DEFAULTS.reasoningModel,
       numCtx: saved.numCtx && saved.numCtx !== 4096 ? saved.numCtx : DEFAULTS.numCtx,
       system: saved.system ?? DEFAULTS.system,
     };
@@ -102,7 +101,8 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [reasoning, setReasoning] = useState(false);
+  const [pureMode, setPureMode] = useState(false);
+  const [showContextMemory, setShowContextMemory] = useState(false);
   // Ferramentas por intenção: o backend aciona só a que a frase pede (cada uma injetada pesa ~3500 tokens), sem interruptor.
   // O painel "Ferramentas" é um monitor das tasks em andamento, atualizado pelos eventos do stream.
   const [toolTasks, setToolTasks] = useState<Record<ToolKey, ToolTask>>(IDLE_TASKS);
@@ -147,7 +147,7 @@ export default function App() {
   useEffect(() => {
     api.voiceStatus().then(setVoiceStatus).catch(() => setVoiceStatus(null));
   }, [showSettings]);
-  const activeModel = reasoning ? settings.reasoningModel : settings.chatModel;
+  const activeModel = settings.chatModel;
   const modelMissing = !!status?.connected && !status.models.some((m) => m.name === activeModel);
   const nex = useNexCore({
     streaming,
@@ -371,13 +371,14 @@ export default function App() {
     if (speakBack) voice.armSpeech();
     // O contexto agora é decidido no BACKEND (4096 na GPU, sobe só quando a conversa ou as ferramentas precisam):
     // a tela manda o valor das Configurações como TETO.
+    const isPure = pureMode && microApp === "security";
     try {
       await streamChat(
         id,
         text,
         activeModel,
         // no modo Security o Nex recebe a instrução de domínio (Nex Security: pentest e bug bounty, WSTG v4.2) e a base do app
-        { ...settings, system: composeSystem(settings.system, microApp) },
+        { ...settings, system: isPure ? "" : composeSystem(settings.system, microApp) },
         (ev) => {
           if (firstEvent) {
             firstEvent = false;
@@ -429,6 +430,8 @@ export default function App() {
         false,
         false,
         false,
+        undefined,
+        isPure,
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
@@ -502,6 +505,8 @@ export default function App() {
         onRename={rename}
         onSettings={() => setShowSettings(true)}
         mode={microApp}
+        pureMode={pureMode}
+        onTogglePureMode={setPureMode}
       />
 
       {/* sem z-index aqui: um z-index criaria um contexto de empilhamento isolado e o canvas do núcleo (mix-blend-mode: screen) não conseguiria se misturar com o fundo da página */}
@@ -543,6 +548,11 @@ export default function App() {
                 <span className="rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-accent" title="Modo Security ativo">
                   🛡 Sessão de segurança
                 </span>
+                {pureMode && (
+                  <span className="rounded-full border border-amber-400/50 bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-300" title="Modo Teste (Puro): zero RAG, zero MCPs, Ollama direto">
+                    ⚡ Modo Teste (Puro)
+                  </span>
+                )}
                 <a
                   href="/workbench.html"
                   target="_blank"
@@ -602,7 +612,7 @@ export default function App() {
               </p>
             </>
           }
-          info={{ mode: reasoning ? "Raciocínio" : "Conversa", model: activeModel, connected }}
+          info={{ mode: "Conversa", model: activeModel, connected }}
           runs={runs}
           tools={TOOL_CARDS.map((c) => ({
             name: c.key,
@@ -696,24 +706,19 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  aria-pressed={reasoning}
-                  onClick={() => setReasoning((r) => !r)}
-                  className={`rounded-lg border px-2.5 py-1 text-xs transition-colors ${
-                    reasoning
-                      ? "border-accent/60 bg-accent/15 text-accent"
-                      : "border-line text-mute hover:bg-white/5 hover:text-fg"
-                  }`}
-                  title={reasoning ? "Raciocínio ligado: usa o modelo que pensa (mais lento)" : "Ligar raciocínio"}
-                >
-                  ✦ Raciocínio
-                </button>
-                <button
-                  type="button"
                   onClick={() => setShowSettings(true)}
                   className="rounded-lg px-2 py-1 text-xs text-mute hover:bg-white/5 hover:text-fg"
                   title="Abrir configurações"
                 >
-                  {activeModel}
+                  ⚡ {activeModel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowContextMemory(true)}
+                  className="rounded-lg px-2.5 py-1 text-xs text-mute transition-colors hover:bg-white/5 hover:text-fg"
+                  title="Contexto & Memória"
+                >
+                  🧠 Contexto & Memória
                 </button>
               </div>
               <div className="flex items-center gap-2">
@@ -844,6 +849,17 @@ export default function App() {
       </main>
 
       {showMetrics && <MetricsModal metrics={metrics} onClose={() => setShowMetrics(false)} />}
+      {showContextMemory && (
+        <ContextMemoryModal
+          conversationId={activeId}
+          numCtx={settings.numCtx}
+          onClose={() => setShowContextMemory(false)}
+          onReset={(newNumCtx) => {
+            setMessages([]);
+            setSettings((s) => ({ ...s, numCtx: newNumCtx }));
+          }}
+        />
+      )}
       {showSettings && (
         <SettingsModal
           onClose={() => setShowSettings(false)}

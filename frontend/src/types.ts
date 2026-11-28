@@ -26,7 +26,7 @@ export type Message = {
   tools?: ToolRun[];
 };
 
-export type Conversation = { id: string; title: string; model?: string | null; messages: Message[] };
+export type Conversation = { id: string; title: string; model?: string | null; messages: Message[]; numCtx?: number; tokensActive?: number };
 export type ConversationSummary = { id: string; title: string; updatedAt: string; mode?: MicroAppMode };
 
 export type OllamaStatus = {
@@ -48,13 +48,18 @@ export type Metrics = {
   loadedModel: { name: string; sizeMb: number; vramMb: number; contextLength: number | null } | null;
 };
 
-/** Dois modelos: um rápido para conversar e um que raciocina, usado quando o botão Raciocínio está ligado. */
 export type Settings = {
   chatModel: string;
-  reasoningModel: string;
   numCtx: number;
   system: string;
 };
+
+/** Perfis de contexto do modal "Contexto & Memória": Sprint é o padrão (máxima velocidade na GPU). */
+export const CONTEXT_PROFILES = [
+  { label: "Sprint", numCtx: 8192, hint: "Máxima velocidade, inferência imediata na GPU." },
+  { label: "Dev", numCtx: 32768, hint: "Para refatoração de múltiplos arquivos." },
+  { label: "Deep Audit", numCtx: 65536, hint: "Para logs massivos ou mapeamento completo de rotas." },
+] as const;
 
 export type VoiceSettings = {
   enabled: boolean;
